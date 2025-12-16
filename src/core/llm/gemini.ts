@@ -1,15 +1,15 @@
 import {
   Content,
-  EnhancedGenerateContentResponse,
-  FunctionCallPart,
-  Tool as GeminiTool,
-  GenerateContentResult,
-  GenerateContentStreamResult,
-  GoogleGenerativeAI,
+  FunctionCall,
+  FunctionCallingConfigMode,
+  FunctionDeclaration,
+  GenerateContentResponse,
+  GoogleGenAI,
   Part,
   Schema,
-  SchemaType,
-} from '@google/generative-ai'
+  Tool as GeminiTool,
+  Type,
+} from '@google/genai'
 import { v4 as uuidv4 } from 'uuid'
 
 import { ChatModel } from '../../types/chat-model.types'
@@ -35,9 +35,8 @@ import {
 } from './exception'
 
 /**
- * TODO: Consider future migration from '@google/generative-ai' to '@google/genai' (https://github.com/googleapis/js-genai)
- * - Current '@google/generative-ai' library will not support newest models and features
- * - Not migrating yet as '@google/genai' is still in preview status
+ * GeminiProvider using '@google/genai' SDK
+ * Documentation: https://googleapis.github.io/js-genai/
  */
 
 /**
@@ -50,7 +49,7 @@ import {
 export class GeminiProvider extends BaseLLMProvider<
   Extract<LLMProvider, { type: 'gemini' }>
 > {
-  private client: GoogleGenerativeAI
+  private client: GoogleGenAI
   private apiKey: string
 
   constructor(provider: Extract<LLMProvider, { type: 'gemini' }>) {
@@ -59,7 +58,7 @@ export class GeminiProvider extends BaseLLMProvider<
       throw new Error('Gemini does not support custom base URL')
     }
 
-    this.client = new GoogleGenerativeAI(provider.apiKey ?? '')
+    this.client = new GoogleGenAI({ apiKey: provider.apiKey ?? '' })
     this.apiKey = provider.apiKey ?? ''
   }
 
@@ -85,32 +84,24 @@ export class GeminiProvider extends BaseLLMProvider<
         : undefined
 
     try {
-      const model = this.client.getGenerativeModel({
+      const result = await this.client.models.generateContent({
         model: request.model,
-        generationConfig: {
+        contents: request.messages
+          .map((message) => GeminiProvider.parseRequestMessage(message))
+          .filter((m): m is Content => m !== null),
+        config: {
           maxOutputTokens: request.max_tokens,
           temperature: request.temperature,
           topP: request.top_p,
           presencePenalty: request.presence_penalty,
           frequencyPenalty: request.frequency_penalty,
-        },
-        systemInstruction: systemInstruction,
-      })
-
-      const result = await model.generateContent(
-        {
           systemInstruction: systemInstruction,
-          contents: request.messages
-            .map((message) => GeminiProvider.parseRequestMessage(message))
-            .filter((m): m is Content => m !== null),
           tools: request.tools?.map((tool) =>
             GeminiProvider.parseRequestTool(tool),
           ),
+          abortSignal: options?.signal,
         },
-        {
-          signal: options?.signal,
-        },
-      )
+      })
 
       const messageId = crypto.randomUUID() // Gemini does not return a message id
       return GeminiProvider.parseNonStreamingResponse(
@@ -156,32 +147,24 @@ export class GeminiProvider extends BaseLLMProvider<
         : undefined
 
     try {
-      const model = this.client.getGenerativeModel({
+      const stream = await this.client.models.generateContentStream({
         model: request.model,
-        generationConfig: {
+        contents: request.messages
+          .map((message) => GeminiProvider.parseRequestMessage(message))
+          .filter((m): m is Content => m !== null),
+        config: {
           maxOutputTokens: request.max_tokens,
           temperature: request.temperature,
           topP: request.top_p,
           presencePenalty: request.presence_penalty,
           frequencyPenalty: request.frequency_penalty,
-        },
-        systemInstruction: systemInstruction,
-      })
-
-      const stream = await model.generateContentStream(
-        {
           systemInstruction: systemInstruction,
-          contents: request.messages
-            .map((message) => GeminiProvider.parseRequestMessage(message))
-            .filter((m): m is Content => m !== null),
           tools: request.tools?.map((tool) =>
             GeminiProvider.parseRequestTool(tool),
           ),
+          abortSignal: options?.signal,
         },
-        {
-          signal: options?.signal,
-        },
-      )
+      })
 
       const messageId = crypto.randomUUID() // Gemini does not return a message id
       return this.streamResponseGenerator(stream, request.model, messageId)
@@ -202,11 +185,11 @@ export class GeminiProvider extends BaseLLMProvider<
   }
 
   private async *streamResponseGenerator(
-    stream: GenerateContentStreamResult,
+    stream: AsyncGenerator<GenerateContentResponse, unknown, unknown>,
     model: string,
     messageId: string,
   ): AsyncIterable<LLMResponseStreaming> {
-    for await (const chunk of stream.stream) {
+    for await (const chunk of stream) {
       yield GeminiProvider.parseStreamingResponseChunk(chunk, model, messageId)
     }
   }
@@ -247,7 +230,7 @@ export class GeminiProvider extends BaseLLMProvider<
       case 'assistant': {
         const contentParts: Part[] = [
           ...(message.content === '' ? [] : [{ text: message.content }]),
-          ...(message.tool_calls?.map((toolCall): FunctionCallPart => {
+          ...(message.tool_calls?.map((toolCall): Part => {
             try {
               const args = JSON.parse(toolCall.arguments ?? '{}')
               return {
@@ -294,7 +277,7 @@ export class GeminiProvider extends BaseLLMProvider<
   }
 
   static parseNonStreamingResponse(
-    response: GenerateContentResult,
+    response: GenerateContentResponse,
     model: string,
     messageId: string,
   ): LLMResponseNonStreaming {
@@ -303,15 +286,15 @@ export class GeminiProvider extends BaseLLMProvider<
       choices: [
         {
           finish_reason:
-            response.response.candidates?.[0]?.finishReason ?? null,
+            response.candidates?.[0]?.finishReason ?? null,
           message: {
-            content: response.response.text(),
+            content: response.text ?? '',
             role: 'assistant',
-            tool_calls: response.response.functionCalls()?.map((f) => ({
+            tool_calls: response.functionCalls?.map((f: FunctionCall) => ({
               id: uuidv4(),
               type: 'function',
               function: {
-                name: f.name,
+                name: f.name ?? '',
                 arguments: JSON.stringify(f.args),
               },
             })),
@@ -321,19 +304,19 @@ export class GeminiProvider extends BaseLLMProvider<
       created: Date.now(),
       model: model,
       object: 'chat.completion',
-      usage: response.response.usageMetadata
+      usage: response.usageMetadata
         ? {
-            prompt_tokens: response.response.usageMetadata.promptTokenCount,
+            prompt_tokens: response.usageMetadata.promptTokenCount ?? 0,
             completion_tokens:
-              response.response.usageMetadata.candidatesTokenCount,
-            total_tokens: response.response.usageMetadata.totalTokenCount,
+              response.usageMetadata.candidatesTokenCount ?? 0,
+            total_tokens: response.usageMetadata.totalTokenCount ?? 0,
           }
         : undefined,
     }
   }
 
   static parseStreamingResponseChunk(
-    chunk: EnhancedGenerateContentResponse,
+    chunk: GenerateContentResponse,
     model: string,
     messageId: string,
   ): LLMResponseStreaming {
@@ -343,13 +326,13 @@ export class GeminiProvider extends BaseLLMProvider<
         {
           finish_reason: chunk.candidates?.[0]?.finishReason ?? null,
           delta: {
-            content: chunk.text(),
-            tool_calls: chunk.functionCalls()?.map((f, index) => ({
+            content: chunk.text ?? '',
+            tool_calls: chunk.functionCalls?.map((f: FunctionCall, index: number) => ({
               index,
               id: uuidv4(),
               type: 'function',
               function: {
-                name: f.name,
+                name: f.name ?? '',
                 arguments: JSON.stringify(f.args),
               },
             })),
@@ -361,9 +344,9 @@ export class GeminiProvider extends BaseLLMProvider<
       object: 'chat.completion.chunk',
       usage: chunk.usageMetadata
         ? {
-            prompt_tokens: chunk.usageMetadata.promptTokenCount,
-            completion_tokens: chunk.usageMetadata.candidatesTokenCount,
-            total_tokens: chunk.usageMetadata.totalTokenCount,
+            prompt_tokens: chunk.usageMetadata.promptTokenCount ?? 0,
+            completion_tokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
+            total_tokens: chunk.usageMetadata.totalTokenCount ?? 0,
           }
         : undefined,
     }
@@ -398,20 +381,20 @@ export class GeminiProvider extends BaseLLMProvider<
       tool.function.parameters,
     ) as Record<string, unknown>
 
+    const functionDeclaration: FunctionDeclaration = {
+      name: tool.function.name,
+      description: tool.function.description,
+      parameters: {
+        type: Type.OBJECT,
+        properties: (cleanedParameters.properties ?? {}) as Record<
+          string,
+          Schema
+        >,
+      },
+    }
+
     return {
-      functionDeclarations: [
-        {
-          name: tool.function.name,
-          description: tool.function.description,
-          parameters: {
-            type: SchemaType.OBJECT,
-            properties: (cleanedParameters.properties ?? {}) as Record<
-              string,
-              Schema
-            >,
-          },
-        },
-      ],
+      functionDeclarations: [functionDeclaration],
     }
   }
 
@@ -440,10 +423,11 @@ export class GeminiProvider extends BaseLLMProvider<
     }
 
     try {
-      const response = await this.client
-        .getGenerativeModel({ model: model })
-        .embedContent(text)
-      return response.embedding.values
+      const response = await this.client.models.embedContent({
+        model: model,
+        contents: text,
+      })
+      return response.embeddings?.[0]?.values ?? []
     } catch (error) {
       if (error.status === 429) {
         throw new LLMRateLimitExceededException(
