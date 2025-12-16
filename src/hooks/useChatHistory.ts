@@ -146,6 +146,7 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
         annotations: message.annotations,
         toolCallRequests: message.toolCallRequests,
         id: message.id,
+        geminiThoughtSignature: message.geminiThoughtSignature,
         metadata: message.metadata,
       }
     case 'tool':
@@ -182,6 +183,7 @@ const deserializeChatMessage = (
         annotations: message.annotations,
         toolCallRequests: message.toolCallRequests,
         id: message.id,
+        geminiThoughtSignature: message.geminiThoughtSignature,
         metadata: message.metadata,
       }
     case 'tool':

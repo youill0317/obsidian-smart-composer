@@ -25,6 +25,7 @@ export type ChatAssistantMessage = {
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]
   id: string
+  geminiThoughtSignature?: unknown
   metadata?: {
     usage?: ResponseUsage
     model?: ChatModel // TODO: migrate legacy data to new model type
@@ -66,6 +67,7 @@ export type SerializedChatAssistantMessage = {
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]
   id: string
+  geminiThoughtSignature?: unknown
   metadata?: {
     usage?: ResponseUsage
     model?: ChatModel // TODO: migrate legacy data to new model type

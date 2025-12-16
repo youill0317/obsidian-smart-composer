@@ -188,6 +188,7 @@ export class ResponseGenerator {
         role: 'assistant',
         content: '',
         id: uuidv4(),
+        geminiThoughtSignature: undefined,
         metadata: {
           model: this.model,
         },
@@ -248,6 +249,8 @@ export class ResponseGenerator {
     const reasoning = chunk.choices[0]?.delta?.reasoning
     const toolCalls = chunk.choices[0]?.delta?.tool_calls
     const annotations = chunk.choices[0]?.delta?.annotations
+    const geminiThoughtSignature =
+      chunk.choices[0]?.delta?.geminiThoughtSignature
 
     const updatedToolCalls = toolCalls
       ? this.mergeToolCallDeltas(toolCalls, responseToolCalls)
@@ -292,6 +295,8 @@ export class ResponseGenerator {
                 message.annotations,
                 annotations,
               ),
+              geminiThoughtSignature:
+                message.geminiThoughtSignature ?? geminiThoughtSignature,
               metadata: {
                 ...message.metadata,
                 usage: chunk.usage ?? message.metadata?.usage,

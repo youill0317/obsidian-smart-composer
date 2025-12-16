@@ -35,6 +35,7 @@ type NonStreamingChoice = {
     role: string
     annotations?: Annotation[]
     tool_calls?: ToolCall[]
+    geminiThoughtSignature?: unknown
   }
   error?: Error
 }
@@ -47,6 +48,7 @@ type StreamingChoice = {
     role?: string
     annotations?: Annotation[]
     tool_calls?: ToolCallDelta[]
+    geminiThoughtSignature?: unknown
   }
   error?: Error
 }

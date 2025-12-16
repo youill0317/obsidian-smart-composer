@@ -251,6 +251,10 @@ export class GeminiProvider extends BaseLLMProvider<
           }) ?? []),
         ]
 
+        if (message.geminiThoughtSignature) {
+          contentParts.push(message.geminiThoughtSignature as Part)
+        }
+
         if (contentParts.length === 0) {
           return null
         }
@@ -281,6 +285,9 @@ export class GeminiProvider extends BaseLLMProvider<
     model: string,
     messageId: string,
   ): LLMResponseNonStreaming {
+    const thoughtSignaturePart =
+      GeminiProvider.extractThoughtSignaturePart(response)
+
     return {
       id: messageId,
       choices: [
@@ -298,6 +305,7 @@ export class GeminiProvider extends BaseLLMProvider<
                 arguments: JSON.stringify(f.args),
               },
             })),
+            geminiThoughtSignature: thoughtSignaturePart,
           },
         },
       ],
@@ -320,6 +328,9 @@ export class GeminiProvider extends BaseLLMProvider<
     model: string,
     messageId: string,
   ): LLMResponseStreaming {
+    const thoughtSignaturePart =
+      GeminiProvider.extractThoughtSignaturePart(chunk)
+
     return {
       id: messageId,
       choices: [
@@ -336,6 +347,7 @@ export class GeminiProvider extends BaseLLMProvider<
                 arguments: JSON.stringify(f.args),
               },
             })),
+            geminiThoughtSignature: thoughtSignaturePart,
           },
         },
       ],
@@ -436,5 +448,25 @@ export class GeminiProvider extends BaseLLMProvider<
       }
       throw error
     }
+  }
+
+  private static extractThoughtSignaturePart(
+    response: GenerateContentResponse,
+  ): Part | undefined {
+    const parts = response.candidates?.[0]?.content?.parts
+    if (!Array.isArray(parts)) {
+      return undefined
+    }
+
+    return parts.find((part) => {
+      if (!part || typeof part !== 'object') {
+        return false
+      }
+      const record = part as Record<string, unknown>
+      return (
+        Object.prototype.hasOwnProperty.call(record, 'thoughtSignature') ||
+        Object.prototype.hasOwnProperty.call(record, 'thought_signature')
+      )
+    })
   }
 }

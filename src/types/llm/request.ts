@@ -69,6 +69,7 @@ type RequestAssistantMessage = {
   role: 'assistant'
   content: string
   tool_calls?: ToolCallRequest[]
+  geminiThoughtSignature?: unknown
 }
 type RequestToolMessage = {
   role: 'tool'
