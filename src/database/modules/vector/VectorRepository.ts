@@ -135,7 +135,15 @@ export class VectorRepository {
     if (!this.db) {
       throw new DatabaseNotInitializedException()
     }
-    const similarity = sql<number>`1 - (${cosineDistance(embeddingTable.embedding, queryVector)})`
+
+    const dim = embeddingModel.dimension
+    const embeddingExpr = sql.raw(
+      dim > 2000
+        ? `(${embeddingTable.embedding.name}::halfvec(${dim}))`
+        : `(${embeddingTable.embedding.name}::vector(${dim}))`,
+    )
+
+    const similarity = sql<number>`1 - (${cosineDistance(embeddingExpr, queryVector)})`
     const similarityCondition = gt(similarity, options.minSimilarity)
 
     const getScopeCondition = (): SQL | undefined => {

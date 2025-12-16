@@ -41,9 +41,18 @@ export type VectorMetaData = {
   headerPath?: string
 }
 
-// important: dimensions must be less than 2000!
-export const supportedDimensionsForIndex = [
+// pgvector HNSW limits (verified against the bundled pgvector in PGlite 0.2.12)
+// - vector: up to 2000 dimensions
+// - halfvec: up to 4000 dimensions
+export const supportedVectorDimensionsForIndex = [
   128, 256, 384, 512, 768, 1024, 1280, 1536, 1792,
+]
+
+export const supportedHalfvecDimensionsForIndex = [3072]
+
+export const supportedDimensionsForIndex = [
+  ...supportedVectorDimensionsForIndex,
+  ...supportedHalfvecDimensionsForIndex,
 ]
 
 export const embeddingTable = pgTable(
@@ -62,7 +71,7 @@ export const embeddingTable = pgTable(
     index('embeddings_path_index').on(table.path),
     index('embeddings_model_index').on(table.model),
     index('embeddings_dimension_index').on(table.dimension),
-    ...supportedDimensionsForIndex.map((dimension) =>
+    ...supportedVectorDimensionsForIndex.map((dimension) =>
       // https://github.com/pgvector/pgvector?tab=readme-ov-file#can-i-store-vectors-with-different-dimensions-in-the-same-column
       index(`embeddings_embedding_${dimension}_index`)
         .using(
@@ -73,6 +82,17 @@ export const embeddingTable = pgTable(
           ),
         )
         // use sql.raw for index definition because it shouldn't be parameterized
+        .where(sql.raw(`${table.dimension.name} = ${dimension}`)),
+    ),
+
+    ...supportedHalfvecDimensionsForIndex.map((dimension) =>
+      index(`embeddings_embedding_${dimension}_index`)
+        .using(
+          'hnsw',
+          sql.raw(
+            `(${table.embedding.name}::halfvec(${dimension})) halfvec_cosine_ops`,
+          ),
+        )
         .where(sql.raw(`${table.dimension.name} = ${dimension}`)),
     ),
   ],
