@@ -248,7 +248,7 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
     if (!this.dbManagerInitPromise) {
       this.dbManagerInitPromise = (async () => {
         try {
-          this.dbManager = await DatabaseManager.create(this.app)
+          this.dbManager = await DatabaseManager.create(this.app, this)
           return this.dbManager
         } catch (error) {
           this.dbManagerInitPromise = null

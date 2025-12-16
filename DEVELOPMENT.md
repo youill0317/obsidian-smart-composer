@@ -4,24 +4,15 @@
 
 PGlite typically uses the `node:fs` module to load bundle files. However, Obsidian plugins run in a browser-like environment where `node:fs` is not available. This presents a challenge in implementing PGlite in Obsidian's environment.
 
-To address this, we developed a workaround in `src/database/DatabaseManager.ts`:
+To address this, we use a browser-only loading strategy in `src/database/DatabaseManager.ts`:
 
-1. Manually fetch required PGlite resources (Postgres data, WebAssembly module, and Vector extension).
-2. Use PGlite's option to directly set bundle files or URLs when initializing the database.
+1. Copy required PGlite resources (Postgres data, WebAssembly module, and Vector extension bundle) into the plugin folder as static assets.
+2. Resolve those assets to fetchable `app://` URLs via `app.vault.adapter.getResourcePath(...)`.
+3. Initialize PGlite using `fsBundle` + `wasmModule`, and provide the vector extension as a URL so PGlite loads it via `fetch`.
 
 This approach allows PGlite to function in Obsidian's browser-like environment without relying on `node:fs`.
 
-In `esbuild.config.mjs`, we set the `process` variable to an empty object to prevent PGlite from detecting a Node environment:
-
-```javascript:esbuild.config.mjs
-define: {
-  // ... other definitions ...
-  process: '{}',
-  // ... other definitions ...
-},
-```
-
-While this solution works currently, we should be aware that setting `process` to an empty object might cause issues with other libraries that rely on this variable. We'll monitor for any potential problems and explore alternative solutions if needed.
+Note: On desktop, Electron exposes Node globals like `process.versions.node` even in the renderer. PGlite uses that to choose a Node-only `fs` loader for extensions, which breaks in Obsidian. We avoid that by dynamically importing PGlite while temporarily neutralizing node detection.
 
 ## ESM Compatibility Shim for PGlite
 

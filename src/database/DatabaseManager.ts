@@ -1,6 +1,5 @@
-import { PGlite } from '@electric-sql/pglite'
 import { PgliteDatabase, drizzle } from 'drizzle-orm/pglite'
-import { App, normalizePath, requestUrl } from 'obsidian'
+import { App, Plugin, normalizePath, requestUrl } from 'obsidian'
 
 import { PGLITE_DB_PATH } from '../constants'
 
@@ -11,8 +10,9 @@ import { VectorManager } from './modules/vector/VectorManager'
 
 export class DatabaseManager {
   private app: App
+  private plugin: Plugin
   private dbPath: string
-  private pgClient: PGlite | null = null
+  private pgClient: import('@electric-sql/pglite').PGlite | null = null
   private db: PgliteDatabase | null = null
   // WeakMap to prevent circular references
   private static managers = new WeakMap<
@@ -23,13 +23,14 @@ export class DatabaseManager {
     }
   >()
 
-  constructor(app: App, dbPath: string) {
+  constructor(app: App, plugin: Plugin, dbPath: string) {
     this.app = app
+    this.plugin = plugin
     this.dbPath = dbPath
   }
 
-  static async create(app: App): Promise<DatabaseManager> {
-    const dbManager = new DatabaseManager(app, normalizePath(PGLITE_DB_PATH))
+  static async create(app: App, plugin: Plugin): Promise<DatabaseManager> {
+    const dbManager = new DatabaseManager(app, plugin, normalizePath(PGLITE_DB_PATH))
     dbManager.db = await dbManager.loadExistingDatabase()
     if (!dbManager.db) {
       dbManager.db = await dbManager.createNewDatabase()
@@ -101,6 +102,7 @@ export class DatabaseManager {
 
   private async createNewDatabase() {
     try {
+      const PGlite = await this.loadPGliteBrowserOnly()
       const { fsBundle, wasmModule, vectorExtensionBundlePath } =
         await this.loadPGliteResources()
       this.pgClient = await PGlite.create({
@@ -137,6 +139,7 @@ export class DatabaseManager {
       }
       const fileBuffer = await this.app.vault.adapter.readBinary(this.dbPath)
       const fileBlob = new Blob([fileBuffer], { type: 'application/x-gzip' })
+      const PGlite = await this.loadPGliteBrowserOnly()
       const { fsBundle, wasmModule, vectorExtensionBundlePath } =
         await this.loadPGliteResources()
       this.pgClient = await PGlite.create({
@@ -204,32 +207,70 @@ export class DatabaseManager {
     this.db = null
   }
 
-  // TODO: This function is a temporary workaround chosen due to the difficulty of bundling postgres.wasm and postgres.data from node_modules into a single JS file. The ultimate goal is to bundle everything into one JS file in the future.
+  private async loadPGliteBrowserOnly() {
+    // Obsidian plugins run in a browser-like environment. Even on desktop, Node globals
+    // (e.g. process.versions.node) exist and can cause PGlite to choose fs-based loaders
+    // for bundles/extensions. We temporarily neutralize node detection for the module
+    // evaluation step.
+    const previousProcess = (globalThis as unknown as { process?: unknown }).process
+    try {
+      ;(globalThis as unknown as { process?: unknown }).process = { env: {} }
+      const mod = await import('@electric-sql/pglite')
+      return mod.PGlite
+    } finally {
+      ;(globalThis as unknown as { process?: unknown }).process = previousProcess
+    }
+  }
+
+  // Load PGlite resources from bundled plugin assets (fetchable via app:// URLs).
   private async loadPGliteResources(): Promise<{
     fsBundle: Blob
     wasmModule: WebAssembly.Module
     vectorExtensionBundlePath: URL
   }> {
     try {
-      const PGLITE_VERSION = '0.2.12'
-      const [fsBundleResponse, wasmResponse] = await Promise.all([
-        requestUrl(
-          `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.data`,
-        ),
-        requestUrl(
-          `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.wasm`,
-        ),
+      const baseDir = this.plugin.manifest?.dir
+      if (!baseDir) {
+        throw new Error('Plugin manifest dir is unavailable; cannot locate PGlite assets')
+      }
+
+      const resolveResourceUrl = (relativePath: string): URL => {
+        const vaultRelative = normalizePath(`${baseDir}/${relativePath}`)
+        const resourcePath = this.app.vault.adapter.getResourcePath(vaultRelative)
+        return new URL(resourcePath)
+      }
+
+      const postgresDataUrl = resolveResourceUrl('pglite/postgres.data')
+      const postgresWasmUrl = resolveResourceUrl('pglite/postgres.wasm')
+      const vectorTarGzUrl = resolveResourceUrl('pglite/vector.tar.gz')
+
+      // Prefer fetch for app:// resources; fallback to requestUrl in case of environment quirks.
+      const fetchArrayBuffer = async (url: URL): Promise<ArrayBuffer> => {
+        try {
+          const res = await fetch(url.toString())
+          if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`)
+          return await res.arrayBuffer()
+        } catch {
+          const res = await requestUrl(url.toString())
+          return res.arrayBuffer
+        }
+      }
+
+      const [fsBundleBytes, wasmBytes] = await Promise.all([
+        fetchArrayBuffer(postgresDataUrl),
+        fetchArrayBuffer(postgresWasmUrl),
       ])
 
-      const fsBundle = new Blob([fsBundleResponse.arrayBuffer], {
+      const fsBundle = new Blob([fsBundleBytes], {
         type: 'application/octet-stream',
       })
-      const wasmModule = await WebAssembly.compile(wasmResponse.arrayBuffer)
-      const vectorExtensionBundlePath = new URL(
-        `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/vector.tar.gz`,
-      )
+      const wasmModule = await WebAssembly.compile(wasmBytes)
 
-      return { fsBundle, wasmModule, vectorExtensionBundlePath }
+      return {
+        fsBundle,
+        wasmModule,
+        vectorExtensionBundlePath: vectorTarGzUrl,
+      }
     } catch (error) {
       console.error('Error loading PGlite resources:', error)
       throw error
