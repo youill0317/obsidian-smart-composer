@@ -34,6 +34,11 @@ const customVector = customType<{ data: number[] }>({
 export type VectorMetaData = {
   startLine: number
   endLine: number
+
+  // Optional hierarchical metadata (backward compatible with older indexes)
+  parentStartLine?: number
+  parentEndLine?: number
+  headerPath?: string
 }
 
 // important: dimensions must be less than 2000!

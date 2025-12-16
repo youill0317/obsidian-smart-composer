@@ -31,6 +31,84 @@ export class VectorManager {
   private saveCallback: (() => Promise<void>) | null = null
   private vacuumCallback: (() => Promise<void>) | null = null
 
+  private splitMarkdownIntoHeaderSections(
+    content: string,
+    options: {
+      maxHeaderLevel: number
+    } = { maxHeaderLevel: 3 },
+  ): {
+    headerPath: string
+    startLine: number
+    endLine: number
+    content: string
+  }[] {
+    const lines = content.split('\n')
+    const maxHeaderLevel = Math.max(1, Math.min(6, options.maxHeaderLevel))
+
+    const headers: {
+      level: number
+      title: string
+      line: number // 1-based
+      pathTitles: string[]
+    }[] = []
+
+    const stack: { level: number; title: string }[] = []
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const lineText = lines[i]
+      const match = /^(#{1,6})\s+(.*)$/.exec(lineText)
+      if (!match) continue
+
+      const level = match[1].length
+      if (level > maxHeaderLevel) continue
+
+      const title = match[2].trim()
+
+      while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+        stack.pop()
+      }
+      stack.push({ level, title })
+
+      headers.push({
+        level,
+        title,
+        line: i + 1,
+        pathTitles: stack.map((h) => h.title),
+      })
+    }
+
+    if (headers.length === 0) {
+      return [
+        {
+          headerPath: '',
+          startLine: 1,
+          endLine: Math.max(1, lines.length),
+          content,
+        },
+      ]
+    }
+
+    const sections = headers.map((header, index) => {
+      let endLine = lines.length
+      for (let j = index + 1; j < headers.length; j += 1) {
+        if (headers[j].level <= header.level) {
+          endLine = headers[j].line - 1
+          break
+        }
+      }
+      const startLine = header.line
+      const sectionContent = lines.slice(startLine - 1, endLine).join('\n')
+      return {
+        headerPath: header.pathTitles.join(' > '),
+        startLine,
+        endLine: Math.max(startLine, endLine),
+        content: sectionContent,
+      }
+    })
+
+    return sections
+  }
+
   private async requestSave() {
     try {
       if (this.saveCallback) {
@@ -129,9 +207,11 @@ export class VectorManager {
       return
     }
 
-    const textSplitter = RecursiveCharacterTextSplitter.fromLanguage(
+    const leafTextSplitter = RecursiveCharacterTextSplitter.fromLanguage(
       'markdown',
       {
+        // NOTE: chunkSize is applied *within each header section* as an upper bound.
+        // This enables hierarchical (parent-child) retrieval without extra LLM calls.
         chunkSize: options.chunkSize,
         // TODO: Use token-based chunking after migrating to WebAssembly-based tiktoken
         // Current token counting method is too slow for practical use
@@ -151,22 +231,74 @@ export class VectorManager {
             // eslint-disable-next-line no-control-regex
             const sanitizedContent = fileContent.replace(/\x00/g, '')
 
-            const fileDocuments = await textSplitter.createDocuments([
+            const sections = this.splitMarkdownIntoHeaderSections(
               sanitizedContent,
-            ])
-            return fileDocuments.map(
-              (chunk): Omit<InsertEmbedding, 'model' | 'dimension'> => {
-                return {
-                  path: file.path,
-                  mtime: file.stat.mtime,
-                  content: chunk.pageContent,
-                  metadata: {
-                    startLine: chunk.metadata.loc.lines.from as number,
-                    endLine: chunk.metadata.loc.lines.to as number,
-                  },
-                }
+              {
+                maxHeaderLevel: 3,
               },
             )
+
+            const sectionChunks = (
+              await Promise.all(
+                sections.map(async (section) => {
+                  // Avoid wasting embedding calls on empty sections
+                  if (section.content.trim().length === 0) {
+                    return []
+                  }
+
+                  // Stage 2: only split within the header section when it is too large
+                  const docs =
+                    section.content.length <= options.chunkSize
+                      ? [
+                          {
+                            pageContent: section.content,
+                            metadata: {
+                              loc: {
+                                lines: {
+                                  from: 1,
+                                  to: Math.max(
+                                    1,
+                                    section.endLine - section.startLine + 1,
+                                  ),
+                                },
+                              },
+                            },
+                          },
+                        ]
+                      : await leafTextSplitter.createDocuments([section.content])
+
+                  return docs.map(
+                    (
+                      doc,
+                    ): Omit<InsertEmbedding, 'model' | 'dimension'> => {
+                      const from =
+                        (doc as any)?.metadata?.loc?.lines?.from ?? 1
+                      const to =
+                        (doc as any)?.metadata?.loc?.lines?.to ??
+                        Math.max(1, section.endLine - section.startLine + 1)
+
+                      const leafStartLine = section.startLine + from - 1
+                      const leafEndLine = section.startLine + to - 1
+
+                      return {
+                        path: file.path,
+                        mtime: file.stat.mtime,
+                        content: doc.pageContent,
+                        metadata: {
+                          startLine: leafStartLine,
+                          endLine: leafEndLine,
+                          parentStartLine: section.startLine,
+                          parentEndLine: section.endLine,
+                          headerPath: section.headerPath,
+                        },
+                      }
+                    },
+                  )
+                }),
+              )
+            ).flat()
+
+            return sectionChunks
           } catch (error) {
             failedFiles.push({
               path: file.path,
@@ -233,8 +365,13 @@ export class VectorManager {
                     )
                   }
 
+                  const headerPath = chunk.metadata.headerPath
+                  const embeddingText = headerPath
+                    ? `Header: ${headerPath}\n\n${chunk.content}`
+                    : chunk.content
+
                   const embedding = await embeddingModel.getEmbedding(
-                    chunk.content,
+                    embeddingText,
                   )
                   completedChunks += 1
 

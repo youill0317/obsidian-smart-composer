@@ -323,19 +323,137 @@ ${message.annotations
               },
               onQueryProgressChange: onQueryProgressChange,
             })
+
+        const fileTextCache = new Map<string, string>()
+        const getFileTextByPath = async (path: string): Promise<string> => {
+          const cached = fileTextCache.get(path)
+          if (cached !== undefined) return cached
+
+          const abstract = this.app.vault.getAbstractFileByPath(path)
+          if (!(abstract instanceof TFile)) {
+            fileTextCache.set(path, '')
+            return ''
+          }
+          const text = await this.app.vault.cachedRead(abstract)
+          fileTextCache.set(path, text)
+          return text
+        }
+
+        const maxParentChars = Math.max(
+          2000,
+          this.settings.ragOptions.chunkSize * 3,
+        )
+
+        const getParentKey = (r: {
+          path: string
+          metadata: any
+        }): string | null => {
+          const ps = r.metadata?.parentStartLine
+          const pe = r.metadata?.parentEndLine
+          if (
+            typeof ps !== 'number' ||
+            typeof pe !== 'number' ||
+            ps <= 0 ||
+            pe < ps
+          ) {
+            return null
+          }
+          return `${r.path}:${ps}-${pe}`
+        }
+
+        // Group leaf hits by parent section (AutoMergingRetriever-style)
+        const orderedGroups: {
+          key: string
+          path: string
+          parentStartLine: number
+          parentEndLine: number
+          headerPath?: string
+          children: (typeof similaritySearchResults)[number][]
+        }[] = []
+        const groupMap = new Map<string, (typeof orderedGroups)[number]>()
+
+        for (const r of similaritySearchResults) {
+          const key = getParentKey(r as any)
+          if (!key) {
+            // Treat leaf as its own group
+            const leafKey = `${r.path}:${r.metadata.startLine}-${r.metadata.endLine}`
+            orderedGroups.push({
+              key: leafKey,
+              path: r.path,
+              parentStartLine: r.metadata.startLine,
+              parentEndLine: r.metadata.endLine,
+              headerPath: r.metadata?.headerPath,
+              children: [r],
+            })
+            continue
+          }
+
+          const existing = groupMap.get(key)
+          if (existing) {
+            existing.children.push(r)
+          } else {
+            const ps = (r as any).metadata.parentStartLine as number
+            const pe = (r as any).metadata.parentEndLine as number
+            const group = {
+              key,
+              path: r.path,
+              parentStartLine: ps,
+              parentEndLine: pe,
+              headerPath: (r as any).metadata.headerPath as string | undefined,
+              children: [r],
+            }
+            groupMap.set(key, group)
+            orderedGroups.push(group)
+          }
+        }
+
+        const renderBlock = (path: string, content: string, startLine: number) => {
+          const rendered =
+            this.getModelPromptLevel() == PromptLevel.Default
+              ? this.addLineNumbersToContent({
+                  content,
+                  startLine,
+                })
+              : content
+          return `\`\`\`${path}\n${rendered}\n\`\`\`\n`
+        }
+
+        const blocks: string[] = []
+        for (const group of orderedGroups) {
+          // Promote to parent section only when multiple children hit the same parent,
+          // and the parent section is not too large.
+          const shouldPromote = group.children.length >= 2
+          if (shouldPromote) {
+            const fullText = await getFileTextByPath(group.path)
+            if (fullText) {
+              const lines = fullText.split('\n')
+              const parentText = lines
+                .slice(group.parentStartLine - 1, group.parentEndLine)
+                .join('\n')
+
+              if (parentText.length > 0 && parentText.length <= maxParentChars) {
+                blocks.push(
+                  renderBlock(group.path, parentText, group.parentStartLine),
+                )
+                continue
+              }
+            }
+          }
+
+          // Fallback: render leaf chunks individually
+          for (const leaf of group.children) {
+            blocks.push(
+              renderBlock(
+                leaf.path,
+                leaf.content,
+                leaf.metadata.startLine,
+              ),
+            )
+          }
+        }
+
         filePrompt = `## Potentially Relevant Snippets from the current vault
-${similaritySearchResults
-  .map(({ path, content, metadata }) => {
-    const newContent =
-      this.getModelPromptLevel() == PromptLevel.Default
-        ? this.addLineNumbersToContent({
-            content,
-            startLine: metadata.startLine,
-          })
-        : content
-    return `\`\`\`${path}\n${newContent}\n\`\`\`\n`
-  })
-  .join('')}\n`
+${blocks.join('')}\n`
       } else {
         filePrompt = allFiles
           .map((file, index) => {
