@@ -42,7 +42,16 @@ export class GroqProvider extends BaseLLMProvider<
       throw new Error('Model is not a Groq model')
     }
 
-    return this.adapter.generateResponse(this.client, request, options)
+    return this.adapter.generateResponse(
+      this.client,
+      {
+        ...request,
+        reasoning_effort: model.reasoning?.enabled
+          ? (model.reasoning.reasoning_effort as any)
+          : undefined,
+      },
+      options,
+    )
   }
 
   async streamResponse(
@@ -54,7 +63,16 @@ export class GroqProvider extends BaseLLMProvider<
       throw new Error('Model is not a Groq model')
     }
 
-    return this.adapter.streamResponse(this.client, request, options)
+    return this.adapter.streamResponse(
+      this.client,
+      {
+        ...request,
+        reasoning_effort: model.reasoning?.enabled
+          ? (model.reasoning.reasoning_effort as any)
+          : undefined,
+      },
+      options,
+    )
   }
 
   async getEmbedding(_model: string, _text: string): Promise<number[]> {

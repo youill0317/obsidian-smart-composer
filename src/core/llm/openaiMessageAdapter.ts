@@ -86,6 +86,7 @@ export class OpenAIMessageAdapter {
       tools: request.tools,
       tool_choice: request.tool_choice,
       reasoning_effort: request.reasoning_effort,
+      thinking: request.thinking,
       web_search_options: request.web_search_options,
       messages: request.messages.map((m) => this.parseRequestMessage(m)),
       // TODO: max_tokens is deprecated in the OpenAI API, with max_completion_tokens being the

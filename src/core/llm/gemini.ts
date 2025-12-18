@@ -96,6 +96,12 @@ export class GeminiProvider extends BaseLLMProvider<
           presencePenalty: request.presence_penalty,
           frequencyPenalty: request.frequency_penalty,
           systemInstruction: systemInstruction,
+          thinkingConfig: model.thinkingConfig
+            ? {
+                includeThoughts: model.thinkingConfig.includeThoughts,
+                thinkingLevel: model.thinkingConfig.thinkingLevel,
+              }
+            : undefined,
           tools: request.tools?.map((tool) =>
             GeminiProvider.parseRequestTool(tool),
           ),
@@ -159,6 +165,12 @@ export class GeminiProvider extends BaseLLMProvider<
           presencePenalty: request.presence_penalty,
           frequencyPenalty: request.frequency_penalty,
           systemInstruction: systemInstruction,
+          thinkingConfig: model.thinkingConfig
+            ? {
+                includeThoughts: model.thinkingConfig.includeThoughts,
+                thinkingLevel: model.thinkingConfig.thinkingLevel,
+              }
+            : undefined,
           tools: request.tools?.map((tool) =>
             GeminiProvider.parseRequestTool(tool),
           ),

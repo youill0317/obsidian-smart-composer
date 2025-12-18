@@ -50,9 +50,12 @@ export class DeepSeekStudioProvider extends BaseLLMProvider<
       )
     }
 
-    const formattedRequest = {
+    const formattedRequest: LLMRequestNonStreaming = {
       ...request,
       messages: formatMessages(request.messages),
+      reasoning_effort: model.reasoning?.enabled
+        ? (model.reasoning.reasoning_effort as any)
+        : undefined,
     }
 
     return this.adapter.generateResponse(this.client, formattedRequest, options)
@@ -72,9 +75,12 @@ export class DeepSeekStudioProvider extends BaseLLMProvider<
       )
     }
 
-    const formattedRequest = {
+    const formattedRequest: LLMRequestStreaming = {
       ...request,
       messages: formatMessages(request.messages),
+      reasoning_effort: model.reasoning?.enabled
+        ? (model.reasoning.reasoning_effort as any)
+        : undefined,
     }
 
     return this.adapter.streamResponse(this.client, formattedRequest, options)

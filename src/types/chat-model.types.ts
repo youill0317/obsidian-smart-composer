@@ -25,50 +25,68 @@ const baseChatModelSchema = z.object({
   enable: z.boolean().default(true).optional(),
 })
 
+const reasoningSchema = z
+  .object({
+    enabled: z.boolean(),
+    reasoning_effort: z.string().optional(),
+  })
+  .optional()
+
+const thinkingSchema = z
+  .object({
+    enabled: z.boolean(),
+    budget_tokens: z.number(),
+  })
+  .optional()
+
 export const chatModelSchema = z.discriminatedUnion('providerType', [
   z.object({
     providerType: z.literal('openai'),
     ...baseChatModelSchema.shape,
-    reasoning: z
-      .object({
-        enabled: z.boolean(),
-        reasoning_effort: z.string().optional(),
-      })
-      .optional(),
+    reasoning: reasoningSchema,
   }),
   z.object({
     providerType: z.literal('anthropic'),
     ...baseChatModelSchema.shape,
-    thinking: z
-      .object({
-        enabled: z.boolean(),
-        budget_tokens: z.number(),
-      })
-      .optional(),
+    thinking: thinkingSchema,
   }),
   z.object({
     providerType: z.literal('gemini'),
     ...baseChatModelSchema.shape,
+    thinkingConfig: z
+      .object({
+        includeThoughts: z.boolean(),
+        thinkingLevel: z.string().optional(),
+      })
+      .optional(),
   }),
   z.object({
     providerType: z.literal('groq'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
   }),
   z.object({
     providerType: z.literal('openrouter'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
+    thinking: thinkingSchema,
   }),
   z.object({
     providerType: z.literal('ollama'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
+    thinking: thinkingSchema,
   }),
   z.object({
     providerType: z.literal('lm-studio'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
+    thinking: thinkingSchema,
   }),
   z.object({
     providerType: z.literal('deepseek'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
   }),
   z.object({
     providerType: z.literal('perplexity'),
@@ -90,10 +108,13 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
   z.object({
     providerType: z.literal('azure-openai'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
   }),
   z.object({
     providerType: z.literal('openai-compatible'),
     ...baseChatModelSchema.shape,
+    reasoning: reasoningSchema,
+    thinking: thinkingSchema,
   }),
 ])
 

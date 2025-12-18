@@ -40,7 +40,22 @@ export class LmStudioProvider extends BaseLLMProvider<
       throw new Error('Model is not an LM Studio model')
     }
 
-    return this.adapter.generateResponse(this.client, request, options)
+    return this.adapter.generateResponse(
+      this.client,
+      {
+        ...request,
+        reasoning_effort: model.reasoning?.enabled
+          ? (model.reasoning.reasoning_effort as any)
+          : undefined,
+        thinking: model.thinking?.enabled
+          ? {
+              type: 'enabled',
+              budget_tokens: model.thinking.budget_tokens,
+            }
+          : undefined,
+      },
+      options,
+    )
   }
 
   async streamResponse(
@@ -52,7 +67,22 @@ export class LmStudioProvider extends BaseLLMProvider<
       throw new Error('Model is not an LM Studio model')
     }
 
-    return this.adapter.streamResponse(this.client, request, options)
+    return this.adapter.streamResponse(
+      this.client,
+      {
+        ...request,
+        reasoning_effort: model.reasoning?.enabled
+          ? (model.reasoning.reasoning_effort as any)
+          : undefined,
+        thinking: model.thinking?.enabled
+          ? {
+              type: 'enabled',
+              budget_tokens: model.thinking.budget_tokens,
+            }
+          : undefined,
+      },
+      options,
+    )
   }
 
   async getEmbedding(model: string, text: string): Promise<number[]> {

@@ -37,6 +37,25 @@ type ModelSettingsRegistry = {
   SettingsComponent: React.FC<SettingsComponentProps>
 }
 
+const REASONING_SUPPORTED_PROVIDERS = [
+  'openai',
+  'groq',
+  'openrouter',
+  'ollama',
+  'lm-studio',
+  'deepseek',
+  'azure-openai',
+  'openai-compatible',
+]
+const THINKING_SUPPORTED_PROVIDERS = [
+  'anthropic',
+  'openrouter',
+  'ollama',
+  'lm-studio',
+  'openai-compatible',
+]
+const GEMINI_THINKING_SUPPORTED_PROVIDERS = ['gemini']
+
 /**
  * Registry of available model settings.
  *
@@ -44,34 +63,107 @@ type ModelSettingsRegistry = {
  * The SettingsComponent is the component that will be displayed when the model settings are opened.
  */
 const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
-  /**
-   * OpenAI model settings
-   */
   {
-    check: (model) => model.providerType === 'openai',
+    check: (model) =>
+      REASONING_SUPPORTED_PROVIDERS.includes(model.providerType) ||
+      THINKING_SUPPORTED_PROVIDERS.includes(model.providerType) ||
+      GEMINI_THINKING_SUPPORTED_PROVIDERS.includes(model.providerType) ||
+      (model.providerType === 'perplexity' && !!model.web_search_options),
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'openai' }
+
+      const supportsReasoning = REASONING_SUPPORTED_PROVIDERS.includes(
+        model.providerType,
+      )
+      const supportsThinking = THINKING_SUPPORTED_PROVIDERS.includes(
+        model.providerType,
+      )
+      const supportsGeminiThinking = GEMINI_THINKING_SUPPORTED_PROVIDERS.includes(
+        model.providerType,
+      )
+
+      // Reasoning state
       const [reasoningEnabled, setReasoningEnabled] = useState<boolean>(
-        typedModel.reasoning?.enabled ?? false,
+        (model as any).reasoning?.enabled ?? false,
       )
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        typedModel.reasoning?.reasoning_effort ?? 'medium',
+        (model as any).reasoning?.reasoning_effort ?? 'medium',
+      )
+
+      // Thinking state
+      const DEFAULT_THINKING_BUDGET_TOKENS = 8192
+      const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
+        (model as any).thinking?.enabled ?? false,
+      )
+      const [budgetTokens, setBudgetTokens] = useState(
+        (
+          (model as any).thinking?.budget_tokens ?? DEFAULT_THINKING_BUDGET_TOKENS
+        ).toString(),
+      )
+
+      // Gemini Thinking state
+      const [geminiThinkingEnabled, setGeminiThinkingEnabled] = useState<boolean>(
+        !!(model as any).thinkingConfig,
+      )
+      const [includeThoughts, setIncludeThoughts] = useState<boolean>(
+        (model as any).thinkingConfig?.includeThoughts ?? true,
+      )
+      const [thinkingLevel, setThinkingLevel] = useState<string>(
+        (model as any).thinkingConfig?.thinkingLevel ?? 'medium',
+      )
+
+      // Perplexity state
+      const [searchContextSize, setSearchContextSize] = useState(
+        (model as any).web_search_options?.search_context_size ?? 'low',
       )
 
       const handleSubmit = async () => {
-        if (!['low', 'medium', 'high'].includes(reasoningEffort)) {
-          new Notice('Reasoning effort must be one of "low", "medium", "high"')
-          return
-        }
+        const updatedModel = { ...model } as any
 
-        const updatedModel = {
-          ...typedModel,
-          reasoning: {
+        if (supportsReasoning) {
+          if (!['low', 'medium', 'high'].includes(reasoningEffort)) {
+            new Notice('Reasoning effort must be one of "low", "medium", "high"')
+            return
+          }
+          updatedModel.reasoning = {
             enabled: reasoningEnabled,
             reasoning_effort: reasoningEffort,
-          },
+          }
+        }
+
+        if (supportsThinking) {
+          const parsedTokens = parseInt(budgetTokens, 10)
+          if (isNaN(parsedTokens)) {
+            new Notice('Please enter a valid number for budget tokens')
+            return
+          }
+          if (parsedTokens < 1024) {
+            new Notice('Budget tokens must be at least 1024')
+            return
+          }
+          updatedModel.thinking = {
+            enabled: thinkingEnabled,
+            budget_tokens: parsedTokens,
+          }
+        }
+
+        if (supportsGeminiThinking) {
+          if (geminiThinkingEnabled) {
+            updatedModel.thinkingConfig = {
+              includeThoughts,
+              thinkingLevel,
+            }
+          } else {
+            delete updatedModel.thinkingConfig
+          }
+        }
+
+        if (model.providerType === 'perplexity' && model.web_search_options) {
+          updatedModel.web_search_options = {
+            ...model.web_search_options,
+            search_context_size: searchContextSize,
+          }
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -93,197 +185,128 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          <ObsidianSetting
-            name="Reasoning"
-            desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
-          >
-            <ObsidianToggle
-              value={reasoningEnabled}
-              onChange={(value: boolean) => setReasoningEnabled(value)}
-            />
-          </ObsidianSetting>
-          {reasoningEnabled && (
+          {supportsReasoning && (
+            <>
+              <ObsidianSetting
+                name="Reasoning"
+                desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
+              >
+                <ObsidianToggle
+                  value={reasoningEnabled}
+                  onChange={(value: boolean) => setReasoningEnabled(value)}
+                />
+              </ObsidianSetting>
+              {reasoningEnabled && (
+                <ObsidianSetting
+                  name="Reasoning Effort"
+                  desc={`Controls how much thinking the model does before responding. Default is "medium".`}
+                  className="smtcmp-setting-item--nested"
+                  required
+                >
+                  <ObsidianDropdown
+                    value={reasoningEffort}
+                    options={{
+                      low: 'low',
+                      medium: 'medium',
+                      high: 'high',
+                    }}
+                    onChange={(value: string) => setReasoningEffort(value)}
+                  />
+                </ObsidianSetting>
+              )}
+            </>
+          )}
+
+          {supportsThinking && (
+            <>
+              <ObsidianSetting
+                name="Extended Thinking"
+                desc="Enable extended thinking for Claude. Available for Claude Sonnet 3.7+ and Claude Opus 4.0+."
+              >
+                <ObsidianToggle
+                  value={thinkingEnabled}
+                  onChange={(value: boolean) => setThinkingEnabled(value)}
+                />
+              </ObsidianSetting>
+              {thinkingEnabled && (
+                <ObsidianSetting
+                  name="Budget Tokens"
+                  desc="The maximum number of tokens that Claude can use for thinking. Must be at least 1024."
+                  className="smtcmp-setting-item--nested"
+                  required
+                >
+                  <ObsidianTextInput
+                    value={budgetTokens}
+                    placeholder="Number of tokens"
+                    onChange={(value: string) => setBudgetTokens(value)}
+                    type="number"
+                  />
+                </ObsidianSetting>
+              )}
+            </>
+          )}
+
+          {supportsGeminiThinking && (
+            <>
+              <ObsidianSetting
+                name="Thinking"
+                desc="Enable thinking for Gemini 3 models."
+              >
+                <ObsidianToggle
+                  value={geminiThinkingEnabled}
+                  onChange={(value: boolean) => setGeminiThinkingEnabled(value)}
+                />
+              </ObsidianSetting>
+              {geminiThinkingEnabled && (
+                <>
+                  <ObsidianSetting
+                    name="Include Thoughts"
+                    desc="Whether to include the model's thoughts in the response."
+                    className="smtcmp-setting-item--nested"
+                  >
+                    <ObsidianToggle
+                      value={includeThoughts}
+                      onChange={(value: boolean) => setIncludeThoughts(value)}
+                    />
+                  </ObsidianSetting>
+                  <ObsidianSetting
+                    name="Thinking Level"
+                    desc="Controls the depth of thinking. Available levels depend on the model (Flash: minimal, low, medium, high; Pro: low, high)."
+                    className="smtcmp-setting-item--nested"
+                    required
+                  >
+                    <ObsidianDropdown
+                      value={thinkingLevel}
+                      options={{
+                        minimal: 'minimal',
+                        low: 'low',
+                        medium: 'medium',
+                        high: 'high',
+                      }}
+                      onChange={(value: string) => setThinkingLevel(value)}
+                    />
+                  </ObsidianSetting>
+                </>
+              )}
+            </>
+          )}
+
+          {model.providerType === 'perplexity' && model.web_search_options && (
             <ObsidianSetting
-              name="Reasoning Effort"
-              desc={`Controls how much thinking the model does before responding. Default is "medium".`}
-              className="smtcmp-setting-item--nested"
-              required
+              name="Search Context Size"
+              desc={`Determines how much search context is retrieved for the model. Choose "low" for minimal context and lower costs, "medium" for a balanced approach, or "high" for maximum context at higher cost. Default is "low".`}
             >
               <ObsidianDropdown
-                value={reasoningEffort}
+                value={searchContextSize}
                 options={{
                   low: 'low',
                   medium: 'medium',
                   high: 'high',
                 }}
-                onChange={(value: string) => setReasoningEffort(value)}
+                onChange={(value: string) => setSearchContextSize(value)}
               />
             </ObsidianSetting>
           )}
-
-          <ObsidianSetting>
-            <ObsidianButton text="Save" onClick={handleSubmit} cta />
-            <ObsidianButton text="Cancel" onClick={onClose} />
-          </ObsidianSetting>
-        </>
-      )
-    },
-  },
-
-  /**
-   * Claude model settings
-   *
-   * For extended thinking, see:
-   * @see https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
-   */
-  {
-    check: (model) => model.providerType === 'anthropic',
-    SettingsComponent: (props: SettingsComponentProps) => {
-      const DEFAULT_THINKING_BUDGET_TOKENS = 8192
-
-      const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'anthropic' }
-      const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
-        typedModel.thinking?.enabled ?? false,
-      )
-      const [budgetTokens, setBudgetTokens] = useState(
-        (
-          typedModel.thinking?.budget_tokens ?? DEFAULT_THINKING_BUDGET_TOKENS
-        ).toString(),
-      )
-
-      const handleSubmit = async () => {
-        const parsedTokens = parseInt(budgetTokens, 10)
-        if (isNaN(parsedTokens)) {
-          new Notice('Please enter a valid number')
-          return
-        }
-
-        if (parsedTokens < 1024) {
-          new Notice('Budget tokens must be at least 1024')
-          return
-        }
-
-        const updatedModel = {
-          ...typedModel,
-          thinking: {
-            enabled: thinkingEnabled,
-            budget_tokens: parsedTokens,
-          },
-        }
-
-        const validationResult = chatModelSchema.safeParse(updatedModel)
-        if (!validationResult.success) {
-          new Notice(
-            validationResult.error.issues.map((v) => v.message).join('\n'),
-          )
-          return
-        }
-
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
-            m.id === model.id ? updatedModel : m,
-          ),
-        })
-        onClose()
-      }
-
-      return (
-        <>
-          <ObsidianSetting
-            name="Extended Thinking"
-            desc="Enable extended thinking for Claude. Available for Claude Sonnet 3.7+ and Claude Opus 4.0+."
-          >
-            <ObsidianToggle
-              value={thinkingEnabled}
-              onChange={(value: boolean) => setThinkingEnabled(value)}
-            />
-          </ObsidianSetting>
-          {thinkingEnabled && (
-            <ObsidianSetting
-              name="Budget Tokens"
-              desc="The maximum number of tokens that Claude can use for thinking. Must be at least 1024."
-              className="smtcmp-setting-item--nested"
-              required
-            >
-              <ObsidianTextInput
-                value={budgetTokens}
-                placeholder="Number of tokens"
-                onChange={(value: string) => setBudgetTokens(value)}
-                type="number"
-              />
-            </ObsidianSetting>
-          )}
-
-          <ObsidianSetting>
-            <ObsidianButton text="Save" onClick={handleSubmit} cta />
-            <ObsidianButton text="Cancel" onClick={onClose} />
-          </ObsidianSetting>
-        </>
-      )
-    },
-  },
-
-  // Perplexity settings
-  {
-    check: (model) =>
-      model.providerType === 'perplexity' &&
-      [
-        'sonar',
-        'sonar-pro',
-        'sonar-deep-research',
-        'sonar-reasoning',
-        'sonar-reasoning-pro',
-      ].includes(model.model),
-
-    SettingsComponent: (props: SettingsComponentProps) => {
-      const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'perplexity' }
-      const [searchContextSize, setSearchContextSize] = useState(
-        typedModel.web_search_options?.search_context_size ?? 'low',
-      )
-
-      const handleSubmit = async () => {
-        if (!['low', 'medium', 'high'].includes(searchContextSize)) {
-          new Notice(
-            'Search context size must be one of "low", "medium", "high"',
-          )
-          return
-        }
-
-        const updatedModel = {
-          ...typedModel,
-          web_search_options: {
-            ...typedModel.web_search_options,
-            search_context_size: searchContextSize,
-          },
-        }
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
-            m.id === model.id ? updatedModel : m,
-          ),
-        })
-        onClose()
-      }
-
-      return (
-        <>
-          <ObsidianSetting
-            name="Search Context Size"
-            desc={`Determines how much search context is retrieved for the model. Choose "low" for minimal context and lower costs, "medium" for a balanced approach, or "high" for maximum context at higher cost. Default is "low".`}
-          >
-            <ObsidianDropdown
-              value={searchContextSize}
-              options={{
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-              }}
-              onChange={(value: string) => setSearchContextSize(value)}
-            />
-          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />

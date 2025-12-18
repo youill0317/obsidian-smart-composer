@@ -51,9 +51,18 @@ export class OpenAICompatibleProvider extends BaseLLMProvider<
       )
     }
 
-    const formattedRequest = {
+    const formattedRequest: LLMRequestNonStreaming = {
       ...request,
       messages: formatMessages(request.messages),
+      reasoning_effort: model.reasoning?.enabled
+        ? (model.reasoning.reasoning_effort as any)
+        : undefined,
+      thinking: model.thinking?.enabled
+        ? {
+            type: 'enabled',
+            budget_tokens: model.thinking.budget_tokens,
+          }
+        : undefined,
     }
     return this.adapter.generateResponse(this.client, formattedRequest, options)
   }
@@ -73,9 +82,18 @@ export class OpenAICompatibleProvider extends BaseLLMProvider<
       )
     }
 
-    const formattedRequest = {
+    const formattedRequest: LLMRequestStreaming = {
       ...request,
       messages: formatMessages(request.messages),
+      reasoning_effort: model.reasoning?.enabled
+        ? (model.reasoning.reasoning_effort as any)
+        : undefined,
+      thinking: model.thinking?.enabled
+        ? {
+            type: 'enabled',
+            budget_tokens: model.thinking.budget_tokens,
+          }
+        : undefined,
     }
     return this.adapter.streamResponse(this.client, formattedRequest, options)
   }

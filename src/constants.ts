@@ -12,7 +12,7 @@ export const DEFAULT_CHAT_MODEL_ID = 'claude-sonnet-4.5'
 export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5', 'gpt-4.1']
+export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5']
 export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-4.1-mini']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'openai/text-embedding-3-small',
@@ -227,181 +227,14 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'anthropic',
     providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-opus-4.1',
-    model: 'claude-opus-4-1',
-  },
-  {
-    providerType: 'anthropic',
-    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
     id: 'claude-sonnet-4.5',
     model: 'claude-sonnet-4-5',
-  },
-  {
-    providerType: 'anthropic',
-    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-haiku-4.5',
-    model: 'claude-haiku-4-5',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5',
-    model: 'gpt-5',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5-mini',
-    model: 'gpt-5-mini',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5-nano',
-    model: 'gpt-5-nano',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-4.1',
-    model: 'gpt-4.1',
   },
   {
     providerType: 'openai',
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
     id: 'gpt-4.1-mini',
     model: 'gpt-4.1-mini',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-4.1-nano',
-    model: 'gpt-4.1-nano',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-4o',
-    model: 'gpt-4o',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-4o-mini',
-    model: 'gpt-4o-mini',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'o4-mini',
-    model: 'o4-mini',
-    reasoning: {
-      enabled: true,
-      reasoning_effort: 'medium',
-    },
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'o3',
-    model: 'o3',
-    reasoning: {
-      enabled: true,
-      reasoning_effort: 'medium',
-    },
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-2.5-pro',
-    model: 'gemini-2.5-pro',
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-2.5-flash',
-    model: 'gemini-2.5-flash',
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-2.5-flash-lite',
-    model: 'gemini-2.5-flash-lite',
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-2.0-flash',
-    model: 'gemini-2.0-flash',
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-2.0-flash-lite',
-    model: 'gemini-2.0-flash-lite',
-  },
-  {
-    providerType: 'deepseek',
-    providerId: PROVIDER_TYPES_INFO.deepseek.defaultProviderId,
-    id: 'deepseek-chat',
-    model: 'deepseek-chat',
-  },
-  {
-    providerType: 'deepseek',
-    providerId: PROVIDER_TYPES_INFO.deepseek.defaultProviderId,
-    id: 'deepseek-reasoner',
-    model: 'deepseek-reasoner',
-  },
-  {
-    providerType: 'perplexity',
-    providerId: PROVIDER_TYPES_INFO.perplexity.defaultProviderId,
-    id: 'sonar',
-    model: 'sonar',
-    web_search_options: {
-      search_context_size: 'low',
-    },
-  },
-  {
-    providerType: 'perplexity',
-    providerId: PROVIDER_TYPES_INFO.perplexity.defaultProviderId,
-    id: 'sonar-pro',
-    model: 'sonar',
-    web_search_options: {
-      search_context_size: 'low',
-    },
-  },
-  {
-    providerType: 'perplexity',
-    providerId: PROVIDER_TYPES_INFO.perplexity.defaultProviderId,
-    id: 'sonar-deep-research',
-    model: 'sonar-deep-research',
-    web_search_options: {
-      search_context_size: 'low',
-    },
-  },
-  {
-    providerType: 'perplexity',
-    providerId: PROVIDER_TYPES_INFO.perplexity.defaultProviderId,
-    id: 'sonar-reasoning',
-    model: 'sonar',
-    web_search_options: {
-      search_context_size: 'low',
-    },
-  },
-  {
-    providerType: 'perplexity',
-    providerId: PROVIDER_TYPES_INFO.perplexity.defaultProviderId,
-    id: 'sonar-reasoning-pro',
-    model: 'sonar',
-    web_search_options: {
-      search_context_size: 'low',
-    },
-  },
-  {
-    providerType: 'morph',
-    providerId: PROVIDER_TYPES_INFO.morph.defaultProviderId,
-    id: 'morph-v0',
-    model: 'morph-v0',
   },
 ]
 
@@ -417,41 +250,6 @@ export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
     id: 'openai/text-embedding-3-small',
     model: 'text-embedding-3-small',
     dimension: 1536,
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'openai/text-embedding-3-large',
-    model: 'text-embedding-3-large',
-    dimension: 3072,
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini/text-embedding-004',
-    model: 'text-embedding-004',
-    dimension: 768,
-  },
-  {
-    providerType: 'ollama',
-    providerId: PROVIDER_TYPES_INFO.ollama.defaultProviderId,
-    id: 'ollama/nomic-embed-text',
-    model: 'nomic-embed-text',
-    dimension: 768,
-  },
-  {
-    providerType: 'ollama',
-    providerId: PROVIDER_TYPES_INFO.ollama.defaultProviderId,
-    id: 'ollama/mxbai-embed-large',
-    model: 'mxbai-embed-large',
-    dimension: 1024,
-  },
-  {
-    providerType: 'ollama',
-    providerId: PROVIDER_TYPES_INFO.ollama.defaultProviderId,
-    id: 'ollama/bge-m3',
-    model: 'bge-m3',
-    dimension: 1024,
   },
 ]
 
