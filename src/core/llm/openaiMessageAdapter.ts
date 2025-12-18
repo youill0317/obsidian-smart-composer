@@ -106,7 +106,7 @@ export class OpenAIMessageAdapter {
           include_usage: true,
         },
       }),
-    }
+    } as any
   }
 
   protected parseRequestMessage(

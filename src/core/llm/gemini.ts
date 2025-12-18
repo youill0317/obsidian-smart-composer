@@ -9,6 +9,7 @@ import {
   Schema,
   Tool as GeminiTool,
   Type,
+  ThinkingLevel,
 } from '@google/genai'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -99,7 +100,8 @@ export class GeminiProvider extends BaseLLMProvider<
           thinkingConfig: model.thinkingConfig
             ? {
                 includeThoughts: model.thinkingConfig.includeThoughts,
-                thinkingLevel: model.thinkingConfig.thinkingLevel,
+                thinkingLevel: model.thinkingConfig
+                  .thinkingLevel as ThinkingLevel,
               }
             : undefined,
           tools: request.tools?.map((tool) =>
@@ -168,7 +170,8 @@ export class GeminiProvider extends BaseLLMProvider<
           thinkingConfig: model.thinkingConfig
             ? {
                 includeThoughts: model.thinkingConfig.includeThoughts,
-                thinkingLevel: model.thinkingConfig.thinkingLevel,
+                thinkingLevel: model.thinkingConfig
+                  .thinkingLevel as ThinkingLevel,
               }
             : undefined,
           tools: request.tools?.map((tool) =>
