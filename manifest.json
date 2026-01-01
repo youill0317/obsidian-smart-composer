@@ -1,11 +1,10 @@
 {
-  "id": "smart-composer",
-  "name": "Smart Composer",
-  "version": "1.2.5",
+  "id": "obsidian-aide",
+  "name": "Obsidian Aide",
+  "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "AI chat with note context, smart writing assistance, and one-click edits for your vault.",
-  "author": "Heesu Suh",
-  "authorUrl": "https://github.com/glowingjade",
-  "fundingUrl": "https://buymeacoffee.com/kevin.on",
+  "description": "All-in-one AI assistant for your vault - context-aware chat, smart writing, and one-click edits.",
+  "author": "youill0317",
+  "authorUrl": "https://github.com/youill0317",
   "isDesktopOnly": false
 }
