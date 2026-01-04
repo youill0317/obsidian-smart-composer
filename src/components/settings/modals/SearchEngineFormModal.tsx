@@ -1,7 +1,7 @@
 import { App } from 'obsidian'
 import { useState } from 'react'
 
-import { TavilySearchDepth } from '../../../types/search.types'
+import { BraveFreshness, TavilySearchDepth } from '../../../types/search.types'
 import SmartComposerPlugin from '../../../main'
 import { ObsidianButton } from '../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../common/ObsidianDropdown'
@@ -9,7 +9,7 @@ import { ObsidianSetting } from '../../common/ObsidianSetting'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ReactModal } from '../../common/ReactModal'
 
-export type SearchEngineType = 'tavily' | 'perplexity'
+export type SearchEngineType = 'tavily' | 'perplexity' | 'brave'
 
 type SearchEngineFormComponentProps = {
     plugin: SmartComposerPlugin
@@ -23,13 +23,17 @@ export class EditSearchEngineModal extends ReactModal<SearchEngineFormComponentP
         plugin: SmartComposerPlugin,
         engineType: SearchEngineType,
     ) {
-        const title = engineType === 'tavily' ? 'Tavily Settings' : 'Perplexity Settings'
+        const titles: Record<SearchEngineType, string> = {
+            tavily: 'Tavily Settings',
+            perplexity: 'Perplexity Settings',
+            brave: 'Brave Search Settings',
+        }
         super({
             app: app,
             Component: SearchEngineFormComponent,
             props: { plugin, engineType },
             options: {
-                title,
+                title: titles[engineType],
             },
         })
     }
@@ -52,6 +56,9 @@ function SearchEngineFormComponent({
     const [chunksPerSource, setChunksPerSource] = useState(
         engineType === 'tavily' ? settings.searchEngines.tavily.options.chunksPerSource : 3,
     )
+    const [tavilyStartDate, setTavilyStartDate] = useState(
+        engineType === 'tavily' ? settings.searchEngines.tavily.options.startDate || '' : '',
+    )
 
     // Perplexity-specific state
     const [perplexityMaxResults, setPerplexityMaxResults] = useState(
@@ -62,6 +69,26 @@ function SearchEngineFormComponent({
     )
     const [maxTokensPerPage, setMaxTokensPerPage] = useState(
         engineType === 'perplexity' ? settings.searchEngines.perplexity.options.maxTokensPerPage : 1000,
+    )
+    const [perplexitySearchAfterDate, setPerplexitySearchAfterDate] = useState(
+        engineType === 'perplexity' ? settings.searchEngines.perplexity.options.searchAfterDate || '' : '',
+    )
+
+    // Brave-specific state
+    const [braveCount, setBraveCount] = useState(
+        engineType === 'brave' ? settings.searchEngines.brave.options.count : 10,
+    )
+    const [braveCountry, setBraveCountry] = useState(
+        engineType === 'brave' ? settings.searchEngines.brave.options.country || '' : '',
+    )
+    const [braveSearchLang, setBraveSearchLang] = useState(
+        engineType === 'brave' ? settings.searchEngines.brave.options.searchLang || 'en' : 'en',
+    )
+    const [braveUiLang, setBraveUiLang] = useState(
+        engineType === 'brave' ? settings.searchEngines.brave.options.uiLang || 'en-US' : 'en-US',
+    )
+    const [braveFreshness, setBraveFreshness] = useState<BraveFreshness | ''>(
+        engineType === 'brave' ? settings.searchEngines.brave.options.freshness || '' : '',
     )
 
     const handleSubmit = async () => {
@@ -76,11 +103,12 @@ function SearchEngineFormComponent({
                             searchDepth,
                             maxResults: tavilyMaxResults,
                             chunksPerSource,
+                            startDate: tavilyStartDate || undefined,
                         },
                     },
                 },
             })
-        } else {
+        } else if (engineType === 'perplexity') {
             await plugin.setSettings({
                 ...settings,
                 searchEngines: {
@@ -91,6 +119,24 @@ function SearchEngineFormComponent({
                             maxResults: perplexityMaxResults,
                             maxTokens,
                             maxTokensPerPage,
+                            searchAfterDate: perplexitySearchAfterDate || undefined,
+                        },
+                    },
+                },
+            })
+        } else if (engineType === 'brave') {
+            await plugin.setSettings({
+                ...settings,
+                searchEngines: {
+                    ...settings.searchEngines,
+                    brave: {
+                        ...settings.searchEngines.brave,
+                        options: {
+                            count: braveCount,
+                            country: braveCountry || undefined,
+                            searchLang: braveSearchLang || undefined,
+                            uiLang: braveUiLang || undefined,
+                            freshness: braveFreshness || undefined,
                         },
                     },
                 },
@@ -152,6 +198,17 @@ function SearchEngineFormComponent({
                             />
                         </ObsidianSetting>
                     )}
+
+                    <ObsidianSetting
+                        name="Start Date"
+                        desc="Filter results from this date (YYYY-MM-DD format). Leave empty for no filter."
+                    >
+                        <ObsidianTextInput
+                            value={tavilyStartDate}
+                            placeholder="YYYY-MM-DD"
+                            onChange={(value: string) => setTavilyStartDate(value)}
+                        />
+                    </ObsidianSetting>
                 </>
             )}
 
@@ -201,6 +258,88 @@ function SearchEngineFormComponent({
                             }}
                         />
                     </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="Search After Date"
+                        desc="Filter results from this date (YYYY-MM-DD format). Leave empty for no filter."
+                    >
+                        <ObsidianTextInput
+                            value={perplexitySearchAfterDate}
+                            placeholder="YYYY-MM-DD"
+                            onChange={(value: string) => setPerplexitySearchAfterDate(value)}
+                        />
+                    </ObsidianSetting>
+                </>
+            )}
+
+            {engineType === 'brave' && (
+                <>
+                    <ObsidianSetting
+                        name="Result Count"
+                        desc="Number of search results (1-20)."
+                    >
+                        <ObsidianTextInput
+                            value={braveCount.toString()}
+                            onChange={(value: string) => {
+                                const parsed = parseInt(value)
+                                if (!isNaN(parsed) && parsed >= 1 && parsed <= 20) {
+                                    setBraveCount(parsed)
+                                }
+                            }}
+                        />
+                    </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="Country"
+                        desc="2-letter country code (e.g., US, KR, JP). Leave empty for global."
+                    >
+                        <ObsidianTextInput
+                            value={braveCountry}
+                            placeholder="e.g., US"
+                            onChange={(value: string) => setBraveCountry(value.toUpperCase().slice(0, 2))}
+                        />
+                    </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="Search Language"
+                        desc="Language code for search results (e.g., en, ko, ja)."
+                    >
+                        <ObsidianTextInput
+                            value={braveSearchLang}
+                            placeholder="e.g., en"
+                            onChange={(value: string) => setBraveSearchLang(value.toLowerCase())}
+                        />
+                    </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="UI Language"
+                        desc="UI language code (e.g., en-US, ko-KR)."
+                    >
+                        <ObsidianTextInput
+                            value={braveUiLang}
+                            placeholder="e.g., en-US"
+                            onChange={(value: string) => setBraveUiLang(value)}
+                        />
+                    </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="Freshness"
+                        desc="Filter by when results were discovered."
+                    >
+                        <ObsidianDropdown
+                            value={braveFreshness}
+                            options={{
+                                '': 'All Time',
+                                'pd': 'Past Day (24h)',
+                                'pw': 'Past Week (7d)',
+                                'pm': 'Past Month (31d)',
+                                'py': 'Past Year (365d)',
+                            }}
+                            onChange={(value: string) =>
+                                setBraveFreshness(value as BraveFreshness | '')
+                            }
+                        />
+                    </ObsidianSetting>
                 </>
             )}
 
@@ -211,3 +350,4 @@ function SearchEngineFormComponent({
         </>
     )
 }
+

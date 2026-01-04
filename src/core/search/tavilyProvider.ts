@@ -52,6 +52,9 @@ export class TavilyProvider implements SearchProvider {
                     ...(this.options.searchDepth === 'advanced' && {
                         chunks_per_source: this.options.chunksPerSource,
                     }),
+                    ...(this.options.startDate && {
+                        start_date: this.options.startDate,
+                    }),
                 }),
             }),
             timeout(REQUEST_TIMEOUT_MS),

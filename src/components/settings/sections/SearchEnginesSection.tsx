@@ -21,12 +21,16 @@ const SEARCH_ENGINE_INFO: Record<SearchEngineType, { name: string; description: 
         name: 'Perplexity',
         description: 'AI search engine with conversational answers',
     },
+    brave: {
+        name: 'Brave',
+        description: 'Privacy-focused web search engine',
+    },
 }
 
 export function SearchEnginesSection({ app, plugin }: SearchEnginesSectionProps) {
     const { settings, setSettings } = useSettings()
 
-    const searchEngines: SearchEngineType[] = ['perplexity', 'tavily']
+    const searchEngines: SearchEngineType[] = ['perplexity', 'tavily', 'brave']
 
     // Track which API key input is being edited
     const [editingApiKey, setEditingApiKey] = useState<SearchEngineType | null>(null)

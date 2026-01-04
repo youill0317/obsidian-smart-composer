@@ -3,6 +3,7 @@ import {
     SearchResult,
 } from '../../types/search.types'
 
+import { BraveSearchProvider } from './braveSearchProvider'
 import { PerplexitySearchProvider } from './perplexitySearchProvider'
 import { TavilyProvider } from './tavilyProvider'
 
@@ -50,6 +51,19 @@ export class SearchManager {
             )
         }
 
+        if (this.config.brave.enabled && this.config.brave.apiKey) {
+            const braveProvider = new BraveSearchProvider(
+                this.config.brave.apiKey,
+                this.config.brave.options,
+            )
+            searchPromises.push(
+                braveProvider.search(query).catch((error) => {
+                    errors.push(`Brave: ${error.message}`)
+                    return []
+                }),
+            )
+        }
+
         if (searchPromises.length === 0) {
             throw new Error(
                 'No search engines enabled. Please enable at least one search engine in settings.',
@@ -85,7 +99,9 @@ export class SearchManager {
     hasEnabledEngines(): boolean {
         return (
             (this.config.tavily.enabled && !!this.config.tavily.apiKey) ||
-            (this.config.perplexity.enabled && !!this.config.perplexity.apiKey)
+            (this.config.perplexity.enabled && !!this.config.perplexity.apiKey) ||
+            (this.config.brave.enabled && !!this.config.brave.apiKey)
         )
     }
 }
+

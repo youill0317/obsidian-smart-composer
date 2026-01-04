@@ -12,6 +12,7 @@ import { embeddingModelSchema } from '../../types/embedding-model.types'
 import { mcpServerConfigSchema } from '../../types/mcp.types'
 import { llmProviderSchema } from '../../types/provider.types'
 import {
+  DEFAULT_BRAVE_OPTIONS,
   DEFAULT_PERPLEXITY_OPTIONS,
   DEFAULT_TAVILY_OPTIONS,
 } from '../../types/search.types'
@@ -34,6 +35,7 @@ const tavilyOptionsSchema = z.object({
     .catch(DEFAULT_TAVILY_OPTIONS.searchDepth),
   maxResults: z.number().min(1).max(20).catch(DEFAULT_TAVILY_OPTIONS.maxResults),
   chunksPerSource: z.number().min(1).max(10).catch(DEFAULT_TAVILY_OPTIONS.chunksPerSource),
+  startDate: z.string().optional().catch(undefined),
 })
 
 const perplexityOptionsSchema = z.object({
@@ -44,6 +46,15 @@ const perplexityOptionsSchema = z.object({
     .catch(DEFAULT_PERPLEXITY_OPTIONS.maxResults),
   maxTokens: z.number().min(1).catch(DEFAULT_PERPLEXITY_OPTIONS.maxTokens),
   maxTokensPerPage: z.number().min(1).catch(DEFAULT_PERPLEXITY_OPTIONS.maxTokensPerPage),
+  searchAfterDate: z.string().optional().catch(undefined),
+})
+
+const braveOptionsSchema = z.object({
+  count: z.number().min(1).max(20).catch(DEFAULT_BRAVE_OPTIONS.count),
+  country: z.string().optional().catch(undefined),
+  searchLang: z.string().optional().catch(DEFAULT_BRAVE_OPTIONS.searchLang),
+  uiLang: z.string().optional().catch(DEFAULT_BRAVE_OPTIONS.uiLang),
+  freshness: z.string().optional().catch(undefined),
 })
 
 const searchEnginesSchema = z.object({
@@ -68,6 +79,17 @@ const searchEnginesSchema = z.object({
       apiKey: '',
       enabled: false,
       options: DEFAULT_PERPLEXITY_OPTIONS,
+    }),
+  brave: z
+    .object({
+      apiKey: z.string().catch(''),
+      enabled: z.boolean().catch(false),
+      options: braveOptionsSchema.catch(DEFAULT_BRAVE_OPTIONS),
+    })
+    .catch({
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_BRAVE_OPTIONS,
     }),
 })
 
@@ -147,6 +169,11 @@ export const smartComposerSettingsSchema = z.object({
       apiKey: '',
       enabled: false,
       options: DEFAULT_PERPLEXITY_OPTIONS,
+    },
+    brave: {
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_BRAVE_OPTIONS,
     },
   }),
 })
