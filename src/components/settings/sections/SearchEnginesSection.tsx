@@ -1,5 +1,6 @@
 import { Settings } from 'lucide-react'
 import { App } from 'obsidian'
+import { useState } from 'react'
 
 import { useSettings } from '../../../contexts/settings-context'
 import SmartComposerPlugin from '../../../main'
@@ -27,6 +28,9 @@ export function SearchEnginesSection({ app, plugin }: SearchEnginesSectionProps)
 
     const searchEngines: SearchEngineType[] = ['perplexity', 'tavily']
 
+    // Track which API key input is being edited
+    const [editingApiKey, setEditingApiKey] = useState<SearchEngineType | null>(null)
+
     const handleToggleEnabled = async (engineType: SearchEngineType, enabled: boolean) => {
         await setSettings({
             ...settings,
@@ -35,6 +39,19 @@ export function SearchEnginesSection({ app, plugin }: SearchEnginesSectionProps)
                 [engineType]: {
                     ...settings.searchEngines[engineType],
                     enabled,
+                },
+            },
+        })
+    }
+
+    const handleApiKeyChange = async (engineType: SearchEngineType, apiKey: string) => {
+        await setSettings({
+            ...settings,
+            searchEngines: {
+                ...settings.searchEngines,
+                [engineType]: {
+                    ...settings.searchEngines[engineType],
+                    apiKey,
                 },
             },
         })
@@ -72,17 +89,35 @@ export function SearchEnginesSection({ app, plugin }: SearchEnginesSectionProps)
                             return (
                                 <tr key={engineType}>
                                     <td>{engineInfo.name}</td>
-                                    <td
-                                        className="smtcmp-settings-table-api-key"
-                                        onClick={() => {
-                                            new EditSearchEngineModal(
-                                                app,
-                                                plugin,
-                                                engineType,
-                                            ).open()
-                                        }}
-                                    >
-                                        {engineConfig.apiKey ? '••••••••' : 'Set API key'}
+                                    <td className="smtcmp-settings-table-api-key">
+                                        {editingApiKey === engineType ? (
+                                            <input
+                                                type="text"
+                                                className="smtcmp-settings-api-key-input"
+                                                defaultValue={engineConfig.apiKey}
+                                                placeholder="Enter API Key"
+                                                autoFocus
+                                                onBlur={(e) => {
+                                                    handleApiKeyChange(engineType, e.target.value)
+                                                    setEditingApiKey(null)
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        handleApiKeyChange(engineType, e.currentTarget.value)
+                                                        setEditingApiKey(null)
+                                                    } else if (e.key === 'Escape') {
+                                                        setEditingApiKey(null)
+                                                    }
+                                                }}
+                                            />
+                                        ) : (
+                                            <span
+                                                className="smtcmp-settings-api-key-display"
+                                                onClick={() => setEditingApiKey(engineType)}
+                                            >
+                                                {engineConfig.apiKey ? '••••••••' : 'Click to set API key'}
+                                            </span>
+                                        )}
                                     </td>
                                     <td>
                                         <ObsidianToggle

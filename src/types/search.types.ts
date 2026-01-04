@@ -14,12 +14,14 @@ export type TavilySearchDepth = 'basic' | 'advanced' | 'fast' | 'ultra-fast'
 export interface TavilyOptions {
     searchDepth: TavilySearchDepth
     maxResults: number
+    chunksPerSource: number // Only used when searchDepth is 'advanced'
 }
 
 // Perplexity provider options
 export interface PerplexitySearchOptions {
     maxResults: number
     maxTokens: number
+    maxTokensPerPage: number
 }
 
 // Search engine configuration in settings
@@ -44,11 +46,13 @@ export interface SearchEnginesConfig {
 export const DEFAULT_TAVILY_OPTIONS: TavilyOptions = {
     searchDepth: 'basic',
     maxResults: 5,
+    chunksPerSource: 3,
 }
 
 export const DEFAULT_PERPLEXITY_OPTIONS: PerplexitySearchOptions = {
     maxResults: 10,
     maxTokens: 25000,
+    maxTokensPerPage: 1000,
 }
 
 export const DEFAULT_SEARCH_ENGINES_CONFIG: SearchEnginesConfig = {

@@ -41,9 +41,6 @@ function SearchEngineFormComponent({
     onClose,
 }: SearchEngineFormComponentProps) {
     const settings = plugin.settings
-    const engineConfig = settings.searchEngines[engineType]
-
-    const [apiKey, setApiKey] = useState(engineConfig.apiKey)
 
     // Tavily-specific state
     const [searchDepth, setSearchDepth] = useState<TavilySearchDepth>(
@@ -52,6 +49,9 @@ function SearchEngineFormComponent({
     const [tavilyMaxResults, setTavilyMaxResults] = useState(
         engineType === 'tavily' ? settings.searchEngines.tavily.options.maxResults : 5,
     )
+    const [chunksPerSource, setChunksPerSource] = useState(
+        engineType === 'tavily' ? settings.searchEngines.tavily.options.chunksPerSource : 3,
+    )
 
     // Perplexity-specific state
     const [perplexityMaxResults, setPerplexityMaxResults] = useState(
@@ -59,6 +59,9 @@ function SearchEngineFormComponent({
     )
     const [maxTokens, setMaxTokens] = useState(
         engineType === 'perplexity' ? settings.searchEngines.perplexity.options.maxTokens : 25000,
+    )
+    const [maxTokensPerPage, setMaxTokensPerPage] = useState(
+        engineType === 'perplexity' ? settings.searchEngines.perplexity.options.maxTokensPerPage : 1000,
     )
 
     const handleSubmit = async () => {
@@ -69,10 +72,10 @@ function SearchEngineFormComponent({
                     ...settings.searchEngines,
                     tavily: {
                         ...settings.searchEngines.tavily,
-                        apiKey,
                         options: {
                             searchDepth,
                             maxResults: tavilyMaxResults,
+                            chunksPerSource,
                         },
                     },
                 },
@@ -84,10 +87,10 @@ function SearchEngineFormComponent({
                     ...settings.searchEngines,
                     perplexity: {
                         ...settings.searchEngines.perplexity,
-                        apiKey,
                         options: {
                             maxResults: perplexityMaxResults,
                             maxTokens,
+                            maxTokensPerPage,
                         },
                     },
                 },
@@ -98,17 +101,6 @@ function SearchEngineFormComponent({
 
     return (
         <>
-            <ObsidianSetting
-                name="API Key"
-                desc={`Enter your ${engineType === 'tavily' ? 'Tavily' : 'Perplexity'} API key.`}
-            >
-                <ObsidianTextInput
-                    value={apiKey}
-                    placeholder="Enter API Key"
-                    onChange={(value: string) => setApiKey(value)}
-                />
-            </ObsidianSetting>
-
             {engineType === 'tavily' && (
                 <>
                     <ObsidianSetting
@@ -143,6 +135,23 @@ function SearchEngineFormComponent({
                             }}
                         />
                     </ObsidianSetting>
+
+                    {searchDepth === 'advanced' && (
+                        <ObsidianSetting
+                            name="Chunks Per Source"
+                            desc="Number of content chunks per source (1-10). Only available for advanced search depth."
+                        >
+                            <ObsidianTextInput
+                                value={chunksPerSource.toString()}
+                                onChange={(value: string) => {
+                                    const parsed = parseInt(value)
+                                    if (!isNaN(parsed) && parsed >= 1 && parsed <= 10) {
+                                        setChunksPerSource(parsed)
+                                    }
+                                }}
+                            />
+                        </ObsidianSetting>
+                    )}
                 </>
             )}
 
@@ -173,6 +182,21 @@ function SearchEngineFormComponent({
                                 const parsed = parseInt(value)
                                 if (!isNaN(parsed) && parsed >= 1) {
                                     setMaxTokens(parsed)
+                                }
+                            }}
+                        />
+                    </ObsidianSetting>
+
+                    <ObsidianSetting
+                        name="Max Tokens Per Page"
+                        desc="Maximum tokens per page for content retrieval."
+                    >
+                        <ObsidianTextInput
+                            value={maxTokensPerPage.toString()}
+                            onChange={(value: string) => {
+                                const parsed = parseInt(value)
+                                if (!isNaN(parsed) && parsed >= 1) {
+                                    setMaxTokensPerPage(parsed)
                                 }
                             }}
                         />

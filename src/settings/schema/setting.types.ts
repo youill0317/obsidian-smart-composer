@@ -33,6 +33,7 @@ const tavilyOptionsSchema = z.object({
     .enum(['basic', 'advanced', 'fast', 'ultra-fast'])
     .catch(DEFAULT_TAVILY_OPTIONS.searchDepth),
   maxResults: z.number().min(1).max(20).catch(DEFAULT_TAVILY_OPTIONS.maxResults),
+  chunksPerSource: z.number().min(1).max(10).catch(DEFAULT_TAVILY_OPTIONS.chunksPerSource),
 })
 
 const perplexityOptionsSchema = z.object({
@@ -42,6 +43,7 @@ const perplexityOptionsSchema = z.object({
     .max(20)
     .catch(DEFAULT_PERPLEXITY_OPTIONS.maxResults),
   maxTokens: z.number().min(1).catch(DEFAULT_PERPLEXITY_OPTIONS.maxTokens),
+  maxTokensPerPage: z.number().min(1).catch(DEFAULT_PERPLEXITY_OPTIONS.maxTokensPerPage),
 })
 
 const searchEnginesSchema = z.object({

@@ -47,6 +47,7 @@ export class PerplexitySearchProvider implements SearchProvider {
                     query,
                     max_results: this.options.maxResults,
                     max_tokens: this.options.maxTokens,
+                    max_tokens_per_page: this.options.maxTokensPerPage,
                 }),
             }),
             timeout(REQUEST_TIMEOUT_MS),
