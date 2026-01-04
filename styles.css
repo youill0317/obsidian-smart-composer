@@ -1866,3 +1866,112 @@ button.smtcmp-chat-input-model-select {
 .smtcmp-setting-item--nested {
   padding-left: var(--size-4-4);
 }
+
+/* Web Search Result Message */
+.smtcmp-web-search-result-message {
+  padding: var(--size-4-2);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-m);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.smtcmp-web-search-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.smtcmp-web-search-result-query {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+}
+
+.smtcmp-web-search-result-count {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.smtcmp-web-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.smtcmp-web-search-result-item {
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.smtcmp-web-search-result-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+}
+
+.smtcmp-web-search-result-title {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  color: var(--text-accent);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  flex: 1;
+  word-break: break-word;
+}
+
+.smtcmp-web-search-result-title:hover {
+  text-decoration: underline;
+}
+
+.smtcmp-web-search-result-apply-btn {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.smtcmp-web-search-result-apply-btn:hover {
+  color: var(--text-normal);
+}
+
+.smtcmp-web-search-result-url {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.smtcmp-web-search-result-content {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  line-height: var(--line-height-normal);
+  max-height: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smtcmp-web-search-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--size-4-1);
+}
+
+.smtcmp-web-search-result-apply-all-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  font-size: var(--font-ui-smaller);
+}
+
+.smtcmp-chat-user-input-submit-button-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

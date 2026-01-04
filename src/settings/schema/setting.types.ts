@@ -11,6 +11,10 @@ import { chatModelSchema } from '../../types/chat-model.types'
 import { embeddingModelSchema } from '../../types/embedding-model.types'
 import { mcpServerConfigSchema } from '../../types/mcp.types'
 import { llmProviderSchema } from '../../types/provider.types'
+import {
+  DEFAULT_PERPLEXITY_OPTIONS,
+  DEFAULT_TAVILY_OPTIONS,
+} from '../../types/search.types'
 
 import { SETTINGS_SCHEMA_VERSION } from './migrations'
 
@@ -21,6 +25,48 @@ const ragOptionsSchema = z.object({
   limit: z.number().catch(10),
   excludePatterns: z.array(z.string()).catch([]),
   includePatterns: z.array(z.string()).catch([]),
+})
+
+// Search Engines Schema
+const tavilyOptionsSchema = z.object({
+  searchDepth: z
+    .enum(['basic', 'advanced', 'fast', 'ultra-fast'])
+    .catch(DEFAULT_TAVILY_OPTIONS.searchDepth),
+  maxResults: z.number().min(1).max(20).catch(DEFAULT_TAVILY_OPTIONS.maxResults),
+})
+
+const perplexityOptionsSchema = z.object({
+  maxResults: z
+    .number()
+    .min(1)
+    .max(20)
+    .catch(DEFAULT_PERPLEXITY_OPTIONS.maxResults),
+  maxTokens: z.number().min(1).catch(DEFAULT_PERPLEXITY_OPTIONS.maxTokens),
+})
+
+const searchEnginesSchema = z.object({
+  tavily: z
+    .object({
+      apiKey: z.string().catch(''),
+      enabled: z.boolean().catch(false),
+      options: tavilyOptionsSchema.catch(DEFAULT_TAVILY_OPTIONS),
+    })
+    .catch({
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_TAVILY_OPTIONS,
+    }),
+  perplexity: z
+    .object({
+      apiKey: z.string().catch(''),
+      enabled: z.boolean().catch(false),
+      options: perplexityOptionsSchema.catch(DEFAULT_PERPLEXITY_OPTIONS),
+    })
+    .catch({
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_PERPLEXITY_OPTIONS,
+    }),
 })
 
 /**
@@ -43,13 +89,13 @@ export const smartComposerSettingsSchema = z.object({
     .string()
     .catch(
       DEFAULT_CHAT_MODELS.find((v) => v.id === DEFAULT_CHAT_MODEL_ID)?.id ??
-        DEFAULT_CHAT_MODELS[0].id,
+      DEFAULT_CHAT_MODELS[0].id,
     ), // model for default chat feature
   applyModelId: z
     .string()
     .catch(
       DEFAULT_CHAT_MODELS.find((v) => v.id === DEFAULT_APPLY_MODEL_ID)?.id ??
-        DEFAULT_CHAT_MODELS[0].id,
+      DEFAULT_CHAT_MODELS[0].id,
     ), // model for apply feature
   embeddingModelId: z.string().catch(DEFAULT_EMBEDDING_MODELS[0].id), // model for embedding
 
@@ -87,6 +133,20 @@ export const smartComposerSettingsSchema = z.object({
       enableTools: true,
       maxAutoIterations: 1,
     }),
+
+  // Search Engines
+  searchEngines: searchEnginesSchema.catch({
+    tavily: {
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_TAVILY_OPTIONS,
+    },
+    perplexity: {
+      apiKey: '',
+      enabled: false,
+      options: DEFAULT_PERPLEXITY_OPTIONS,
+    },
+  }),
 })
 export type SmartComposerSettings = z.infer<typeof smartComposerSettingsSchema>
 

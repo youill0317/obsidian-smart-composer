@@ -6,6 +6,7 @@ import { ChatModel } from './chat-model.types'
 import { ContentPart } from './llm/request'
 import { Annotation, ResponseUsage } from './llm/response'
 import { Mentionable, SerializedMentionable } from './mentionable'
+import { SearchResult } from './search.types'
 import { ToolCallRequest, ToolCallResponse } from './tool-call.types'
 
 export type ChatUserMessage = {
@@ -40,10 +41,18 @@ export type ChatToolMessage = {
   }[]
 }
 
+export type ChatWebSearchResultMessage = {
+  role: 'web-search-result'
+  id: string
+  query: string
+  results: SearchResult[]
+}
+
 export type ChatMessage =
   | ChatUserMessage
   | ChatAssistantMessage
   | ChatToolMessage
+  | ChatWebSearchResultMessage
 
 export type AssistantToolMessageGroup = (
   | ChatAssistantMessage
@@ -81,10 +90,19 @@ export type SerializedChatToolMessage = {
   }[]
   id: string
 }
+
+export type SerializedChatWebSearchResultMessage = {
+  role: 'web-search-result'
+  id: string
+  query: string
+  results: SearchResult[]
+}
+
 export type SerializedChatMessage =
   | SerializedChatUserMessage
   | SerializedChatAssistantMessage
   | SerializedChatToolMessage
+  | SerializedChatWebSearchResultMessage
 
 export type ChatConversation = {
   schemaVersion: number

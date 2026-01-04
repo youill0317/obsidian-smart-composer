@@ -62,9 +62,9 @@ export function useChatHistory(): UseChatHistory {
               id,
               title: firstUserMessage?.content
                 ? editorStateToPlainText(firstUserMessage.content).substring(
-                    0,
-                    50,
-                  )
+                  0,
+                  50,
+                )
                 : 'New chat',
               messages: serializedMessages,
             })
@@ -155,6 +155,13 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
         toolCalls: message.toolCalls,
         id: message.id,
       }
+    case 'web-search-result':
+      return {
+        role: 'web-search-result',
+        id: message.id,
+        query: message.query,
+        results: message.results,
+      }
   }
 }
 
@@ -191,6 +198,13 @@ const deserializeChatMessage = (
         role: 'tool',
         toolCalls: message.toolCalls,
         id: message.id,
+      }
+    case 'web-search-result':
+      return {
+        role: 'web-search-result',
+        id: message.id,
+        query: message.query,
+        results: message.results,
       }
   }
 }

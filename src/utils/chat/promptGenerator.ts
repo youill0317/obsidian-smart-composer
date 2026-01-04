@@ -132,6 +132,22 @@ export class PromptGenerator {
           ]
         } else if (message.role === 'assistant') {
           return this.parseAssistantMessage({ message })
+        } else if (message.role === 'web-search-result') {
+          // Convert web search results to a user message with the search results
+          const searchResultsText = message.results
+            .map(
+              (result) => `### ${result.title}
+URL: ${result.url}
+${result.content}
+`,
+            )
+            .join('\n')
+          return [
+            {
+              role: 'user',
+              content: `## Web Search Results for "${message.query}"\n${searchResultsText}`,
+            },
+          ]
         } else {
           // message.role === 'tool'
           return this.parseToolMessage({ message })
@@ -190,13 +206,13 @@ export class PromptGenerator {
     if (message.annotations && message.annotations.length > 0) {
       citationContent = `Citations:
 ${message.annotations
-  .map((annotation, index) => {
-    if (annotation.type === 'url_citation') {
-      const { url, title } = annotation.url_citation
-      return `[${index + 1}] ${title ? `${title}: ` : ''}${url}`
-    }
-  })
-  .join('\n')}`
+          .map((annotation, index) => {
+            if (annotation.type === 'url_citation') {
+              const { url, title } = annotation.url_citation
+              return `[${index + 1}] ${title ? `${title}: ` : ''}${url}`
+            }
+          })
+          .join('\n')}`
     }
 
     return [
@@ -309,21 +325,21 @@ ${message.annotations
       if (shouldUseRAG) {
         similaritySearchResults = useVaultSearch
           ? await (
-              await this.getRagEngine()
-            ).processQuery({
-              query,
-              onQueryProgressChange: onQueryProgressChange,
-            }) // TODO: Add similarity boosting for mentioned files or folders
+            await this.getRagEngine()
+          ).processQuery({
+            query,
+            onQueryProgressChange: onQueryProgressChange,
+          }) // TODO: Add similarity boosting for mentioned files or folders
           : await (
-              await this.getRagEngine()
-            ).processQuery({
-              query,
-              scope: {
-                files: files.map((f) => f.path),
-                folders: folders.map((f) => f.path),
-              },
-              onQueryProgressChange: onQueryProgressChange,
-            })
+            await this.getRagEngine()
+          ).processQuery({
+            query,
+            scope: {
+              files: files.map((f) => f.path),
+              folders: folders.map((f) => f.path),
+            },
+            onQueryProgressChange: onQueryProgressChange,
+          })
 
         const fileTextCache = new Map<string, string>()
         const getFileTextByPath = async (path: string): Promise<string> => {
@@ -412,9 +428,9 @@ ${message.annotations
           const rendered =
             this.getModelPromptLevel() == PromptLevel.Default
               ? this.addLineNumbersToContent({
-                  content,
-                  startLine,
-                })
+                content,
+                startLine,
+              })
               : content
           return `\`\`\`${path}\n${rendered}\n\`\`\`\n`
         }
@@ -480,16 +496,16 @@ ${blocks.join('')}\n`
         urls.length > 0
           ? `## Potentially Relevant Websearch Results
 ${(
-  await Promise.all(
-    urls.map(
-      async ({ url }) => `\`\`\`
+            await Promise.all(
+              urls.map(
+                async ({ url }) => `\`\`\`
 Website URL: ${url}
 Website Content:
 ${await this.getWebsiteContent(url)}
 \`\`\``,
-    ),
-  )
-).join('\n')}
+              ),
+            )
+          ).join('\n')}
 `
           : ''
 
@@ -539,9 +555,8 @@ ${await this.getWebsiteContent(url)}
 
 3. Format your response in markdown.
 
-${
-  modelPromptLevel == PromptLevel.Default
-    ? `4. Respond in the same language as the user's message.
+${modelPromptLevel == PromptLevel.Default
+        ? `4. Respond in the same language as the user's message.
 
 5. When writing out new markdown blocks, also wrap them with <smtcmp_block> tags. For example:
 <smtcmp_block language="markdown">
@@ -566,8 +581,8 @@ ${
 </smtcmp_block>
 The user has full access to the file, so they prefer seeing only the changes in the markdown. Often this will mean that the start/end of the file will be skipped, but that's okay! Rewrite the entire file only if specifically requested. Always provide a brief explanation of the updates, except when the user specifically asks for just the content.
 `
-    : ''
-}`
+        : ''
+      }`
 
     const systemPromptRAG = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}. You will be given your conversation history with them and potentially relevant blocks of markdown content from the current vault.
       
@@ -575,9 +590,8 @@ The user has full access to the file, so they prefer seeing only the changes in 
 
 2. Format your response in markdown.
 
-${
-  modelPromptLevel == PromptLevel.Default
-    ? `3. Respond in the same language as the user's message.
+${modelPromptLevel == PromptLevel.Default
+        ? `3. Respond in the same language as the user's message.
 
 4. When referencing markdown blocks in your answer, keep the following guidelines in mind:
 
@@ -595,8 +609,8 @@ ${
 
   d. When referencing a markdown block the user gives you, only add the startLine and endLine attributes to the <smtcmp_block> tags. Write related content outside of the <smtcmp_block> tags. The content inside the <smtcmp_block> tags will be ignored and replaced with the actual content of the markdown block. For example:
   <smtcmp_block filename="path/to/file.md" language="markdown" startLine="2" endLine="30"></smtcmp_block>`
-    : ''
-}`
+        : ''
+      }`
 
     return {
       role: 'system',

@@ -2,18 +2,22 @@ import {
   AssistantToolMessageGroup,
   ChatMessage,
   ChatUserMessage,
+  ChatWebSearchResultMessage,
 } from '../../types/chat'
 
 export function groupAssistantAndToolMessages(
   messages: ChatMessage[],
-): (ChatUserMessage | AssistantToolMessageGroup)[] {
+): (ChatUserMessage | ChatWebSearchResultMessage | AssistantToolMessageGroup)[] {
   return messages.reduce(
     (
-      acc: (ChatUserMessage | AssistantToolMessageGroup)[],
+      acc: (ChatUserMessage | ChatWebSearchResultMessage | AssistantToolMessageGroup)[],
       message,
-    ): (ChatUserMessage | AssistantToolMessageGroup)[] => {
+    ): (ChatUserMessage | ChatWebSearchResultMessage | AssistantToolMessageGroup)[] => {
       if (message.role === 'user') {
         // Always push user messages directly
+        acc.push(message)
+      } else if (message.role === 'web-search-result') {
+        // Always push web search result messages directly
         acc.push(message)
       } else {
         // For assistant or tool messages, check if we can add to an existing group

@@ -34,6 +34,7 @@ import { NodeMutations } from './plugins/on-mutation/OnMutationPlugin'
 import { SubmitButton } from './SubmitButton'
 import ToolBadge from './ToolBadge'
 import { VaultChatButton } from './VaultChatButton'
+import { WebSearchButton } from './WebSearchButton'
 
 export type ChatUserInputRef = {
   focus: () => void
@@ -42,12 +43,13 @@ export type ChatUserInputRef = {
 export type ChatUserInputProps = {
   initialSerializedEditorState: SerializedEditorState | null
   onChange: (content: SerializedEditorState) => void
-  onSubmit: (content: SerializedEditorState, useVaultSearch?: boolean) => void
+  onSubmit: (content: SerializedEditorState, useVaultSearch?: boolean, useWebSearch?: boolean) => void
   onFocus: () => void
   mentionables: Mentionable[]
   setMentionables: (mentionables: Mentionable[]) => void
   autoFocus?: boolean
   addedBlockKey?: string | null
+  isWebSearchDisabled?: boolean
 }
 
 const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
@@ -61,6 +63,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
       setMentionables,
       autoFocus = false,
       addedBlockKey,
+      isWebSearchDisabled = false,
     },
     ref,
   ) => {
@@ -195,9 +198,9 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
       handleCreateImageMentionables(mentionableImages)
     }
 
-    const handleSubmit = (options: { useVaultSearch?: boolean } = {}) => {
+    const handleSubmit = (options: { useVaultSearch?: boolean; useWebSearch?: boolean } = {}) => {
       const content = editorRef.current?.getEditorState()?.toJSON()
-      content && onSubmit(content, options.useVaultSearch)
+      content && onSubmit(content, options.useVaultSearch, options.useWebSearch)
     }
 
     return (
@@ -282,6 +285,12 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
               onClick={() => {
                 handleSubmit({ useVaultSearch: true })
               }}
+            />
+            <WebSearchButton
+              onClick={() => {
+                handleSubmit({ useWebSearch: true })
+              }}
+              disabled={isWebSearchDisabled}
             />
           </div>
         </div>

@@ -24,12 +24,14 @@ import {
   LLMBaseUrlNotSetException,
 } from '../../core/llm/exception'
 import { getChatModelClient } from '../../core/llm/manager'
+import { SearchManager } from '../../core/search/searchManager'
 import { useChatHistory } from '../../hooks/useChatHistory'
 import {
   AssistantToolMessageGroup,
   ChatMessage,
   ChatToolMessage,
   ChatUserMessage,
+  ChatWebSearchResultMessage,
 } from '../../types/chat'
 import {
   MentionableBlock,
@@ -56,6 +58,7 @@ import QueryProgress, { QueryProgressState } from './QueryProgress'
 import { useAutoScroll } from './useAutoScroll'
 import { useChatStreamManager } from './useChatStreamManager'
 import UserMessageItem from './UserMessageItem'
+import WebSearchResultMessage from './WebSearchResultMessage'
 
 // Add an empty line here
 const getNewInputMessage = (app: App): ChatUserMessage => {
@@ -100,6 +103,14 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     return new PromptGenerator(getRAGEngine, app, settings)
   }, [getRAGEngine, app, settings])
 
+  // Check if any search engine is enabled and has API key
+  const isWebSearchDisabled = useMemo(() => {
+    const { searchEngines } = settings
+    const tavilyEnabled = searchEngines.tavily.enabled && !!searchEngines.tavily.apiKey
+    const perplexityEnabled = searchEngines.perplexity.enabled && !!searchEngines.perplexity.apiKey
+    return !tavilyEnabled && !perplexityEnabled
+  }, [settings])
+
   const [inputMessage, setInputMessage] = useState<ChatUserMessage>(() => {
     const newMessage = getNewInputMessage(app)
     if (props.selectedBlock) {
@@ -116,11 +127,11 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
   const [addedBlockKey, setAddedBlockKey] = useState<string | null>(
     props.selectedBlock
       ? getMentionableKey(
-          serializeMentionable({
-            type: 'block',
-            ...props.selectedBlock,
-          }),
-        )
+        serializeMentionable({
+          type: 'block',
+          ...props.selectedBlock,
+        }),
+      )
       : null,
   )
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -131,7 +142,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     type: 'idle',
   })
 
-  const groupedChatMessages: (ChatUserMessage | AssistantToolMessageGroup)[] =
+  const groupedChatMessages: (ChatUserMessage | ChatWebSearchResultMessage | AssistantToolMessageGroup)[] =
     useMemo(() => {
       return groupAssistantAndToolMessages(chatMessages)
     }, [chatMessages])
@@ -210,14 +221,22 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     async ({
       inputChatMessages,
       useVaultSearch,
+      useWebSearch,
     }: {
       inputChatMessages: ChatMessage[]
       useVaultSearch?: boolean
+      useWebSearch?: boolean
     }) => {
       abortActiveStreams()
       setQueryProgress({
         type: 'idle',
       })
+
+      // Check if web search is requested but no search engines are configured
+      if (useWebSearch && isWebSearchDisabled) {
+        new Notice('No search engines enabled. Please configure a search engine in settings.')
+        return
+      }
 
       // Update the chat history to show the new user message
       setChatMessages(inputChatMessages)
@@ -230,6 +249,49 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         throw new Error('Last message is not a user message')
       }
 
+      // Web search mode: skip LLM, only show search results
+      if (useWebSearch) {
+        const query = lastMessage.content
+          ? editorStateToPlainText(lastMessage.content)
+          : ''
+
+        if (!query.trim()) {
+          new Notice('Please enter a search query.')
+          return
+        }
+
+        setQueryProgress({
+          type: 'web-searching',
+        })
+
+        try {
+          const searchManager = new SearchManager(settings.searchEngines)
+          const searchResults = await searchManager.search(query)
+
+          const webSearchResultMessage: ChatWebSearchResultMessage = {
+            role: 'web-search-result',
+            id: uuidv4(),
+            query: query,
+            results: searchResults,
+          }
+
+          const messagesWithWebSearch = [...inputChatMessages, webSearchResultMessage]
+          setChatMessages(messagesWithWebSearch)
+
+          setQueryProgress({
+            type: 'idle',
+          })
+        } catch (error) {
+          console.error('Web search failed:', error)
+          new Notice(`Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          setQueryProgress({
+            type: 'idle',
+          })
+        }
+        return
+      }
+
+      // Normal chat flow (Chat/Vault Chat)
       const compiledMessages = await Promise.all(
         inputChatMessages.map(async (message) => {
           if (message.role === 'user' && message.id === lastMessage.id) {
@@ -273,6 +335,8 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       promptGenerator,
       abortActiveStreams,
       forceScrollToBottom,
+      isWebSearchDisabled,
+      settings.searchEngines,
     ],
   )
 
@@ -473,14 +537,14 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         prevChatHistory.map((message) =>
           message.id === focusedMessageId && message.role === 'user'
             ? {
-                ...message,
-                mentionables: [
-                  mentionable,
-                  ...message.mentionables.filter(
-                    (mentionable) => mentionable.type !== 'current-file',
-                  ),
-                ],
-              }
+              ...message,
+              mentionables: [
+                mentionable,
+                ...message.mentionables.filter(
+                  (mentionable) => mentionable.type !== 'current-file',
+                ),
+              ],
+            }
             : message,
         ),
       )
@@ -607,8 +671,49 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         </div>
       </div>
       <div className="smtcmp-chat-messages" ref={chatMessagesRef}>
-        {groupedChatMessages.map((messageOrGroup, index) =>
-          !Array.isArray(messageOrGroup) ? (
+        {groupedChatMessages.map((messageOrGroup, index) => {
+          // Handle array (assistant/tool messages group)
+          if (Array.isArray(messageOrGroup)) {
+            return (
+              <AssistantToolMessageGroupItem
+                key={messageOrGroup.at(0)?.id}
+                messages={messageOrGroup}
+                contextMessages={groupedChatMessages
+                  .slice(0, index + 1)
+                  .flatMap((messageOrGroup): ChatMessage[] =>
+                    !Array.isArray(messageOrGroup)
+                      ? [messageOrGroup]
+                      : messageOrGroup,
+                  )}
+                conversationId={currentConversationId}
+                isApplying={applyMutation.isPending}
+                onApply={handleApply}
+                onToolMessageUpdate={handleToolMessageUpdate}
+              />
+            )
+          }
+
+          // Handle web-search-result message
+          if (messageOrGroup.role === 'web-search-result') {
+            return (
+              <WebSearchResultMessage
+                key={messageOrGroup.id}
+                message={messageOrGroup}
+                contextMessages={groupedChatMessages
+                  .slice(0, index + 1)
+                  .flatMap((messageOrGroup): ChatMessage[] =>
+                    !Array.isArray(messageOrGroup)
+                      ? [messageOrGroup]
+                      : messageOrGroup,
+                  )}
+                onApply={handleApply}
+                isApplying={applyMutation.isPending}
+              />
+            )
+          }
+
+          // Handle user message
+          return (
             <UserMessageItem
               key={messageOrGroup.id}
               message={messageOrGroup}
@@ -620,9 +725,9 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                   prevChatHistory.map((msg) =>
                     msg.role === 'user' && msg.id === messageOrGroup.id
                       ? {
-                          ...msg,
-                          content,
-                        }
+                        ...msg,
+                        content,
+                      }
                       : msg,
                   ),
                 )
@@ -663,24 +768,8 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                 )
               }}
             />
-          ) : (
-            <AssistantToolMessageGroupItem
-              key={messageOrGroup.at(0)?.id}
-              messages={messageOrGroup}
-              contextMessages={groupedChatMessages
-                .slice(0, index + 1)
-                .flatMap((messageOrGroup): ChatMessage[] =>
-                  !Array.isArray(messageOrGroup)
-                    ? [messageOrGroup]
-                    : messageOrGroup,
-                )}
-              conversationId={currentConversationId}
-              isApplying={applyMutation.isPending}
-              onApply={handleApply}
-              onToolMessageUpdate={handleToolMessageUpdate}
-            />
-          ),
-        )}
+          )
+        })}
         <QueryProgress state={queryProgress} />
         {showContinueResponseButton && (
           <div className="smtcmp-continue-response-button-container">
@@ -709,11 +798,12 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
             content,
           }))
         }}
-        onSubmit={(content, useVaultSearch) => {
+        onSubmit={(content, useVaultSearch, useWebSearch) => {
           if (editorStateToPlainText(content).trim() === '') return
           handleUserMessageSubmit({
             inputChatMessages: [...chatMessages, { ...inputMessage, content }],
             useVaultSearch,
+            useWebSearch,
           })
           setInputMessage(getNewInputMessage(app))
         }}
@@ -729,6 +819,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         }}
         autoFocus
         addedBlockKey={addedBlockKey}
+        isWebSearchDisabled={isWebSearchDisabled}
       />
     </div>
   )

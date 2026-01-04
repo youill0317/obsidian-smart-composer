@@ -3,24 +3,27 @@ import DotLoader from '../common/DotLoader'
 
 export type QueryProgressState =
   | {
-      type: 'reading-mentionables'
-    }
+    type: 'reading-mentionables'
+  }
   | {
-      type: 'indexing'
-      indexProgress: IndexProgress
-    }
+    type: 'indexing'
+    indexProgress: IndexProgress
+  }
   | {
-      type: 'querying'
-    }
+    type: 'querying'
+  }
   | {
-      type: 'querying-done'
-      queryResult: (Omit<SelectEmbedding, 'embedding'> & {
-        similarity: number
-      })[]
-    }
+    type: 'querying-done'
+    queryResult: (Omit<SelectEmbedding, 'embedding'> & {
+      similarity: number
+    })[]
+  }
   | {
-      type: 'idle'
-    }
+    type: 'web-searching'
+  }
+  | {
+    type: 'idle'
+  }
 
 export type IndexProgress = {
   completedChunks: number
@@ -84,6 +87,15 @@ export default function QueryProgress({
               <p>{result.similarity}</p>
             </div>
           ))}
+        </div>
+      )
+    case 'web-searching':
+      return (
+        <div className="smtcmp-query-progress">
+          <p>
+            Searching the web
+            <DotLoader />
+          </p>
         </div>
       )
   }
