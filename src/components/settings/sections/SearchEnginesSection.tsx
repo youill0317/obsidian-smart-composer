@@ -68,9 +68,9 @@ export function SearchEnginesSection({ app, plugin }: SearchEnginesSectionProps)
             <div className="smtcmp-settings-table-container">
                 <table className="smtcmp-settings-table">
                     <colgroup>
+                        <col width={120} />
                         <col />
-                        <col />
-                        <col width={80} />
+                        <col width={70} />
                         <col width={60} />
                     </colgroup>
                     <thead>
