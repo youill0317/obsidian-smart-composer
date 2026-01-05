@@ -732,7 +732,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                   ),
                 )
               }}
-              onSubmit={(content, useVaultSearch) => {
+              onSubmit={(content, useVaultSearch, useWebSearch) => {
                 if (editorStateToPlainText(content).trim() === '') return
                 handleUserMessageSubmit({
                   inputChatMessages: [
@@ -752,6 +752,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                     },
                   ],
                   useVaultSearch,
+                  useWebSearch,
                 })
                 chatUserInputRefs.current.get(inputMessage.id)?.focus()
               }}
@@ -767,6 +768,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                   ),
                 )
               }}
+              isWebSearchDisabled={isWebSearchDisabled}
             />
           )
         })}

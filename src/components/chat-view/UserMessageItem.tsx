@@ -10,9 +10,10 @@ export type UserMessageItemProps = {
   message: ChatUserMessage
   chatUserInputRef: (ref: ChatUserInputRef | null) => void
   onInputChange: (content: SerializedEditorState) => void
-  onSubmit: (content: SerializedEditorState, useVaultSearch: boolean) => void
+  onSubmit: (content: SerializedEditorState, useVaultSearch?: boolean, useWebSearch?: boolean) => void
   onFocus: () => void
   onMentionablesChange: (mentionables: Mentionable[]) => void
+  isWebSearchDisabled?: boolean
 }
 
 export default function UserMessageItem({
@@ -22,6 +23,7 @@ export default function UserMessageItem({
   onSubmit,
   onFocus,
   onMentionablesChange,
+  isWebSearchDisabled,
 }: UserMessageItemProps) {
   return (
     <div className="smtcmp-chat-messages-user">
@@ -33,6 +35,7 @@ export default function UserMessageItem({
         onFocus={onFocus}
         mentionables={message.mentionables}
         setMentionables={onMentionablesChange}
+        isWebSearchDisabled={isWebSearchDisabled}
       />
       {message.similaritySearchResults && (
         <SimilaritySearchResults
