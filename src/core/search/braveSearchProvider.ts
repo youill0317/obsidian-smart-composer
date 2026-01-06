@@ -68,7 +68,8 @@ export class BraveSearchProvider implements SearchProvider {
         ])
 
         if (response.status !== 200) {
-            throw new Error(`Brave Search API error: ${response.status}`)
+            const errorDetail = response.json?.error?.message || response.json?.message || ''
+            throw new Error(`Brave Search API error (${response.status})${errorDetail ? `: ${errorDetail}` : ''}`)
         }
 
         const data: BraveSearchResponse = response.json

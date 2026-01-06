@@ -86,13 +86,27 @@ export class SearchManager {
     }
 
     private deduplicateResults(results: SearchResult[]): SearchResult[] {
-        const seen = new Set<string>()
-        return results.filter((result) => {
-            if (seen.has(result.url)) {
-                return false
+        const urlMap = new Map<string, SearchResult>()
+
+        results.forEach((result) => {
+            const existing = urlMap.get(result.url)
+            if (!existing) {
+                urlMap.set(result.url, result)
+            } else if (
+                result.score !== undefined &&
+                (existing.score === undefined || result.score > existing.score)
+            ) {
+                // Keep the result with the higher score
+                urlMap.set(result.url, result)
             }
-            seen.add(result.url)
-            return true
+        })
+
+        // Sort by score (highest first), results without score go to the end
+        return Array.from(urlMap.values()).sort((a, b) => {
+            if (a.score === undefined && b.score === undefined) return 0
+            if (a.score === undefined) return 1
+            if (b.score === undefined) return -1
+            return b.score - a.score
         })
     }
 

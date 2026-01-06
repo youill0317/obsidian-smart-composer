@@ -57,7 +57,8 @@ export class PerplexitySearchProvider implements SearchProvider {
         ])
 
         if (response.status !== 200) {
-            throw new Error(`Perplexity API error: ${response.status}`)
+            const errorDetail = response.json?.error?.message || response.json?.message || ''
+            throw new Error(`Perplexity API error (${response.status})${errorDetail ? `: ${errorDetail}` : ''}`)
         }
 
         const data: PerplexitySearchResponse = response.json

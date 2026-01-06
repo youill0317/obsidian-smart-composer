@@ -108,7 +108,8 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     const { searchEngines } = settings
     const tavilyEnabled = searchEngines.tavily.enabled && !!searchEngines.tavily.apiKey
     const perplexityEnabled = searchEngines.perplexity.enabled && !!searchEngines.perplexity.apiKey
-    return !tavilyEnabled && !perplexityEnabled
+    const braveEnabled = searchEngines.brave.enabled && !!searchEngines.brave.apiKey
+    return !tavilyEnabled && !perplexityEnabled && !braveEnabled
   }, [settings])
 
   const [inputMessage, setInputMessage] = useState<ChatUserMessage>(() => {

@@ -61,7 +61,8 @@ export class TavilyProvider implements SearchProvider {
         ])
 
         if (response.status !== 200) {
-            throw new Error(`Tavily API error: ${response.status}`)
+            const errorDetail = response.json?.error?.message || response.json?.message || response.json?.detail || ''
+            throw new Error(`Tavily API error (${response.status})${errorDetail ? `: ${errorDetail}` : ''}`)
         }
 
         const data: TavilySearchResponse = response.json
