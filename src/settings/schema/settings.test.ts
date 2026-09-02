@@ -22,7 +22,7 @@ describe('parseSmartComposerSettings', () => {
 
       chatModelId: DEFAULT_CHAT_MODEL_ID,
       applyModelId: DEFAULT_APPLY_MODEL_ID,
-      embeddingModelId: 'openai/text-embedding-3-small',
+      embeddingModelId: DEFAULT_EMBEDDING_MODELS[0].id,
 
       systemPrompt: '',
 

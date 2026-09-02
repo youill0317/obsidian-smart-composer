@@ -61,6 +61,7 @@ export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
 export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5', 'gpt-5.2']
 export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-4.1-mini']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
+  'voyage/voyage-4',
   'openai/text-embedding-3-small',
 ]
 
@@ -140,6 +141,14 @@ export const PROVIDER_TYPES_INFO = {
     requireApiKey: true,
     requireBaseUrl: false,
     supportEmbedding: false,
+    additionalSettings: [],
+  },
+  voyage: {
+    label: 'Voyage AI',
+    defaultProviderId: 'voyage',
+    requireApiKey: true,
+    requireBaseUrl: false,
+    supportEmbedding: true,
     additionalSettings: [],
   },
   perplexity: {
@@ -274,6 +283,10 @@ export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
   {
     type: 'mistral',
     id: PROVIDER_TYPES_INFO.mistral.defaultProviderId,
+  },
+  {
+    type: 'voyage',
+    id: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
   },
   {
     type: 'perplexity',
@@ -427,6 +440,27 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
  * 2. If there's same embedding model id in user's settings, it's data should be overwritten by default embedding model
  */
 export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4',
+    model: 'voyage-4',
+    dimension: 1024,
+  },
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4-large',
+    model: 'voyage-4-large',
+    dimension: 1024,
+  },
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4-lite',
+    model: 'voyage-4-lite',
+    dimension: 1024,
+  },
   {
     providerType: 'openai',
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,

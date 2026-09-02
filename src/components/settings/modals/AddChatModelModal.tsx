@@ -35,7 +35,7 @@ function AddChatModelModalComponent({
 }: AddChatModelModalComponentProps) {
   const [formData, setFormData] = useState<ChatModel>({
     providerId: DEFAULT_PROVIDERS[0].id,
-    providerType: DEFAULT_PROVIDERS[0].type,
+    providerType: DEFAULT_PROVIDERS[0].type as ChatModel['providerType'],
     id: '',
     model: '',
     promptLevel: PromptLevel.Default,
@@ -90,10 +90,9 @@ function AddChatModelModalComponent({
         <ObsidianDropdown
           value={formData.providerId}
           options={Object.fromEntries(
-            plugin.settings.providers.map((provider) => [
-              provider.id,
-              provider.id,
-            ]),
+            plugin.settings.providers
+              .filter((provider) => provider.type !== 'voyage')
+              .map((provider) => [provider.id, provider.id]),
           )}
           onChange={(value: string) => {
             const provider = plugin.settings.providers.find(
