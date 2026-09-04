@@ -53,13 +53,16 @@ export const GEMINI_CODE_ASSIST_HEADERS = {
 
 // Default model ids
 export const DEFAULT_CHAT_MODEL_ID = 'claude-sonnet-4.5'
-// gpt-4.1-mini is preferred over gpt-5-mini because gpt-5 models do not support
-// predicted outputs, making them significantly slower for apply tasks.
+// Keep the API-backed apply default. Plan models require a separate OAuth
+// connection and must never be selected implicitly.
 export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5', 'gpt-5.2']
-export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-4.1-mini']
+export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5', 'gpt-5.6-sol']
+export const RECOMMENDED_MODELS_FOR_APPLY = [
+  'gpt-5.6-luna (plan)',
+  'gpt-4.1-mini',
+]
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
   'openai/text-embedding-3-small',
@@ -332,22 +335,72 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'anthropic-plan',
     providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
+    id: 'claude-opus-5 (plan)',
+    model: 'claude-opus-5',
+  },
+  {
+    providerType: 'openai-plan',
+    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
+    id: 'gpt-5.6-sol (plan)',
+    model: 'gpt-5.6-sol',
+  },
+  {
+    providerType: 'openai-plan',
+    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
+    id: 'gpt-5.6-luna (plan)',
+    model: 'gpt-5.6-luna',
+  },
+  {
+    providerType: 'gemini-plan',
+    providerId: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
+    id: 'gemini-3.1-pro-preview (plan)',
+    model: 'gemini-3.1-pro-preview',
+  },
+  {
+    providerType: 'anthropic',
+    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
+    id: 'claude-opus-5',
+    model: 'claude-opus-5',
+  },
+  {
+    providerType: 'openai',
+    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
+    id: 'gpt-5.6-sol',
+    model: 'gpt-5.6-sol',
+  },
+  {
+    providerType: 'gemini',
+    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
+    id: 'gemini-3.1-pro-preview',
+    model: 'gemini-3.1-pro-preview',
+  },
+  {
+    providerType: 'deepseek',
+    providerId: PROVIDER_TYPES_INFO.deepseek.defaultProviderId,
+    id: 'deepseek-v4-pro',
+    model: 'deepseek-v4-pro',
+  },
+  {
+    providerType: 'xai',
+    providerId: PROVIDER_TYPES_INFO.xai.defaultProviderId,
+    id: 'grok-4.6',
+    model: 'grok-4.6',
+  },
+  // Existing fast, balanced, and API-backed defaults remain available. Adding
+  // frontier models must not collapse users' cost/performance choices.
+  {
+    providerType: 'anthropic-plan',
+    providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
     id: 'claude-opus-4.5 (plan)',
     model: 'claude-opus-4-5',
-    thinking: {
-      enabled: true,
-      budget_tokens: 8192,
-    },
+    thinking: { enabled: true, budget_tokens: 8192 },
   },
   {
     providerType: 'anthropic-plan',
     providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
     id: 'claude-sonnet-4.5 (plan)',
     model: 'claude-sonnet-4-5',
-    thinking: {
-      enabled: true,
-      budget_tokens: 8192,
-    },
+    thinking: { enabled: true, budget_tokens: 8192 },
   },
   {
     providerType: 'openai-plan',
@@ -408,10 +461,7 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
     id: 'o4-mini',
     model: 'o4-mini',
-    reasoning: {
-      enabled: true,
-      reasoning_effort: 'medium',
-    },
+    reasoning: { enabled: true, reasoning_effort: 'medium' },
   },
   {
     providerType: 'gemini',
@@ -523,12 +573,22 @@ export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
 ]
 
 // Pricing in dollars per million tokens
-type ModelPricing = {
+export type ModelPricing = {
   input: number
   output: number
 }
 
+export type LongContextPricingRule = {
+  thresholdPromptTokens: number
+  thresholdInclusive: boolean
+  pricing?: ModelPricing
+  inputMultiplier?: number
+  outputMultiplier?: number
+}
+
 export const OPENAI_PRICES: Record<string, ModelPricing> = {
+  'gpt-5.6-sol': { input: 4, output: 20 },
+  'gpt-5.6-luna': { input: 0.2, output: 1.2 },
   'gpt-5.2': { input: 1.75, output: 14 },
   'gpt-5.1': { input: 1.25, output: 10 },
   'gpt-5': { input: 1.25, output: 10 },
@@ -547,6 +607,7 @@ export const OPENAI_PRICES: Record<string, ModelPricing> = {
 }
 
 export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
+  'claude-opus-5': { input: 5, output: 25 },
   'claude-opus-4-5': { input: 5, output: 25 },
   'claude-opus-4-1': { input: 15, output: 75 },
   'claude-opus-4-0': { input: 15, output: 75 },
@@ -558,16 +619,42 @@ export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
   'claude-3-5-haiku-latest': { input: 1, output: 5 },
 }
 
-// Gemini is currently free for low rate limits
-export const GEMINI_PRICES: Record<string, ModelPricing> = {}
+export const GEMINI_PRICES: Record<string, ModelPricing> = {
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
+}
 
 export const XAI_PRICES: Record<string, ModelPricing> = {
+  'grok-4.6': { input: 2, output: 6 },
   'grok-4-1-fast': { input: 0.2, output: 0.5 },
   'grok-4-1-fast-non-reasoning': { input: 0.2, output: 0.5 },
 }
 
 export const DEEPSEEK_PRICES: Record<string, ModelPricing> = {
+  // Peak, cache-miss pricing. Actual cost can be lower off-peak or on cache hit.
+  'deepseek-v4-pro': { input: 1.32, output: 3.96 },
   // Model version: DeepSeek-V3.2
   'deepseek-chat': { input: 0.28, output: 0.42 },
   'deepseek-reasoner': { input: 0.28, output: 0.42 },
+}
+
+export const LONG_CONTEXT_PRICING_RULES: Record<
+  string,
+  LongContextPricingRule
+> = {
+  'openai/gpt-5.6-sol': {
+    thresholdPromptTokens: 272_000,
+    thresholdInclusive: false,
+    inputMultiplier: 2,
+    outputMultiplier: 1.5,
+  },
+  'gemini/gemini-3.1-pro-preview': {
+    thresholdPromptTokens: 200_000,
+    thresholdInclusive: false,
+    pricing: { input: 4, output: 18 },
+  },
+  'xai/grok-4.6': {
+    thresholdPromptTokens: 200_000,
+    thresholdInclusive: true,
+    pricing: { input: 4, output: 12 },
+  },
 }

@@ -8,7 +8,7 @@ import {
 } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
 import { ResponseUsage } from '../../types/llm/response'
-import { calculateLLMCost } from '../../utils/llm/price-calculator'
+import { calculateMessageGroupCost } from '../../utils/llm/price-calculator'
 
 import LLMResponseInfoPopover from './LLMResponseInfoPopover'
 import { getToolMessageContent } from './ToolMessage'
@@ -91,15 +91,18 @@ function LLMResponseInfoButton({
     return assistantMessageWithModel?.metadata?.model
   }, [messages])
 
+  const assistantMessages = useMemo(
+    () =>
+      messages.filter(
+        (message): message is ChatAssistantMessage =>
+          message.role === 'assistant',
+      ),
+    [messages],
+  )
+
   const cost = useMemo<number | null>(() => {
-    if (!model || !usage) {
-      return null
-    }
-    return calculateLLMCost({
-      model,
-      usage,
-    })
-  }, [model, usage])
+    return calculateMessageGroupCost(assistantMessages)
+  }, [assistantMessages])
 
   return (
     <Tooltip.Provider delayDuration={0}>
