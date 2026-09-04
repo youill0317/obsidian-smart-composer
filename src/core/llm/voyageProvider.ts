@@ -12,7 +12,7 @@ import {
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
 
-import { BaseLLMProvider } from './base'
+import { BaseLLMProvider, ProviderEmbeddingOptions } from './base'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -64,7 +64,7 @@ export class VoyageProvider extends BaseLLMProvider<
   async getEmbedding(
     model: string,
     text: string,
-    options?: { dimensions?: number },
+    options?: ProviderEmbeddingOptions,
   ): Promise<number[]> {
     if (!this.apiKey) {
       throw new LLMAPIKeyNotSetException(
@@ -81,6 +81,7 @@ export class VoyageProvider extends BaseLLMProvider<
       body: JSON.stringify({
         input: text,
         model,
+        ...(options?.purpose && { input_type: options.purpose }),
         ...(options?.dimensions && {
           output_dimension: options.dimensions,
         }),
@@ -107,6 +108,14 @@ export class VoyageProvider extends BaseLLMProvider<
     const firstEmbedding = parsed.data[0]?.embedding
     if (!firstEmbedding || firstEmbedding.length === 0) {
       throw new Error('Voyage AI embedding response did not include a vector.')
+    }
+    if (
+      options?.dimensions !== undefined &&
+      firstEmbedding.length !== options.dimensions
+    ) {
+      throw new Error(
+        `Embedding dimension mismatch: expected ${options.dimensions}, got ${firstEmbedding.length}`,
+      )
     }
 
     return firstEmbedding

@@ -63,7 +63,7 @@ describe('Migration from v16 to v17', () => {
     expect(result.embeddingModelId).toBe('openai/text-embedding-3-small')
   })
 
-  it('should skip provider and model additions when the voyage id conflicts', () => {
+  it('should preserve an id conflict while migrating unrelated data', () => {
     const providers = [
       { type: 'openai-compatible', id: 'voyage', apiKey: 'custom-key' },
     ]
@@ -83,7 +83,16 @@ describe('Migration from v16 to v17', () => {
       embeddingModels,
     })
 
-    expect(result).toEqual({ version: 17, providers, embeddingModels })
+    expect(
+      Array.isArray(result.providers) &&
+        result.providers.find(
+          (provider) => (provider as { id?: string }).id === 'voyage',
+        ),
+    ).toEqual(providers[0])
+    expect(result.embeddingModels).toEqual([
+      ...getDefaultVoyageEmbeddingModels(),
+      ...embeddingModels,
+    ])
   })
 
   it('should preserve user models with Voyage default ids', () => {

@@ -1,7 +1,7 @@
 import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
-import { DEFAULT_PROVIDERS } from '../../../constants'
+import { DEFAULT_PROVIDERS, PROVIDER_TYPES_INFO } from '../../../constants'
 import SmartComposerPlugin from '../../../main'
 import { ChatModel, chatModelSchema } from '../../../types/chat-model.types'
 import { PromptLevel } from '../../../types/prompt-level.types'
@@ -91,7 +91,9 @@ function AddChatModelModalComponent({
           value={formData.providerId}
           options={Object.fromEntries(
             plugin.settings.providers
-              .filter((provider) => provider.type !== 'voyage')
+              .filter(
+                (provider) => PROVIDER_TYPES_INFO[provider.type].supportChat,
+              )
               .map((provider) => [provider.id, provider.id]),
           )}
           onChange={(value: string) => {

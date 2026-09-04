@@ -10,6 +10,11 @@ import {
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
 
+export type ProviderEmbeddingOptions = {
+  dimensions?: number
+  purpose?: 'query' | 'document'
+}
+
 // TODO: do these really have to be class? why not just function?
 export abstract class BaseLLMProvider<P extends LLMProvider> {
   protected readonly provider: P
@@ -32,6 +37,6 @@ export abstract class BaseLLMProvider<P extends LLMProvider> {
   abstract getEmbedding(
     model: string,
     text: string,
-    options?: { dimensions?: number },
+    options?: ProviderEmbeddingOptions,
   ): Promise<number[]>
 }

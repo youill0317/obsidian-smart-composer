@@ -47,7 +47,7 @@ export const migrateFrom16To17: SettingMigration['migrate'] = (data) => {
   const newData = { ...data }
   newData.version = 17
 
-  if (
+  const hasVoyageIdConflict =
     Array.isArray(newData.providers) &&
     newData.providers.some(
       (provider) =>
@@ -56,11 +56,13 @@ export const migrateFrom16To17: SettingMigration['migrate'] = (data) => {
         (provider as { id?: unknown; type?: unknown } | null)?.type !==
           'voyage',
     )
-  ) {
-    return newData
-  }
 
-  newData.providers = getMigratedProviders(newData, DEFAULT_PROVIDERS_V17)
+  newData.providers = getMigratedProviders(
+    newData,
+    hasVoyageIdConflict
+      ? DEFAULT_PROVIDERS_V17.filter((provider) => provider.type !== 'voyage')
+      : DEFAULT_PROVIDERS_V17,
+  )
 
   // DEFAULT_EMBEDDING_MODELS in constants.ts says a default should overwrite a
   // user entry with the same id. That rule is for defaults whose data changes

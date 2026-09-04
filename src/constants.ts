@@ -76,6 +76,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'anthropic-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -84,6 +85,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openai-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -92,6 +94,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'gemini-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -100,6 +103,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'anthropic',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -108,6 +112,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openai',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -116,6 +121,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'gemini',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -124,6 +130,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'xai',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -132,6 +139,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'deepseek',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -140,6 +148,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'mistral',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -148,6 +157,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'voyage',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: false,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -156,6 +166,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'perplexity',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -164,6 +175,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openrouter',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -172,6 +184,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'ollama',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -180,6 +193,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'lm-studio',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -188,6 +202,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: null, // no default provider for this type
     requireApiKey: true,
     requireBaseUrl: true,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [
       {
@@ -211,6 +226,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: null, // no default provider for this type
     requireApiKey: false,
     requireBaseUrl: true,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [
       {
@@ -230,6 +246,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: string | null
     requireApiKey: boolean
     requireBaseUrl: boolean
+    supportChat: boolean
     supportEmbedding: boolean
     additionalSettings: {
       label: string

@@ -26,7 +26,8 @@ describe('VoyageProvider', () => {
     })
 
     const embedding = await provider.getEmbedding('voyage-4', 'hello', {
-      dimensions: 512,
+      dimensions: 3,
+      purpose: 'document',
     })
 
     expect(embedding).toEqual([0.1, 0.2, 0.3])
@@ -41,7 +42,8 @@ describe('VoyageProvider', () => {
         body: JSON.stringify({
           input: 'hello',
           model: 'voyage-4',
-          output_dimension: 512,
+          input_type: 'document',
+          output_dimension: 3,
         }),
       },
     )
@@ -105,5 +107,22 @@ describe('VoyageProvider', () => {
     await expect(provider.getEmbedding('voyage-4', 'hello')).rejects.toThrow(
       'Voyage AI embedding response did not include a vector.',
     )
+  })
+
+  it('rejects vectors with an unexpected requested dimension', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
+        status: 200,
+      }),
+    )
+    const provider = new VoyageProvider({
+      type: 'voyage',
+      id: 'voyage',
+      apiKey: 'voyage-secret',
+    })
+
+    await expect(
+      provider.getEmbedding('voyage-4', 'hello', { dimensions: 3 }),
+    ).rejects.toThrow('Embedding dimension mismatch: expected 3, got 2')
   })
 })
