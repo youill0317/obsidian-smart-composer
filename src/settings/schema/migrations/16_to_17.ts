@@ -1,7 +1,6 @@
 import { SettingMigration } from '../setting.types'
 
-import { getMigratedProviders } from './migrationUtils'
-
+// Keep this historical snapshot independent of future catalog changes.
 const DEFAULT_PROVIDERS_V17 = [
   { type: 'anthropic-plan', id: 'anthropic-plan' },
   { type: 'openai-plan', id: 'openai-plan' },
@@ -19,65 +18,60 @@ const DEFAULT_PROVIDERS_V17 = [
   { type: 'lm-studio', id: 'lm-studio' },
 ] as const
 
-const VOYAGE_EMBEDDING_MODELS = [
-  {
-    providerType: 'voyage',
-    providerId: 'voyage',
-    id: 'voyage/voyage-4',
-    model: 'voyage-4',
-    dimension: 1024,
-  },
-  {
-    providerType: 'voyage',
-    providerId: 'voyage',
-    id: 'voyage/voyage-4-large',
-    model: 'voyage-4-large',
-    dimension: 1024,
-  },
-  {
-    providerType: 'voyage',
-    providerId: 'voyage',
-    id: 'voyage/voyage-4-lite',
-    model: 'voyage-4-lite',
-    dimension: 1024,
-  },
-] as const
+const VOYAGE_MODELS = ['voyage-4', 'voyage-4-large', 'voyage-4-lite'] as const
+
+type ProviderIdentity = { id?: unknown; type?: unknown } | null
 
 export const migrateFrom16To17: SettingMigration['migrate'] = (data) => {
-  const newData = { ...data }
-  newData.version = 17
+  const newData: Record<string, unknown> = { ...data, version: 17 }
+  // This migration adds Voyage only. Rebuilding all default providers would
+  // discard custom providers whose ids match a default but whose types differ.
+  const providers: unknown[] = Array.isArray(data.providers)
+    ? [...data.providers]
+    : DEFAULT_PROVIDERS_V17.map((provider) => ({ ...provider }))
 
-  const hasVoyageIdConflict =
-    Array.isArray(newData.providers) &&
-    newData.providers.some(
+  let providerId = 'voyage'
+  let suffix = 1
+  while (
+    providers.some(
       (provider) =>
-        (provider as { id?: unknown; type?: unknown } | null)?.id ===
-          'voyage' &&
-        (provider as { id?: unknown; type?: unknown } | null)?.type !==
-          'voyage',
+        (provider as ProviderIdentity)?.id === providerId &&
+        (provider as ProviderIdentity)?.type !== 'voyage',
     )
+  ) {
+    suffix += 1
+    providerId = `voyage-${suffix}`
+  }
 
-  newData.providers = getMigratedProviders(
-    newData,
-    hasVoyageIdConflict
-      ? DEFAULT_PROVIDERS_V17.filter((provider) => provider.type !== 'voyage')
-      : DEFAULT_PROVIDERS_V17,
-  )
-
-  // DEFAULT_EMBEDDING_MODELS in constants.ts says a default should overwrite a
-  // user entry with the same id. That rule is for defaults whose data changes
-  // over time; these Voyage ids are new, so a collision can only be a model the
-  // user created. Overwriting it would swap the provider and dimension out from
-  // under vectors that were embedded in a different space, so keep theirs.
-  if (Array.isArray(newData.embeddingModels)) {
-    const embeddingModels = newData.embeddingModels
-    const missingModels = VOYAGE_EMBEDDING_MODELS.filter(
-      (defaultModel) =>
-        !embeddingModels.some(
-          (model) => (model as { id?: unknown } | null)?.id === defaultModel.id,
-        ),
+  // Reuse the same generated id on repeated migrations without changing keys,
+  // endpoints, or any other properties of existing providers.
+  if (
+    !providers.some(
+      (provider) => (provider as ProviderIdentity)?.id === providerId,
     )
-    newData.embeddingModels = [...missingModels, ...embeddingModels]
+  ) {
+    providers.push({ type: 'voyage', id: providerId })
+  }
+  newData.providers = providers
+
+  // A colliding model id belongs to the user, including its embedding space.
+  // Only new models are bound to the collision-free Voyage provider id.
+  if (Array.isArray(data.embeddingModels)) {
+    const existingIds = new Set(
+      data.embeddingModels.map(
+        (model) => (model as { id?: unknown } | null)?.id,
+      ),
+    )
+    const missingModels = VOYAGE_MODELS.filter(
+      (model) => !existingIds.has(`voyage/${model}`),
+    ).map((model) => ({
+      providerType: 'voyage',
+      providerId,
+      id: `voyage/${model}`,
+      model,
+      dimension: 1024,
+    }))
+    newData.embeddingModels = [...missingModels, ...data.embeddingModels]
   }
 
   return newData
