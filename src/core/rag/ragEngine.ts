@@ -118,6 +118,6 @@ export class RAGEngine {
     if (!this.embeddingModel) {
       throw new Error('Embedding model is not set')
     }
-    return this.embeddingModel.getEmbedding(query)
+    return this.embeddingModel.getEmbedding(query, { purpose: 'query' })
   }
 }

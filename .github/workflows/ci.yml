@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/voyage-embeddings]
 
 jobs:
   check:
@@ -21,3 +21,5 @@ jobs:
         run: npm run lint:check
       - name: Test
         run: npm test
+      - name: Build
+        run: npm run build

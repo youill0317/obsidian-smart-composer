@@ -1,7 +1,7 @@
 import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
-import { DEFAULT_PROVIDERS } from '../../../constants'
+import { DEFAULT_PROVIDERS, PROVIDER_TYPES_INFO } from '../../../constants'
 import SmartComposerPlugin from '../../../main'
 import { ChatModel, chatModelSchema } from '../../../types/chat-model.types'
 import { PromptLevel } from '../../../types/prompt-level.types'
@@ -35,7 +35,7 @@ function AddChatModelModalComponent({
 }: AddChatModelModalComponentProps) {
   const [formData, setFormData] = useState<ChatModel>({
     providerId: DEFAULT_PROVIDERS[0].id,
-    providerType: DEFAULT_PROVIDERS[0].type,
+    providerType: DEFAULT_PROVIDERS[0].type as ChatModel['providerType'],
     id: '',
     model: '',
     promptLevel: PromptLevel.Default,
@@ -90,10 +90,11 @@ function AddChatModelModalComponent({
         <ObsidianDropdown
           value={formData.providerId}
           options={Object.fromEntries(
-            plugin.settings.providers.map((provider) => [
-              provider.id,
-              provider.id,
-            ]),
+            plugin.settings.providers
+              .filter(
+                (provider) => PROVIDER_TYPES_INFO[provider.type].supportChat,
+              )
+              .map((provider) => [provider.id, provider.id]),
           )}
           onChange={(value: string) => {
             const provider = plugin.settings.providers.find(

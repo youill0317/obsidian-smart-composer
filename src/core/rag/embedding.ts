@@ -1,5 +1,7 @@
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
 import { EmbeddingModelClient } from '../../types/embedding'
+import { LLMProvider } from '../../types/provider.types'
+import { BaseLLMProvider } from '../llm/base'
 import { getProviderClient } from '../llm/manager'
 
 export const getEmbeddingModelClient = ({
@@ -16,17 +18,31 @@ export const getEmbeddingModelClient = ({
     throw new Error(`Embedding model ${embeddingModelId} not found`)
   }
 
-  const providerClient = getProviderClient({
+  const providerClient: BaseLLMProvider<LLMProvider> = getProviderClient({
     settings,
     providerId: embeddingModel.providerId,
   })
 
   return {
     id: embeddingModel.id,
-    dimension: embeddingModel.dimension,
-    getEmbedding: (text: string) =>
-      providerClient.getEmbedding(embeddingModel.model, text, {
-        dimensions: embeddingModel.outputDimension,
-      }),
+    dimension: embeddingModel.outputDimension ?? embeddingModel.dimension,
+    getEmbedding: async (text, options) => {
+      const expectedDimension =
+        embeddingModel.outputDimension ?? embeddingModel.dimension
+      const embedding = await providerClient.getEmbedding(
+        embeddingModel.model,
+        text,
+        {
+          dimensions: embeddingModel.outputDimension,
+          purpose: options?.purpose,
+        },
+      )
+      if (embedding.length !== expectedDimension) {
+        throw new Error(
+          `Embedding dimension mismatch: expected ${expectedDimension}, got ${embedding.length}`,
+        )
+      }
+      return embedding
+    },
   }
 }

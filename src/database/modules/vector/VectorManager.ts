@@ -235,6 +235,7 @@ export class VectorManager {
 
                   const embedding = await embeddingModel.getEmbedding(
                     chunk.content,
+                    { purpose: 'document' },
                   )
                   completedChunks += 1
 

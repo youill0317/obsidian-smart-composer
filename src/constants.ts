@@ -61,6 +61,7 @@ export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
 export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5', 'gpt-5.2']
 export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-4.1-mini']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
+  'voyage/voyage-4',
   'openai/text-embedding-3-small',
 ]
 
@@ -75,6 +76,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'anthropic-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -83,6 +85,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openai-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -91,6 +94,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'gemini-plan',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -99,6 +103,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'anthropic',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -107,6 +112,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openai',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -115,6 +121,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'gemini',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -123,6 +130,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'xai',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -131,6 +139,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'deepseek',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -139,7 +148,17 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'mistral',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
+    additionalSettings: [],
+  },
+  voyage: {
+    label: 'Voyage AI',
+    defaultProviderId: 'voyage',
+    requireApiKey: true,
+    requireBaseUrl: false,
+    supportChat: false,
+    supportEmbedding: true,
     additionalSettings: [],
   },
   perplexity: {
@@ -147,6 +166,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'perplexity',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -155,6 +175,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'openrouter',
     requireApiKey: true,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [],
   },
@@ -163,6 +184,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'ollama',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -171,6 +193,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: 'lm-studio',
     requireApiKey: false,
     requireBaseUrl: false,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [],
   },
@@ -179,6 +202,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: null, // no default provider for this type
     requireApiKey: true,
     requireBaseUrl: true,
+    supportChat: true,
     supportEmbedding: false,
     additionalSettings: [
       {
@@ -202,6 +226,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: null, // no default provider for this type
     requireApiKey: false,
     requireBaseUrl: true,
+    supportChat: true,
     supportEmbedding: true,
     additionalSettings: [
       {
@@ -221,6 +246,7 @@ export const PROVIDER_TYPES_INFO = {
     defaultProviderId: string | null
     requireApiKey: boolean
     requireBaseUrl: boolean
+    supportChat: boolean
     supportEmbedding: boolean
     additionalSettings: {
       label: string
@@ -274,6 +300,10 @@ export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
   {
     type: 'mistral',
     id: PROVIDER_TYPES_INFO.mistral.defaultProviderId,
+  },
+  {
+    type: 'voyage',
+    id: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
   },
   {
     type: 'perplexity',
@@ -427,6 +457,27 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
  * 2. If there's same embedding model id in user's settings, it's data should be overwritten by default embedding model
  */
 export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4',
+    model: 'voyage-4',
+    dimension: 1024,
+  },
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4-large',
+    model: 'voyage-4-large',
+    dimension: 1024,
+  },
+  {
+    providerType: 'voyage',
+    providerId: PROVIDER_TYPES_INFO.voyage.defaultProviderId,
+    id: 'voyage/voyage-4-lite',
+    model: 'voyage-4-lite',
+    dimension: 1024,
+  },
   {
     providerType: 'openai',
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
