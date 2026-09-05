@@ -1,6 +1,7 @@
 import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
+import { ASTRA_REASONING_EFFORTS } from '../../../../core/llm/modelCompatibility'
 import SmartComposerPlugin from '../../../../main'
 import { ChatModel, chatModelSchema } from '../../../../types/chat-model.types'
 import { ObsidianButton } from '../../../common/ObsidianButton'
@@ -53,16 +54,25 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
       const typedModel = model as ChatModel & { providerType: 'openai' }
+      const isAstra = model.model === 'gpt-6-astra'
+      const efforts: readonly string[] = isAstra
+        ? ASTRA_REASONING_EFFORTS
+        : ['low', 'medium', 'high']
       const [reasoningEnabled, setReasoningEnabled] = useState<boolean>(
-        typedModel.reasoning?.enabled ?? false,
+        isAstra || (typedModel.reasoning?.enabled ?? false),
       )
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        typedModel.reasoning?.reasoning_effort ?? 'medium',
+        isAstra &&
+          ['none', 'minimal'].includes(
+            typedModel.reasoning?.reasoning_effort ?? '',
+          )
+          ? 'low'
+          : (typedModel.reasoning?.reasoning_effort ?? 'medium'),
       )
 
       const handleSubmit = async () => {
-        if (!['low', 'medium', 'high'].includes(reasoningEffort)) {
-          new Notice('Reasoning effort must be one of "low", "medium", "high"')
+        if (!efforts.includes(reasoningEffort)) {
+          new Notice(`Reasoning effort must be one of: ${efforts.join(', ')}`)
           return
         }
 
@@ -93,15 +103,17 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          <ObsidianSetting
-            name="Reasoning"
-            desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
-          >
-            <ObsidianToggle
-              value={reasoningEnabled}
-              onChange={(value: boolean) => setReasoningEnabled(value)}
-            />
-          </ObsidianSetting>
+          {!isAstra && (
+            <ObsidianSetting
+              name="Reasoning"
+              desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
+            >
+              <ObsidianToggle
+                value={reasoningEnabled}
+                onChange={(value: boolean) => setReasoningEnabled(value)}
+              />
+            </ObsidianSetting>
+          )}
           {reasoningEnabled && (
             <ObsidianSetting
               name="Reasoning Effort"
@@ -111,11 +123,9 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
             >
               <ObsidianDropdown
                 value={reasoningEffort}
-                options={{
-                  low: 'low',
-                  medium: 'medium',
-                  high: 'high',
-                }}
+                options={Object.fromEntries(
+                  efforts.map((effort) => [effort, effort]),
+                )}
                 onChange={(value: string) => setReasoningEffort(value)}
               />
             </ObsidianSetting>
@@ -139,8 +149,14 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
       const typedModel = model as ChatModel & { providerType: 'openai-plan' }
+      const isAstra = model.model === 'gpt-6-astra'
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        typedModel.reasoning?.reasoning_effort ?? '',
+        isAstra &&
+          ['none', 'minimal'].includes(
+            typedModel.reasoning?.reasoning_effort ?? '',
+          )
+          ? 'low'
+          : (typedModel.reasoning?.reasoning_effort ?? ''),
       )
       const [reasoningSummary, setReasoningSummary] = useState<string>(
         typedModel.reasoning?.reasoning_summary ?? '',
@@ -187,12 +203,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               value={reasoningEffort}
               options={{
                 '': 'Not set (OpenAI default)',
-                none: 'none',
-                minimal: 'minimal',
+                ...(!isAstra && { none: 'none', minimal: 'minimal' }),
                 low: 'low',
                 medium: 'medium',
                 high: 'high',
                 xhigh: 'xhigh',
+                ...(isAstra && { max: 'max' }),
               }}
               onChange={(value: string) => setReasoningEffort(value)}
             />

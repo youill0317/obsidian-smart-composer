@@ -12,6 +12,7 @@ import { GeminiProvider } from './gemini'
 import { GeminiPlanProvider } from './geminiPlanProvider'
 import { LmStudioProvider } from './lmStudioProvider'
 import { MistralProvider } from './mistralProvider'
+import { normalizeModelCompatibility } from './modelCompatibility'
 import { OllamaProvider } from './ollama'
 import { OpenAIAuthenticatedProvider } from './openai'
 import { OpenAICodexProvider } from './openaiCodexProvider'
@@ -132,6 +133,6 @@ export function getChatModelClient({
 
   return {
     providerClient,
-    model: chatModel,
+    model: normalizeModelCompatibility(chatModel),
   }
 }
