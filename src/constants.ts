@@ -58,7 +58,11 @@ export const DEFAULT_CHAT_MODEL_ID = 'claude-sonnet-4.5'
 export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5', 'gpt-5.6-sol']
+export const RECOMMENDED_MODELS_FOR_CHAT = [
+  'claude-opus-5',
+  'gpt-6-astra',
+  'gpt-5.6-sol',
+]
 export const RECOMMENDED_MODELS_FOR_APPLY = [
   'gpt-5.6-luna (plan)',
   'gpt-4.1-mini',
@@ -333,6 +337,19 @@ export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
  */
 export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
+    providerType: 'openai-plan',
+    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
+    id: 'gpt-6-astra (plan)',
+    model: 'gpt-6-astra',
+  },
+  {
+    providerType: 'openai',
+    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
+    id: 'gpt-6-astra',
+    model: 'gpt-6-astra',
+    reasoning: { enabled: true, reasoning_effort: 'medium' },
+  },
+  {
     providerType: 'anthropic-plan',
     providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
     id: 'claude-opus-5 (plan)',
@@ -587,6 +604,7 @@ export type LongContextPricingRule = {
 }
 
 export const OPENAI_PRICES: Record<string, ModelPricing> = {
+  'gpt-6-astra': { input: 10, output: 50 },
   'gpt-5.6-sol': { input: 4, output: 20 },
   'gpt-5.6-luna': { input: 0.2, output: 1.2 },
   'gpt-5.2': { input: 1.75, output: 14 },
@@ -641,6 +659,12 @@ export const LONG_CONTEXT_PRICING_RULES: Record<
   string,
   LongContextPricingRule
 > = {
+  'openai/gpt-6-astra': {
+    thresholdPromptTokens: 272_000,
+    thresholdInclusive: false,
+    inputMultiplier: 2,
+    outputMultiplier: 1.5,
+  },
   'openai/gpt-5.6-sol': {
     thresholdPromptTokens: 272_000,
     thresholdInclusive: false,

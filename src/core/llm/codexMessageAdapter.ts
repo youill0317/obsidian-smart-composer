@@ -31,15 +31,18 @@ import { parseJsonSseStream } from '../../utils/llm/sse'
 type CodexAdapterConfig = {
   endpoint?: string
   fetchFn?: typeof fetch
+  includeMaxOutputTokens?: boolean
 }
 
 export class CodexMessageAdapter {
   private endpoint: string
   private fetchFn?: typeof fetch
+  private includeMaxOutputTokens: boolean
 
   constructor(config: CodexAdapterConfig = {}) {
     this.endpoint = config.endpoint ?? CODEX_RESPONSES_ENDPOINT
     this.fetchFn = config.fetchFn
+    this.includeMaxOutputTokens = config.includeMaxOutputTokens ?? false
   }
 
   async generateResponse(
@@ -65,6 +68,10 @@ export class CodexMessageAdapter {
 
       if (chunk.type === 'error') {
         throw new Error(chunk.message)
+      }
+
+      if (chunk.type === 'response.failed') {
+        throw new Error(chunk.response.error?.message ?? 'Response failed')
       }
 
       if (!responsePayload) {
@@ -382,6 +389,9 @@ export class CodexMessageAdapter {
       if (chunk.type === 'error') {
         throw new Error(chunk.message)
       }
+      if (chunk.type === 'response.failed') {
+        throw new Error(chunk.response.error?.message ?? 'Response failed')
+      }
     }
   }
 
@@ -424,6 +434,9 @@ export class CodexMessageAdapter {
       stream,
       tools,
       tool_choice: normalizeToolChoice(request.tool_choice),
+      ...(this.includeMaxOutputTokens && {
+        max_output_tokens: request.max_tokens,
+      }),
       ...(reasoning && {
         reasoning,
       }),

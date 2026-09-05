@@ -10,6 +10,7 @@ const usage = {
 
 describe('calculateLLMCost', () => {
   it.each([
+    ['openai', 'gpt-6-astra', 6],
     ['openai', 'gpt-5.6-sol', 2.4],
     ['anthropic', 'claude-opus-5', 3],
     ['xai', 'grok-4.6', 0.8],
@@ -35,6 +36,9 @@ describe('calculateLLMCost', () => {
     ['openai', 'gpt-5.6-sol', 271_999, 3.087996],
     ['openai', 'gpt-5.6-sol', 272_000, 3.088],
     ['openai', 'gpt-5.6-sol', 272_001, 5.176008],
+    ['openai', 'gpt-6-astra', 271_999, 7.71999],
+    ['openai', 'gpt-6-astra', 272_000, 7.72],
+    ['openai', 'gpt-6-astra', 272_001, 12.94002],
     ['xai', 'grok-4.6', 199_999, 0.999998],
     ['xai', 'grok-4.6', 200_000, 2],
     ['xai', 'grok-4.6', 200_001, 2.000004],

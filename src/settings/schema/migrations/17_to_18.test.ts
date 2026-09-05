@@ -1,3 +1,6 @@
+import { DEFAULT_CHAT_MODELS } from '../../../constants'
+import { parseSmartComposerSettings } from '../settings'
+
 import { migrateFrom16To17 } from './16_to_17'
 import { CHAT_MODELS_ADDED_IN_V18, migrateFrom17To18 } from './17_to_18'
 
@@ -37,23 +40,43 @@ describe('Migration from v17 to v18', () => {
     expect(result.applyModelId).toBe(apiModel.id)
   })
 
-  it('preserves a user model that collides with a new default id', () => {
-    const userModel = {
-      ...apiModel,
-      id: 'gpt-5.6-sol',
-      model: 'gateway-model',
-    }
-    const result = migrateFrom17To18({
-      version: 17,
-      chatModels: [userModel],
-    })
+  it.each(['gpt-5.6-sol', 'gpt-6-astra', 'gpt-6-astra (plan)'])(
+    'preserves a user model that collides with %s',
+    (id) => {
+      const userModel = {
+        ...apiModel,
+        id,
+        model: 'gateway-model',
+      }
+      const result = migrateFrom17To18({
+        version: 17,
+        chatModels: [userModel],
+      })
 
-    expect(
-      Array.isArray(result.chatModels) &&
-        result.chatModels.filter(
-          (model) => (model as { id?: unknown }).id === userModel.id,
-        ),
-    ).toEqual([userModel])
+      expect(
+        Array.isArray(result.chatModels) &&
+          result.chatModels.filter(
+            (model) => (model as { id?: unknown }).id === userModel.id,
+          ),
+      ).toEqual([userModel])
+    },
+  )
+
+  it('loads Astra API and plan choices without switching existing selections', () => {
+    const settings = parseSmartComposerSettings({
+      version: 17,
+      chatModels: [apiModel, planModel],
+      chatModelId: apiModel.id,
+      applyModelId: apiModel.id,
+    })
+    for (const id of ['gpt-6-astra', 'gpt-6-astra (plan)']) {
+      expect(settings.chatModels.find((model) => model.id === id)).toEqual(
+        DEFAULT_CHAT_MODELS.find((model) => model.id === id),
+      )
+    }
+    expect(settings.chatModelId).toBe(apiModel.id)
+    expect(settings.applyModelId).toBe(apiModel.id)
+    expect(parseSmartComposerSettings(settings)).toEqual(settings)
   })
 
   it('is idempotent and supports the v16 to v17 to v18 chain', () => {

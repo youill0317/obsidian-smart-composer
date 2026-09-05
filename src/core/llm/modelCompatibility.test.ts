@@ -3,6 +3,27 @@ import { ChatModel } from '../../types/chat-model.types'
 import { normalizeModelCompatibility } from './modelCompatibility'
 
 describe('normalizeModelCompatibility', () => {
+  it.each(['openai', 'openai-plan'] as const)(
+    'maps unsupported Astra efforts without changing saved %s settings',
+    (providerType) => {
+      for (const effort of ['none', 'minimal']) {
+        const model = {
+          providerType,
+          providerId: providerType,
+          id: 'custom-astra',
+          model: 'gpt-6-astra',
+          reasoning: { enabled: true, reasoning_effort: effort },
+        } as ChatModel
+        expect(normalizeModelCompatibility(model)).toHaveProperty(
+          'reasoning.reasoning_effort',
+          'low',
+        )
+        expect(model).toHaveProperty('reasoning.reasoning_effort', effort)
+        const legacyModel = { ...model, model: 'gpt-5.2' }
+        expect(normalizeModelCompatibility(legacyModel)).toBe(legacyModel)
+      }
+    },
+  )
   it.each(['anthropic', 'anthropic-plan'] as const)(
     'removes legacy thinking budgets from Opus 5 on %s',
     (providerType) => {

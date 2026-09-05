@@ -2,6 +2,19 @@ import { SettingMigration } from '../setting.types'
 
 export const CHAT_MODELS_ADDED_IN_V18 = [
   {
+    providerType: 'openai-plan',
+    providerId: 'openai-plan',
+    id: 'gpt-6-astra (plan)',
+    model: 'gpt-6-astra',
+  },
+  {
+    providerType: 'openai',
+    providerId: 'openai',
+    id: 'gpt-6-astra',
+    model: 'gpt-6-astra',
+    reasoning: { enabled: true, reasoning_effort: 'medium' },
+  },
+  {
     providerType: 'anthropic-plan',
     providerId: 'anthropic-plan',
     id: 'claude-opus-5 (plan)',

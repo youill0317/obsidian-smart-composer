@@ -14,6 +14,7 @@ import {
 import { LLMProvider } from '../../types/provider.types'
 
 import { BaseLLMProvider } from './base'
+import { CodexMessageAdapter } from './codexMessageAdapter'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -26,6 +27,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
 > {
   private adapter: OpenAIMessageAdapter
   private client: OpenAI
+  private responsesAdapter: CodexMessageAdapter
 
   constructor(provider: Extract<LLMProvider, { type: 'openai' }>) {
     super(provider)
@@ -37,6 +39,22 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       dangerouslyAllowBrowser: true,
     })
     this.adapter = new OpenAIMessageAdapter()
+    this.responsesAdapter = new CodexMessageAdapter({
+      endpoint: `${this.client.baseURL.replace(/\/+$/, '')}/responses`,
+      includeMaxOutputTokens: true,
+      fetchFn: async (input, init) => {
+        const response = await fetch(input, init)
+        if (!response.ok) {
+          throw OpenAI.APIError.generate(
+            response.status,
+            undefined,
+            await response.text(),
+            response.headers,
+          )
+        }
+        return response
+      },
+    })
   }
 
   async generateResponse(
@@ -54,6 +72,18 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
+      if (model.model === 'gpt-6-astra') {
+        return await this.responsesAdapter.generateResponse(
+          {
+            ...request,
+            reasoning_effort: model.reasoning?.enabled
+              ? (model.reasoning.reasoning_effort as ReasoningEffort)
+              : undefined,
+          },
+          options,
+          { Authorization: `Bearer ${this.client.apiKey}` },
+        )
+      }
       const response = await this.adapter.generateResponse(
         this.client,
         {
@@ -115,6 +145,18 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
+      if (model.model === 'gpt-6-astra') {
+        return await this.responsesAdapter.streamResponse(
+          {
+            ...request,
+            reasoning_effort: model.reasoning?.enabled
+              ? (model.reasoning.reasoning_effort as ReasoningEffort)
+              : undefined,
+          },
+          options,
+          { Authorization: `Bearer ${this.client.apiKey}` },
+        )
+      }
       return await this.adapter.streamResponse(
         this.client,
         {
