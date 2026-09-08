@@ -70,23 +70,98 @@ export const CHAT_MODELS_ADDED_IN_V18 = [
   },
 ] as const
 
+// Fixed v17 identities: changing a custom model's id or binding makes it user-owned.
+export const CHAT_MODELS_RETIRED_IN_V18 = [
+  ['anthropic-plan', 'claude-opus-4.5 (plan)', 'claude-opus-4-5'],
+  ['anthropic-plan', 'claude-sonnet-4.5 (plan)', 'claude-sonnet-4-5'],
+  ['openai-plan', 'gpt-5.2 (plan)', 'gpt-5.2'],
+  ['gemini-plan', 'gemini-3-pro-preview (plan)', 'gemini-3-pro-preview'],
+  ['gemini-plan', 'gemini-3-flash-preview (plan)', 'gemini-3-flash-preview'],
+  ['anthropic', 'claude-opus-4.5', 'claude-opus-4-5'],
+  ['anthropic', 'claude-sonnet-4.5', 'claude-sonnet-4-5'],
+  ['anthropic', 'claude-haiku-4.5', 'claude-haiku-4-5'],
+  ['openai', 'gpt-5.2', 'gpt-5.2'],
+  ['openai', 'gpt-5-mini', 'gpt-5-mini'],
+  ['openai', 'gpt-4.1-mini', 'gpt-4.1-mini'],
+  ['openai', 'o4-mini', 'o4-mini'],
+  ['gemini', 'gemini-3-pro-preview', 'gemini-3-pro-preview'],
+  ['gemini', 'gemini-3-flash-preview', 'gemini-3-flash-preview'],
+  ['deepseek', 'deepseek-chat', 'deepseek-chat'],
+  ['deepseek', 'deepseek-reasoner', 'deepseek-reasoner'],
+  ['xai', 'grok-4-1-fast', 'grok-4-1-fast'],
+  ['xai', 'grok-4-1-fast-non-reasoning', 'grok-4-1-fast-non-reasoning'],
+].map(([providerType, id, model]) => ({
+  providerType,
+  providerId: providerType,
+  id,
+  model,
+}))
+
+const REPLACEMENT_IDS: Record<string, string> = {
+  'anthropic-plan': 'claude-opus-5 (plan)',
+  'openai-plan': 'gpt-5.6-sol (plan)',
+  'gemini-plan': 'gemini-3.1-pro-preview (plan)',
+  anthropic: 'claude-opus-5',
+  openai: 'gpt-5.6-sol',
+  gemini: 'gemini-3.1-pro-preview',
+  deepseek: 'deepseek-v4-pro',
+  xai: 'grok-4.6',
+}
+
+type ModelIdentity = {
+  id?: unknown
+  providerType?: unknown
+  providerId?: unknown
+  model?: unknown
+} | null
+
 export const migrateFrom17To18: SettingMigration['migrate'] = (data) => {
   const newData: Record<string, unknown> = { ...data, version: 18 }
+  const models: ModelIdentity[] = Array.isArray(data.chatModels)
+    ? data.chatModels
+    : CHAT_MODELS_RETIRED_IN_V18
+  const retired = models.filter((model) =>
+    CHAT_MODELS_RETIRED_IN_V18.some(
+      (old) =>
+        model?.id === old.id &&
+        model.providerType === old.providerType &&
+        model.providerId === old.providerId &&
+        model.model === old.model,
+    ),
+  )
+  const retained = models.filter((model) => !retired.includes(model))
+  const added: ModelIdentity[] = []
+  const replacementIds = new Map<string, string>()
 
-  if (Array.isArray(data.chatModels)) {
-    const existingIds = new Set(
-      data.chatModels.flatMap((model) => {
-        const id = (model as { id?: unknown } | null)?.id
-        return typeof id === 'string' ? [id] : []
-      }),
-    )
-    const missingModels = CHAT_MODELS_ADDED_IN_V18.filter(
-      (model) => !existingIds.has(model.id),
-    )
-    newData.chatModels = [...missingModels, ...data.chatModels]
+  for (const model of CHAT_MODELS_ADDED_IN_V18) {
+    let id: string = model.id
+    let suffix = 1
+    let existing = retained.find((candidate) => candidate?.id === id)
+    // A colliding id may use different credentials. Keep it and give the new
+    // built-in its own id instead of silently switching authentication paths.
+    while (
+      existing &&
+      (existing.providerType !== model.providerType ||
+        existing.providerId !== model.providerId ||
+        existing.model !== model.model)
+    ) {
+      suffix += 1
+      id = `${model.id}-${suffix}`
+      existing = retained.find((candidate) => candidate?.id === id)
+    }
+    replacementIds.set(model.id, id)
+    if (!existing) added.push({ ...model, id })
   }
+  newData.chatModels = [...added, ...retained]
 
-  // Existing selections and model objects belong to the user. In particular,
-  // do not cross API/plan authentication boundaries or change model tiers.
+  for (const key of ['chatModelId', 'applyModelId']) {
+    const old = retired.find((model) => model?.id === data[key])
+    if (!old) continue
+    const replacement =
+      key === 'applyModelId' && old.providerType === 'openai-plan'
+        ? 'gpt-5.6-luna (plan)'
+        : REPLACEMENT_IDS[old.providerType as string]
+    newData[key] = replacementIds.get(replacement)
+  }
   return newData
 }

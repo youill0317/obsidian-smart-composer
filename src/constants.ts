@@ -52,10 +52,10 @@ export const GEMINI_CODE_ASSIST_HEADERS = {
 } as const
 
 // Default model ids
-export const DEFAULT_CHAT_MODEL_ID = 'claude-sonnet-4.5'
+export const DEFAULT_CHAT_MODEL_ID = 'claude-opus-5'
 // Keep the API-backed apply default. Plan models require a separate OAuth
 // connection and must never be selected implicitly.
-export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
+export const DEFAULT_APPLY_MODEL_ID = 'gpt-5.6-sol'
 
 // Recommended model ids
 export const RECOMMENDED_MODELS_FOR_CHAT = [
@@ -65,7 +65,7 @@ export const RECOMMENDED_MODELS_FOR_CHAT = [
 ]
 export const RECOMMENDED_MODELS_FOR_APPLY = [
   'gpt-5.6-luna (plan)',
-  'gpt-4.1-mini',
+  'gpt-5.6-sol',
 ]
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
@@ -402,119 +402,6 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
     providerId: PROVIDER_TYPES_INFO.xai.defaultProviderId,
     id: 'grok-4.6',
     model: 'grok-4.6',
-  },
-  // Existing fast, balanced, and API-backed defaults remain available. Adding
-  // frontier models must not collapse users' cost/performance choices.
-  {
-    providerType: 'anthropic-plan',
-    providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
-    id: 'claude-opus-4.5 (plan)',
-    model: 'claude-opus-4-5',
-    thinking: { enabled: true, budget_tokens: 8192 },
-  },
-  {
-    providerType: 'anthropic-plan',
-    providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
-    id: 'claude-sonnet-4.5 (plan)',
-    model: 'claude-sonnet-4-5',
-    thinking: { enabled: true, budget_tokens: 8192 },
-  },
-  {
-    providerType: 'openai-plan',
-    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-5.2 (plan)',
-    model: 'gpt-5.2',
-  },
-  {
-    providerType: 'gemini-plan',
-    providerId: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
-    id: 'gemini-3-pro-preview (plan)',
-    model: 'gemini-3-pro-preview',
-  },
-  {
-    providerType: 'gemini-plan',
-    providerId: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
-    id: 'gemini-3-flash-preview (plan)',
-    model: 'gemini-3-flash-preview',
-  },
-  {
-    providerType: 'anthropic',
-    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-opus-4.5',
-    model: 'claude-opus-4-5',
-  },
-  {
-    providerType: 'anthropic',
-    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-sonnet-4.5',
-    model: 'claude-sonnet-4-5',
-  },
-  {
-    providerType: 'anthropic',
-    providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-haiku-4.5',
-    model: 'claude-haiku-4-5',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5.2',
-    model: 'gpt-5.2',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5-mini',
-    model: 'gpt-5-mini',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-4.1-mini',
-    model: 'gpt-4.1-mini',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'o4-mini',
-    model: 'o4-mini',
-    reasoning: { enabled: true, reasoning_effort: 'medium' },
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-3-pro-preview',
-    model: 'gemini-3-pro-preview',
-  },
-  {
-    providerType: 'gemini',
-    providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-3-flash-preview',
-    model: 'gemini-3-flash-preview',
-  },
-  {
-    providerType: 'deepseek',
-    providerId: PROVIDER_TYPES_INFO.deepseek.defaultProviderId,
-    id: 'deepseek-chat',
-    model: 'deepseek-chat',
-  },
-  {
-    providerType: 'deepseek',
-    providerId: PROVIDER_TYPES_INFO.deepseek.defaultProviderId,
-    id: 'deepseek-reasoner',
-    model: 'deepseek-reasoner',
-  },
-  {
-    providerType: 'xai',
-    providerId: PROVIDER_TYPES_INFO.xai.defaultProviderId,
-    id: 'grok-4-1-fast',
-    model: 'grok-4-1-fast',
-  },
-  {
-    providerType: 'xai',
-    providerId: PROVIDER_TYPES_INFO.xai.defaultProviderId,
-    id: 'grok-4-1-fast-non-reasoning',
-    model: 'grok-4-1-fast-non-reasoning',
   },
 ]
 

@@ -2,7 +2,11 @@ import { DEFAULT_CHAT_MODELS } from '../../../constants'
 import { parseSmartComposerSettings } from '../settings'
 
 import { migrateFrom16To17 } from './16_to_17'
-import { CHAT_MODELS_ADDED_IN_V18, migrateFrom17To18 } from './17_to_18'
+import {
+  CHAT_MODELS_ADDED_IN_V18,
+  CHAT_MODELS_RETIRED_IN_V18,
+  migrateFrom17To18,
+} from './17_to_18'
 
 describe('Migration from v17 to v18', () => {
   const apiModel = {
@@ -10,95 +14,144 @@ describe('Migration from v17 to v18', () => {
     providerId: 'openai',
     id: 'gpt-4.1-mini',
     model: 'gpt-4.1-mini',
-    enable: false,
-    promptLevel: 'none',
-    reasoning: { enabled: true, reasoning_effort: 'low' },
-  }
-  const planModel = {
-    providerType: 'anthropic-plan',
-    providerId: 'anthropic-plan',
-    id: 'claude-sonnet-4.5 (plan)',
-    model: 'claude-sonnet-4-5',
-    thinking: { enabled: true, budget_tokens: 4096 },
   }
 
-  it('adds models without replacing user models or selections', () => {
+  it('replaces all 18 retired built-ins with the 11 current defaults', () => {
     const result = migrateFrom17To18({
       version: 17,
-      chatModels: [apiModel, planModel],
-      chatModelId: apiModel.id,
+      chatModels: CHAT_MODELS_RETIRED_IN_V18,
+      chatModelId: 'claude-sonnet-4.5',
       applyModelId: apiModel.id,
     })
-
-    expect(result.version).toBe(18)
-    expect(result.chatModels).toEqual([
-      ...CHAT_MODELS_ADDED_IN_V18,
-      apiModel,
-      planModel,
-    ])
-    expect(result.chatModelId).toBe(apiModel.id)
-    expect(result.applyModelId).toBe(apiModel.id)
+    expect(CHAT_MODELS_RETIRED_IN_V18).toHaveLength(18)
+    expect(result.chatModels).toEqual(CHAT_MODELS_ADDED_IN_V18)
+    expect(result.chatModels).toEqual(DEFAULT_CHAT_MODELS)
+    expect(result.chatModelId).toBe('claude-opus-5')
+    expect(result.applyModelId).toBe('gpt-5.6-sol')
   })
 
-  it.each(['gpt-5.6-sol', 'gpt-6-astra', 'gpt-6-astra (plan)'])(
-    'preserves a user model that collides with %s',
-    (id) => {
-      const userModel = {
-        ...apiModel,
-        id,
-        model: 'gateway-model',
+  it.each([
+    ['openai', 'gpt-5.6-sol', 'gpt-5.6-sol'],
+    ['openai-plan', 'gpt-5.6-sol (plan)', 'gpt-5.6-luna (plan)'],
+    ['anthropic', 'claude-opus-5', 'claude-opus-5'],
+    ['anthropic-plan', 'claude-opus-5 (plan)', 'claude-opus-5 (plan)'],
+    ['gemini', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview'],
+    [
+      'gemini-plan',
+      'gemini-3.1-pro-preview (plan)',
+      'gemini-3.1-pro-preview (plan)',
+    ],
+    ['deepseek', 'deepseek-v4-pro', 'deepseek-v4-pro'],
+    ['xai', 'grok-4.6', 'grok-4.6'],
+  ])(
+    'keeps %s selections on the same provider and authentication',
+    (type, chat, apply) => {
+      for (const old of CHAT_MODELS_RETIRED_IN_V18.filter(
+        (model) => model.providerType === type,
+      )) {
+        const result = migrateFrom17To18({
+          chatModels: [old],
+          chatModelId: old.id,
+          applyModelId: old.id,
+        })
+        expect(result.chatModelId).toBe(chat)
+        expect(result.applyModelId).toBe(apply)
       }
-      const result = migrateFrom17To18({
-        version: 17,
-        chatModels: [userModel],
-      })
-
-      expect(
-        Array.isArray(result.chatModels) &&
-          result.chatModels.filter(
-            (model) => (model as { id?: unknown }).id === userModel.id,
-          ),
-      ).toEqual([userModel])
     },
   )
 
-  it('loads Astra API and plan choices without switching existing selections', () => {
-    const settings = parseSmartComposerSettings({
-      version: 17,
-      chatModels: [apiModel, planModel],
+  it.each([
+    { id: 'my-mini' },
+    { providerType: 'openai-compatible' },
+    { providerId: 'my-gateway' },
+    { model: 'my-model' },
+  ])('preserves customized legacy identities: %p', (change) => {
+    const custom = { ...apiModel, ...change }
+    const result = migrateFrom17To18({
+      chatModels: [custom],
+      chatModelId: custom.id,
+      applyModelId: custom.id,
+    })
+    expect(result.chatModels).toContain(custom)
+    expect(result.chatModelId).toBe(custom.id)
+    expect(result.applyModelId).toBe(custom.id)
+  })
+
+  it('preserves current model settings, providers and credentials', () => {
+    const current = {
+      ...CHAT_MODELS_ADDED_IN_V18.find((model) => model.id === 'gpt-6-astra'),
+      enable: false,
+      promptLevel: 'none',
+      reasoning: { enabled: true, reasoning_effort: 'low' },
+    }
+    const providers = [{ id: 'openai', type: 'openai', apiKey: 'test-key' }]
+    const result = migrateFrom17To18({
+      chatModels: [current],
+      providers,
+      chatModelId: current.id,
+      applyModelId: current.id,
+    })
+    expect(result.chatModels).toContain(current)
+    expect(result.providers).toBe(providers)
+    expect(result.chatModelId).toBe(current.id)
+    expect(result.applyModelId).toBe(current.id)
+  })
+
+  it('resolves occupied replacement ids without switching API users to plans', () => {
+    const custom = {
+      id: 'gpt-5.6-sol',
+      model: 'gpt-5.6-sol',
+      providerType: 'openai-plan',
+      providerId: 'openai-plan',
+    }
+    const occupied = { ...custom, id: 'gpt-5.6-sol-2' }
+    const result = migrateFrom17To18({
+      chatModels: [apiModel, custom, occupied],
       chatModelId: apiModel.id,
       applyModelId: apiModel.id,
     })
-    for (const id of ['gpt-6-astra', 'gpt-6-astra (plan)']) {
-      expect(settings.chatModels.find((model) => model.id === id)).toEqual(
-        DEFAULT_CHAT_MODELS.find((model) => model.id === id),
-      )
+    expect(result.chatModels).toContain(custom)
+    expect(result.chatModels).toContain(occupied)
+    expect(result.chatModelId).toBe('gpt-5.6-sol-3')
+    expect(result.applyModelId).toBe('gpt-5.6-sol-3')
+    expect(result.chatModels).toContainEqual({
+      id: 'gpt-5.6-sol-3',
+      model: 'gpt-5.6-sol',
+      providerType: 'openai',
+      providerId: 'openai',
+    })
+    expect(migrateFrom17To18(result)).toEqual(result)
+  })
+
+  it('loads and re-loads the v16 to v18 chain with valid selections', () => {
+    const initial = {
+      version: 16,
+      chatModels: CHAT_MODELS_RETIRED_IN_V18,
+      chatModelId: 'gpt-5.2 (plan)',
+      applyModelId: apiModel.id,
     }
-    expect(settings.chatModelId).toBe(apiModel.id)
-    expect(settings.applyModelId).toBe(apiModel.id)
+    const first = migrateFrom17To18(migrateFrom16To17(initial))
+    expect(migrateFrom17To18(first)).toEqual(first)
+    const settings = parseSmartComposerSettings(initial)
+    expect(settings.version).toBe(18)
+    expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
+    expect(settings.chatModelId).toBe('gpt-5.6-sol (plan)')
+    expect(settings.applyModelId).toBe('gpt-5.6-sol')
     expect(parseSmartComposerSettings(settings)).toEqual(settings)
   })
 
-  it('is idempotent and supports the v16 to v17 to v18 chain', () => {
-    const v17 = migrateFrom16To17({
-      version: 16,
-      chatModels: [apiModel],
-      chatModelId: apiModel.id,
-      applyModelId: apiModel.id,
-    })
-    const first = migrateFrom17To18(v17)
-    const second = migrateFrom17To18(first)
-
-    expect(second).toEqual(first)
-    expect(first.version).toBe(18)
-    expect(first.chatModelId).toBe(apiModel.id)
-    expect(first.applyModelId).toBe(apiModel.id)
-  })
-
-  it('leaves malformed non-array model data for schema recovery', () => {
-    const chatModels = { invalid: true }
-    const result = migrateFrom17To18({ version: 17, chatModels })
-
-    expect(result.chatModels).toBe(chatModels)
-  })
+  it.each([undefined, { invalid: true }])(
+    'recovers a missing or malformed catalog without dangling legacy selections',
+    (chatModels) => {
+      const settings = parseSmartComposerSettings({
+        version: 17,
+        chatModels,
+        chatModelId: 'gpt-5.2 (plan)',
+        applyModelId: apiModel.id,
+      })
+      expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
+      expect(settings.chatModelId).toBe('gpt-5.6-sol (plan)')
+      expect(settings.applyModelId).toBe('gpt-5.6-sol')
+    },
+  )
 })
