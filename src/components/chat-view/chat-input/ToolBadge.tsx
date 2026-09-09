@@ -25,15 +25,15 @@ export default function ToolBadge() {
   const handleToolToggle = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.stopPropagation()
-      setSettings({
-        ...settings,
+      setSettings((current) => ({
+        ...current,
         chatOptions: {
-          ...settings.chatOptions,
-          enableTools: !settings.chatOptions.enableTools,
+          ...current.chatOptions,
+          enableTools: !current.chatOptions.enableTools,
         },
-      })
+      }))
     },
-    [settings, setSettings],
+    [setSettings],
   )
 
   useEffect(() => {

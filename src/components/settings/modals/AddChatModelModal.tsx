@@ -62,10 +62,10 @@ function AddChatModelModalComponent({
       return
     }
 
-    await plugin.setSettings({
-      ...plugin.settings,
-      chatModels: [...plugin.settings.chatModels, formData],
-    })
+    await plugin.setSettings((current) => ({
+      ...current,
+      chatModels: [...current.chatModels, formData],
+    }))
 
     onClose()
   }

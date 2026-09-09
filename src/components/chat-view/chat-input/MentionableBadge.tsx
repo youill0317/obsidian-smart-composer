@@ -143,16 +143,16 @@ function CurrentFileBadge({
   const handleCurrentFileToggle = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.stopPropagation()
-      setSettings({
-        ...settings,
+      setSettings((current) => ({
+        ...current,
         chatOptions: {
-          ...settings.chatOptions,
+          ...current.chatOptions,
           includeCurrentFileContent:
-            !settings.chatOptions.includeCurrentFileContent,
+            !current.chatOptions.includeCurrentFileContent,
         },
-      })
+      }))
     },
-    [settings, setSettings],
+    [setSettings],
   )
 
   const Icon = getMentionableIcon(mentionable)

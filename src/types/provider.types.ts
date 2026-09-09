@@ -4,6 +4,7 @@ export const baseLlmProviderSchema = z.object({
   id: z.string().min(1, 'id is required'),
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
+  credentialsSecretId: z.string().optional(),
   additionalSettings: z.record(z.string(), z.string()).optional(),
 })
 

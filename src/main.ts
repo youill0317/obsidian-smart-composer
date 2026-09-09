@@ -1,4 +1,10 @@
-import { Editor, MarkdownView, Notice, Plugin } from 'obsidian'
+import {
+  Editor,
+  MarkdownView,
+  Notice,
+  Plugin,
+  requireApiVersion,
+} from 'obsidian'
 
 import { ApplyView } from './ApplyView'
 import { ChatView } from './ChatView'
@@ -10,16 +16,24 @@ import { RAGEngine } from './core/rag/ragEngine'
 import { DatabaseManager } from './database/DatabaseManager'
 import { PGLiteAbortedException } from './database/exception'
 import { migrateToJsonDatabase } from './database/json/migrateToJsonDatabase'
+import { CredentialSettingsStore } from './settings/credentialSettingsStore'
 import {
+  SettingsUpdate,
   SmartComposerSettings,
-  smartComposerSettingsSchema,
 } from './settings/schema/setting.types'
-import { parseSmartComposerSettings } from './settings/schema/settings'
 import { SmartComposerSettingTab } from './settings/SettingTab'
 import { getMentionableBlockData } from './utils/obsidian'
 
 export default class SmartComposerPlugin extends Plugin {
-  settings: SmartComposerSettings
+  private credentialStore: CredentialSettingsStore
+
+  get settings(): SmartComposerSettings {
+    return this.credentialStore.settings
+  }
+
+  getCredentialStatus(providerId: string) {
+    return this.credentialStore.getStatus(providerId)
+  }
   initialChatProps?: ChatProps // TODO: change this to use view state like ApplyView
   settingsChangeListeners: ((newSettings: SmartComposerSettings) => void)[] = []
   mcpManager: McpManager | null = null
@@ -154,23 +168,33 @@ export default class SmartComposerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = parseSmartComposerSettings(await this.loadData())
-    await this.saveData(this.settings) // Save updated settings
+    const storage =
+      requireApiVersion('1.11.5') &&
+      typeof this.app.secretStorage?.getSecret === 'function' &&
+      typeof this.app.secretStorage?.setSecret === 'function'
+        ? this.app.secretStorage
+        : undefined
+    this.credentialStore = new CredentialSettingsStore(
+      storage,
+      (settings) => this.saveData(settings),
+      (message) => {
+        new Notice(message)
+      },
+      (settings) => {
+        this.ragEngine?.setSettings(settings)
+        this.settingsChangeListeners.forEach((listener) => listener(settings))
+      },
+    )
+    await this.credentialStore.load(await this.loadData())
   }
 
-  async setSettings(newSettings: SmartComposerSettings) {
-    const validationResult = smartComposerSettingsSchema.safeParse(newSettings)
-
-    if (!validationResult.success) {
-      new Notice(`Invalid settings:
-${validationResult.error.issues.map((v) => v.message).join('\n')}`)
-      return
+  async setSettings(update: SettingsUpdate) {
+    try {
+      await this.credentialStore.update(update)
+    } catch {
+      new Notice('Smart Composer settings could not be saved. Please retry.')
+      throw new Error('Smart Composer settings could not be saved.')
     }
-
-    this.settings = newSettings
-    await this.saveData(newSettings)
-    this.ragEngine?.setSettings(newSettings)
-    this.settingsChangeListeners.forEach((listener) => listener(newSettings))
   }
 
   addSettingsChangeListener(

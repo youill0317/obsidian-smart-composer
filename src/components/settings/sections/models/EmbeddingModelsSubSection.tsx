@@ -49,12 +49,12 @@ export function EmbeddingModelsSubSection({
           await vectorManager.clearAllVectors(embeddingModelClient)
         }
 
-        await setSettings({
-          ...settings,
-          embeddingModels: [...settings.embeddingModels].filter(
+        await setSettings((current) => ({
+          ...current,
+          embeddingModels: [...current.embeddingModels].filter(
             (v) => v.id !== modelId,
           ),
-        })
+        }))
       },
     }).open()
   }

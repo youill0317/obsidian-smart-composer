@@ -38,10 +38,10 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
             ]),
           )}
           onChange={async (value) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               embeddingModelId: value,
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -71,13 +71,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
               .split('\n')
               .map((p: string) => p.trim())
               .filter((p: string) => p.length > 0)
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               ragOptions: {
-                ...settings.ragOptions,
+                ...current.ragOptions,
                 includePatterns: patterns,
               },
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -107,13 +107,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
               .split('\n')
               .map((p) => p.trim())
               .filter((p) => p.length > 0)
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               ragOptions: {
-                ...settings.ragOptions,
+                ...current.ragOptions,
                 excludePatterns: patterns,
               },
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -128,13 +128,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
           onChange={async (value) => {
             const chunkSize = parseInt(value, 10)
             if (!isNaN(chunkSize)) {
-              await setSettings({
-                ...settings,
+              await setSettings((current) => ({
+                ...current,
                 ragOptions: {
-                  ...settings.ragOptions,
+                  ...current.ragOptions,
                   chunkSize,
                 },
-              })
+              }))
             }
           }}
         />
@@ -150,13 +150,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
           onChange={async (value) => {
             const thresholdTokens = parseInt(value, 10)
             if (!isNaN(thresholdTokens)) {
-              await setSettings({
-                ...settings,
+              await setSettings((current) => ({
+                ...current,
                 ragOptions: {
-                  ...settings.ragOptions,
+                  ...current.ragOptions,
                   thresholdTokens,
                 },
-              })
+              }))
             }
           }}
         />
@@ -178,13 +178,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
 
             const minSimilarity = parseFloat(value)
             if (!isNaN(minSimilarity)) {
-              await setSettings({
-                ...settings,
+              await setSettings((current) => ({
+                ...current,
                 ragOptions: {
-                  ...settings.ragOptions,
+                  ...current.ragOptions,
                   minSimilarity,
                 },
-              })
+              }))
             }
           }}
         />
@@ -200,13 +200,13 @@ export function RAGSection({ app, plugin }: RAGSectionProps) {
           onChange={async (value) => {
             const limit = parseInt(value, 10)
             if (!isNaN(limit)) {
-              await setSettings({
-                ...settings,
+              await setSettings((current) => ({
+                ...current,
                 ragOptions: {
-                  ...settings.ragOptions,
+                  ...current.ragOptions,
                   limit,
                 },
-              })
+              }))
             }
           }}
         />

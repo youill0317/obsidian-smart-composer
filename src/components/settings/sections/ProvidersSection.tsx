@@ -12,6 +12,7 @@ import { getEmbeddingModelClient } from '../../../core/rag/embedding'
 import SmartComposerPlugin from '../../../main'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
+import { CredentialStorageStatus } from '../CredentialStorageStatus'
 import {
   AddProviderModal,
   EditProviderModal,
@@ -68,18 +69,16 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
           }
         }
 
-        await setSettings({
-          ...settings,
-          providers: [...settings.providers].filter(
-            (v) => v.id !== provider.id,
-          ),
-          chatModels: [...settings.chatModels].filter(
+        await setSettings((current) => ({
+          ...current,
+          providers: [...current.providers].filter((v) => v.id !== provider.id),
+          chatModels: [...current.chatModels].filter(
             (v) => v.providerId !== provider.id,
           ),
-          embeddingModels: [...settings.embeddingModels].filter(
+          embeddingModels: [...current.embeddingModels].filter(
             (v) => v.providerId !== provider.id,
           ),
-        })
+        }))
       },
     }).open()
   }
@@ -128,6 +127,10 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
                   }}
                 >
                   {provider.apiKey ? '••••••••' : 'Set API key'}
+                  <CredentialStorageStatus
+                    plugin={plugin}
+                    providerId={provider.id}
+                  />
                 </td>
                 <td>
                   <div className="smtcmp-settings-actions">

@@ -64,10 +64,10 @@ export function useChatStreamManager({
         }
         // Fallback to the first chat model if the selected chat model is not found
         const firstChatModel = settings.chatModels[0]
-        setSettings({
-          ...settings,
+        setSettings((current) => ({
+          ...current,
           chatModelId: firstChatModel.id,
-          chatModels: settings.chatModels.map((model) =>
+          chatModels: current.chatModels.map((model) =>
             model.id === firstChatModel.id
               ? {
                   ...model,
@@ -75,7 +75,7 @@ export function useChatStreamManager({
                 }
               : model,
           ),
-        })
+        }))
         return getChatModelClient({
           modelId: firstChatModel.id,
           settings,

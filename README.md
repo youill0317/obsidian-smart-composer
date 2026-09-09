@@ -43,6 +43,40 @@ Everytime we ask ChatGPT, we need to put so much context information for each qu
 
 **Smart Composer is an Obsidian plugin that helps you write efficiently with AI by easily referencing your vault content.** Inspired by Cursor AI and ChatGPT Canvas, this plugin unifies your note-taking and content creation process within Obsidian.
 
+## Credential storage
+
+API keys and OpenAI, Claude, and Gemini subscription credentials use Obsidian
+Keychain by default on Obsidian 1.11.5+ when the SecretStorage API is available.
+On first load, existing credentials are moved automatically. The plugin verifies
+that the stored value can be read back before removing it from `data.json`.
+Only a generated reference remains in the settings file; OAuth tokens and their
+account/project metadata are stored together in Keychain.
+
+If the API is unavailable or a storage operation fails verification, the affected
+provider automatically falls back to plaintext in `data.json`. A notice appears
+once per provider per plugin session, and its settings show **Plaintext** with the
+reason. Migration is retried on the next settings save or plugin load. Successful
+Keychain storage does not keep a plaintext backup.
+
+Keychain values do not travel with a copied or synced `data.json`. On another
+device, **Needs attention** means you should re-enter the API key or reconnect
+the subscription. Missing references are preserved when saving unrelated settings.
+Use **Clear API key** and save, **Disconnect**, or reset settings to explicitly
+remove credentials. Only Smart Composer's generated entries are cleared; the
+public API leaves empty entries that can be removed in Obsidian's Keychain UI.
+A cleanup failure is reported without reconnecting the provider.
+
+**Security limits:** Keychain encryption depends on Obsidian and the operating
+system; the label **Keychain** is not an independent encryption check. The public
+API does not acknowledge durable disk writes, so immediate readback cannot detect
+all asynchronous storage failures. This integration does not use private Obsidian
+APIs or add its own encryption. Existing backups and Git history are not scrubbed.
+Older Smart Composer releases do not understand the new references and may require
+credentials to be entered again. MCP configuration is outside this migration.
+
+See the [Obsidian SecretStorage guide](https://docs.obsidian.md/plugins/guides/secret-storage)
+and [Obsidian 1.11.5 encryption release notes](https://obsidian.md/changelog/2026-01-20-desktop-v1.11.5/).
+
 ## Features
 
 ### Contextual Chat

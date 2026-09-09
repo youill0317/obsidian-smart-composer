@@ -31,10 +31,10 @@ export function ChatSection() {
               ]),
           )}
           onChange={async (value) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               chatModelId: value,
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -54,10 +54,10 @@ export function ChatSection() {
               ]),
           )}
           onChange={async (value) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               applyModelId: value,
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -72,10 +72,10 @@ export function ChatSection() {
         <ObsidianTextArea
           value={settings.systemPrompt}
           onChange={async (value: string) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               systemPrompt: value,
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -87,13 +87,13 @@ export function ChatSection() {
         <ObsidianToggle
           value={settings.chatOptions.includeCurrentFileContent}
           onChange={async (value) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               chatOptions: {
-                ...settings.chatOptions,
+                ...current.chatOptions,
                 includeCurrentFileContent: value,
               },
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -105,13 +105,13 @@ export function ChatSection() {
         <ObsidianToggle
           value={settings.chatOptions.enableTools}
           onChange={async (value) => {
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               chatOptions: {
-                ...settings.chatOptions,
+                ...current.chatOptions,
                 enableTools: value,
               },
-            })
+            }))
           }}
         />
       </ObsidianSetting>
@@ -127,13 +127,13 @@ export function ChatSection() {
             if (isNaN(parsedValue) || parsedValue < 1) {
               return
             }
-            await setSettings({
-              ...settings,
+            await setSettings((current) => ({
+              ...current,
               chatOptions: {
-                ...settings.chatOptions,
+                ...current.chatOptions,
                 maxAutoIterations: parsedValue,
               },
-            })
+            }))
           }}
         />
       </ObsidianSetting>

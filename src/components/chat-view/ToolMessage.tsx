@@ -267,11 +267,11 @@ function useToolCall(
       allowAutoExecution: true,
     }
 
-    setSettings({
-      ...settings,
+    setSettings((current) => ({
+      ...current,
       mcp: {
-        ...settings.mcp,
-        servers: settings.mcp.servers.map((s) =>
+        ...current.mcp,
+        servers: current.mcp.servers.map((s) =>
           s.id === server.id
             ? {
                 ...s,
@@ -280,7 +280,7 @@ function useToolCall(
             : s,
         ),
       },
-    })
+    }))
   }, [request, settings, setSettings])
 
   const handleReject = useCallback(async () => {

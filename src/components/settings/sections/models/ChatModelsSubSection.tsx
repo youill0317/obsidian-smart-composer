@@ -40,10 +40,10 @@ export function ChatModelsSubSection({
       message: message,
       ctaText: 'Delete',
       onConfirm: async () => {
-        await setSettings({
-          ...settings,
-          chatModels: [...settings.chatModels].filter((v) => v.id !== modelId),
-        })
+        await setSettings((current) => ({
+          ...current,
+          chatModels: [...current.chatModels].filter((v) => v.id !== modelId),
+        }))
       },
     }).open()
   }
@@ -61,21 +61,21 @@ export function ChatModelsSubSection({
       )
 
       // to trigger re-render
-      await setSettings({
-        ...settings,
-        chatModels: [...settings.chatModels].map((v) =>
+      await setSettings((current) => ({
+        ...current,
+        chatModels: [...current.chatModels].map((v) =>
           v.id === modelId ? { ...v, enable: true } : v,
         ),
-      })
+      }))
       return
     }
 
-    await setSettings({
-      ...settings,
-      chatModels: [...settings.chatModels].map((v) =>
+    await setSettings((current) => ({
+      ...current,
+      chatModels: [...current.chatModels].map((v) =>
         v.id === modelId ? { ...v, enable: value } : v,
       ),
-    })
+    }))
   }
 
   return (
