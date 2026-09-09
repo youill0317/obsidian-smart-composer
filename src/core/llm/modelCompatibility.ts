@@ -14,6 +14,24 @@ export const ASTRA_REASONING_EFFORTS = [
 // are modeled explicitly instead of sending an invalid request.
 export function normalizeModelCompatibility(model: ChatModel): ChatModel {
   if (
+    (model.providerType === 'gemini' || model.providerType === 'gemini-plan') &&
+    model.model === 'gemini-3.8-flash' &&
+    model.thinking
+  ) {
+    return {
+      ...model,
+      thinking: {
+        ...model.thinking,
+        control_mode: 'level',
+        thinking_level:
+          model.thinking.thinking_level === 'minimal'
+            ? 'low'
+            : (model.thinking.thinking_level ?? 'medium'),
+        thinking_budget: undefined,
+      },
+    }
+  }
+  if (
     (model.providerType === 'openai' || model.providerType === 'openai-plan') &&
     model.model === 'gpt-6-astra' &&
     ['none', 'minimal'].includes(model.reasoning?.reasoning_effort ?? '')

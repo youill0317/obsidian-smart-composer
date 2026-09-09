@@ -1,8 +1,60 @@
 import { ChatModel } from '../../types/chat-model.types'
 
+import { GeminiProvider } from './gemini'
 import { normalizeModelCompatibility } from './modelCompatibility'
 
 describe('normalizeModelCompatibility', () => {
+  it.each(['gemini', 'gemini-plan'] as const)(
+    'uses valid Gemini 3.8 Flash thinking on %s without changing saved settings',
+    (providerType) => {
+      const model = {
+        providerType,
+        providerId: providerType,
+        id: 'custom-flash',
+        model: 'gemini-3.8-flash',
+        thinking: {
+          enabled: true,
+          control_mode: 'budget' as const,
+          thinking_budget: 1024,
+          include_thoughts: true,
+        },
+      }
+      const normalized = normalizeModelCompatibility(model) as typeof model
+      expect(GeminiProvider.buildThinkingConfig(normalized)).toEqual({
+        thinkingLevel: 'MEDIUM',
+        includeThoughts: true,
+      })
+      expect(model.thinking).toEqual({
+        enabled: true,
+        control_mode: 'budget',
+        thinking_budget: 1024,
+        include_thoughts: true,
+      })
+      for (const level of ['minimal', 'low', 'medium', 'high'] as const) {
+        const withLevel = {
+          ...model,
+          thinking: { ...model.thinking, thinking_level: level },
+        }
+        expect(normalizeModelCompatibility(withLevel)).toHaveProperty(
+          'thinking.thinking_level',
+          level === 'minimal' ? 'low' : level,
+        )
+      }
+      const disabled = {
+        ...model,
+        thinking: { ...model.thinking, enabled: false },
+      }
+      expect(
+        GeminiProvider.buildThinkingConfig(
+          normalizeModelCompatibility(disabled) as typeof disabled,
+        ),
+      ).toBeUndefined()
+      const previous = { ...model, model: 'gemini-3-flash-preview' }
+      expect(normalizeModelCompatibility(previous)).toBe(previous)
+      const defaultModel = { ...model, thinking: undefined }
+      expect(normalizeModelCompatibility(defaultModel)).toBe(defaultModel)
+    },
+  )
   it.each(['openai', 'openai-plan'] as const)(
     'maps unsupported Astra efforts without changing saved %s settings',
     (providerType) => {

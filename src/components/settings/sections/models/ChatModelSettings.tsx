@@ -1,7 +1,10 @@
 import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
-import { ASTRA_REASONING_EFFORTS } from '../../../../core/llm/modelCompatibility'
+import {
+  ASTRA_REASONING_EFFORTS,
+  normalizeModelCompatibility,
+} from '../../../../core/llm/modelCompatibility'
 import SmartComposerPlugin from '../../../../main'
 import { ChatModel, chatModelSchema } from '../../../../types/chat-model.types'
 import { ObsidianButton } from '../../../common/ObsidianButton'
@@ -346,7 +349,8 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
       model.providerType === 'gemini' || model.providerType === 'gemini-plan',
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & {
+      const isGemini38Flash = model.model === 'gemini-3.8-flash'
+      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
         providerType: 'gemini' | 'gemini-plan'
       }
       const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
@@ -356,7 +360,10 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
         typedModel.thinking?.control_mode ?? 'level',
       )
       const [thinkingLevel, setThinkingLevel] = useState<string>(
-        String(typedModel.thinking?.thinking_level ?? 'high'),
+        String(
+          typedModel.thinking?.thinking_level ??
+            (isGemini38Flash ? 'medium' : 'high'),
+        ),
       )
       const [thinkingBudget, setThinkingBudget] = useState<string>(
         String(typedModel.thinking?.thinking_budget ?? -1),
@@ -429,7 +436,7 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
                   value={controlMode}
                   options={{
                     level: 'Level (Gemini 3)',
-                    budget: 'Budget (Gemini 2.5)',
+                    ...(!isGemini38Flash && { budget: 'Budget (Gemini 2.5)' }),
                   }}
                   onChange={(value: string) =>
                     setControlMode(value as 'level' | 'budget')
@@ -439,13 +446,17 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               {controlMode === 'level' && (
                 <ObsidianSetting
                   name="Thinking Level"
-                  desc="Controls reasoning depth. 'high' is default for Gemini 3."
+                  desc={
+                    isGemini38Flash
+                      ? "Controls reasoning depth. 'medium' is default for Gemini 3.8 Flash."
+                      : "Controls reasoning depth. 'high' is default for Gemini 3."
+                  }
                   className="smtcmp-setting-item--nested"
                 >
                   <ObsidianDropdown
                     value={thinkingLevel}
                     options={{
-                      minimal: 'minimal',
+                      ...(!isGemini38Flash && { minimal: 'minimal' }),
                       low: 'low',
                       medium: 'medium',
                       high: 'high',

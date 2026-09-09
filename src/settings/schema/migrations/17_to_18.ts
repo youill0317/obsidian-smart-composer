@@ -23,20 +23,14 @@ export const CHAT_MODELS_ADDED_IN_V18 = [
   {
     providerType: 'openai-plan',
     providerId: 'openai-plan',
-    id: 'gpt-5.6-sol (plan)',
-    model: 'gpt-5.6-sol',
-  },
-  {
-    providerType: 'openai-plan',
-    providerId: 'openai-plan',
-    id: 'gpt-5.6-luna (plan)',
-    model: 'gpt-5.6-luna',
+    id: 'gpt-5.3-codex-spark (plan)',
+    model: 'gpt-5.3-codex-spark',
   },
   {
     providerType: 'gemini-plan',
     providerId: 'gemini-plan',
-    id: 'gemini-3.1-pro-preview (plan)',
-    model: 'gemini-3.1-pro-preview',
+    id: 'gemini-3.8-flash (plan)',
+    model: 'gemini-3.8-flash',
   },
   {
     providerType: 'anthropic',
@@ -45,16 +39,10 @@ export const CHAT_MODELS_ADDED_IN_V18 = [
     model: 'claude-opus-5',
   },
   {
-    providerType: 'openai',
-    providerId: 'openai',
-    id: 'gpt-5.6-sol',
-    model: 'gpt-5.6-sol',
-  },
-  {
     providerType: 'gemini',
     providerId: 'gemini',
-    id: 'gemini-3.1-pro-preview',
-    model: 'gemini-3.1-pro-preview',
+    id: 'gemini-3.8-flash',
+    model: 'gemini-3.8-flash',
   },
   {
     providerType: 'deepseek',
@@ -99,11 +87,11 @@ export const CHAT_MODELS_RETIRED_IN_V18 = [
 
 const REPLACEMENT_IDS: Record<string, string> = {
   'anthropic-plan': 'claude-opus-5 (plan)',
-  'openai-plan': 'gpt-5.6-sol (plan)',
-  'gemini-plan': 'gemini-3.1-pro-preview (plan)',
+  'openai-plan': 'gpt-6-astra (plan)',
+  'gemini-plan': 'gemini-3.8-flash (plan)',
   anthropic: 'claude-opus-5',
-  openai: 'gpt-5.6-sol',
-  gemini: 'gemini-3.1-pro-preview',
+  openai: 'gpt-6-astra',
+  gemini: 'gemini-3.8-flash',
   deepseek: 'deepseek-v4-pro',
   xai: 'grok-4.6',
 }
@@ -159,7 +147,7 @@ export const migrateFrom17To18: SettingMigration['migrate'] = (data) => {
     if (!old) continue
     const replacement =
       key === 'applyModelId' && old.providerType === 'openai-plan'
-        ? 'gpt-5.6-luna (plan)'
+        ? 'gpt-5.3-codex-spark (plan)'
         : REPLACEMENT_IDS[old.providerType as string]
     newData[key] = replacementIds.get(replacement)
   }

@@ -16,7 +16,7 @@ describe('Migration from v17 to v18', () => {
     model: 'gpt-4.1-mini',
   }
 
-  it('replaces all 18 retired built-ins with the 11 current defaults', () => {
+  it('replaces all 18 retired built-ins with the 9 current defaults', () => {
     const result = migrateFrom17To18({
       version: 17,
       chatModels: CHAT_MODELS_RETIRED_IN_V18,
@@ -24,23 +24,20 @@ describe('Migration from v17 to v18', () => {
       applyModelId: apiModel.id,
     })
     expect(CHAT_MODELS_RETIRED_IN_V18).toHaveLength(18)
+    expect(CHAT_MODELS_ADDED_IN_V18).toHaveLength(9)
     expect(result.chatModels).toEqual(CHAT_MODELS_ADDED_IN_V18)
     expect(result.chatModels).toEqual(DEFAULT_CHAT_MODELS)
     expect(result.chatModelId).toBe('claude-opus-5')
-    expect(result.applyModelId).toBe('gpt-5.6-sol')
+    expect(result.applyModelId).toBe('gpt-6-astra')
   })
 
   it.each([
-    ['openai', 'gpt-5.6-sol', 'gpt-5.6-sol'],
-    ['openai-plan', 'gpt-5.6-sol (plan)', 'gpt-5.6-luna (plan)'],
+    ['openai', 'gpt-6-astra', 'gpt-6-astra'],
+    ['openai-plan', 'gpt-6-astra (plan)', 'gpt-5.3-codex-spark (plan)'],
     ['anthropic', 'claude-opus-5', 'claude-opus-5'],
     ['anthropic-plan', 'claude-opus-5 (plan)', 'claude-opus-5 (plan)'],
-    ['gemini', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview'],
-    [
-      'gemini-plan',
-      'gemini-3.1-pro-preview (plan)',
-      'gemini-3.1-pro-preview (plan)',
-    ],
+    ['gemini', 'gemini-3.8-flash', 'gemini-3.8-flash'],
+    ['gemini-plan', 'gemini-3.8-flash (plan)', 'gemini-3.8-flash (plan)'],
     ['deepseek', 'deepseek-v4-pro', 'deepseek-v4-pro'],
     ['xai', 'grok-4.6', 'grok-4.6'],
   ])(
@@ -99,12 +96,12 @@ describe('Migration from v17 to v18', () => {
 
   it('resolves occupied replacement ids without switching API users to plans', () => {
     const custom = {
-      id: 'gpt-5.6-sol',
-      model: 'gpt-5.6-sol',
+      id: 'gpt-6-astra',
+      model: 'gpt-6-astra',
       providerType: 'openai-plan',
       providerId: 'openai-plan',
     }
-    const occupied = { ...custom, id: 'gpt-5.6-sol-2' }
+    const occupied = { ...custom, id: 'gpt-6-astra-2' }
     const result = migrateFrom17To18({
       chatModels: [apiModel, custom, occupied],
       chatModelId: apiModel.id,
@@ -112,11 +109,12 @@ describe('Migration from v17 to v18', () => {
     })
     expect(result.chatModels).toContain(custom)
     expect(result.chatModels).toContain(occupied)
-    expect(result.chatModelId).toBe('gpt-5.6-sol-3')
-    expect(result.applyModelId).toBe('gpt-5.6-sol-3')
+    expect(result.chatModelId).toBe('gpt-6-astra-3')
+    expect(result.applyModelId).toBe('gpt-6-astra-3')
     expect(result.chatModels).toContainEqual({
-      id: 'gpt-5.6-sol-3',
-      model: 'gpt-5.6-sol',
+      id: 'gpt-6-astra-3',
+      model: 'gpt-6-astra',
+      reasoning: { enabled: true, reasoning_effort: 'medium' },
       providerType: 'openai',
       providerId: 'openai',
     })
@@ -135,8 +133,8 @@ describe('Migration from v17 to v18', () => {
     const settings = parseSmartComposerSettings(initial)
     expect(settings.version).toBe(18)
     expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
-    expect(settings.chatModelId).toBe('gpt-5.6-sol (plan)')
-    expect(settings.applyModelId).toBe('gpt-5.6-sol')
+    expect(settings.chatModelId).toBe('gpt-6-astra (plan)')
+    expect(settings.applyModelId).toBe('gpt-6-astra')
     expect(parseSmartComposerSettings(settings)).toEqual(settings)
   })
 
@@ -150,8 +148,8 @@ describe('Migration from v17 to v18', () => {
         applyModelId: apiModel.id,
       })
       expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
-      expect(settings.chatModelId).toBe('gpt-5.6-sol (plan)')
-      expect(settings.applyModelId).toBe('gpt-5.6-sol')
+      expect(settings.chatModelId).toBe('gpt-6-astra (plan)')
+      expect(settings.applyModelId).toBe('gpt-6-astra')
     },
   )
 })

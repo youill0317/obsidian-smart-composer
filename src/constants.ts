@@ -55,17 +55,13 @@ export const GEMINI_CODE_ASSIST_HEADERS = {
 export const DEFAULT_CHAT_MODEL_ID = 'claude-opus-5'
 // Keep the API-backed apply default. Plan models require a separate OAuth
 // connection and must never be selected implicitly.
-export const DEFAULT_APPLY_MODEL_ID = 'gpt-5.6-sol'
+export const DEFAULT_APPLY_MODEL_ID = 'gpt-6-astra'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = [
-  'claude-opus-5',
-  'gpt-6-astra',
-  'gpt-5.6-sol',
-]
+export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5', 'gpt-6-astra']
 export const RECOMMENDED_MODELS_FOR_APPLY = [
-  'gpt-5.6-luna (plan)',
-  'gpt-5.6-sol',
+  'gpt-5.3-codex-spark (plan)',
+  'gpt-6-astra',
 ]
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
@@ -358,20 +354,14 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'openai-plan',
     providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-5.6-sol (plan)',
-    model: 'gpt-5.6-sol',
-  },
-  {
-    providerType: 'openai-plan',
-    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-5.6-luna (plan)',
-    model: 'gpt-5.6-luna',
+    id: 'gpt-5.3-codex-spark (plan)',
+    model: 'gpt-5.3-codex-spark',
   },
   {
     providerType: 'gemini-plan',
     providerId: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
-    id: 'gemini-3.1-pro-preview (plan)',
-    model: 'gemini-3.1-pro-preview',
+    id: 'gemini-3.8-flash (plan)',
+    model: 'gemini-3.8-flash',
   },
   {
     providerType: 'anthropic',
@@ -380,16 +370,10 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
     model: 'claude-opus-5',
   },
   {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-5.6-sol',
-    model: 'gpt-5.6-sol',
-  },
-  {
     providerType: 'gemini',
     providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-3.1-pro-preview',
-    model: 'gemini-3.1-pro-preview',
+    id: 'gemini-3.8-flash',
+    model: 'gemini-3.8-flash',
   },
   {
     providerType: 'deepseek',
@@ -525,6 +509,8 @@ export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
 }
 
 export const GEMINI_PRICES: Record<string, ModelPricing> = {
+  // Introductory rates through 2026-12-31; standard rates become $1.50/$7.50.
+  'gemini-3.8-flash': { input: 0.75, output: 3.75 },
   'gemini-3.1-pro-preview': { input: 2, output: 12 },
 }
 

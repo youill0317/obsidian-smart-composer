@@ -11,6 +11,7 @@ const usage = {
 describe('calculateLLMCost', () => {
   it.each([
     ['openai', 'gpt-6-astra', 6],
+    ['gemini', 'gemini-3.8-flash', 0.45],
     ['openai', 'gpt-5.6-sol', 2.4],
     ['anthropic', 'claude-opus-5', 3],
     ['xai', 'grok-4.6', 0.8],
@@ -30,6 +31,7 @@ describe('calculateLLMCost', () => {
   })
 
   it.each([
+    ['gemini', 'gemini-3.8-flash', 200_001, 0.52500075],
     ['gemini', 'gemini-3.1-pro-preview', 199_999, 1.599998],
     ['gemini', 'gemini-3.1-pro-preview', 200_000, 1.6],
     ['gemini', 'gemini-3.1-pro-preview', 200_001, 2.600004],
