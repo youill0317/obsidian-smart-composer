@@ -8,6 +8,7 @@ import { RequestMessage } from '../../types/llm/request'
 import {
   LLMResponseNonStreaming,
   LLMResponseStreaming,
+  ResponseProviderMetadata,
 } from '../../types/llm/response'
 
 import { OpenAIMessageAdapter } from './openaiMessageAdapter'
@@ -15,12 +16,13 @@ import { OpenAIMessageAdapter } from './openaiMessageAdapter'
 /**
  * Adapter for DeepSeek's API that extends OpenAIMessageAdapter to handle the additional
  * 'reasoning_content' field in DeepSeek's response format while maintaining OpenAI compatibility.
- *
- * DeepSeek's thinking mode requires `reasoning_content` to be passed back in assistant messages
- * during tool call iterations. This adapter stores reasoning in providerMetadata and injects it
- * back into API requests.
  */
 export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
+  private readonly streamingMetadata = new Map<
+    string,
+    ResponseProviderMetadata
+  >()
+
   protected parseNonStreamingResponse(
     response: ChatCompletion,
   ): LLMResponseNonStreaming {
@@ -57,21 +59,36 @@ export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
     return {
       id: chunk.id,
       choices: chunk.choices.map((choice) => {
-        const reasoningContent = (
+        const reasoningDelta = (
           choice.delta as unknown as { reasoning_content?: string }
         ).reasoning_content
-        return {
+        let providerMetadata = this.streamingMetadata.get(chunk.id)
+        if (reasoningDelta) {
+          if (!providerMetadata) {
+            providerMetadata = { deepseek: { reasoningContent: '' } }
+            this.streamingMetadata.set(chunk.id, providerMetadata)
+          }
+          const deepseek = providerMetadata.deepseek
+          if (deepseek) {
+            deepseek.reasoningContent =
+              (deepseek.reasoningContent ?? '') + reasoningDelta
+          }
+        }
+
+        const result = {
           finish_reason: choice.finish_reason ?? null,
           delta: {
             content: choice.delta.content ?? null,
-            reasoning: reasoningContent,
+            reasoning: reasoningDelta,
             role: choice.delta.role,
             tool_calls: choice.delta.tool_calls,
-            providerMetadata: reasoningContent
-              ? { deepseek: { reasoningContent } }
-              : undefined,
+            providerMetadata,
           },
         }
+        if (choice.finish_reason) {
+          this.streamingMetadata.delete(chunk.id)
+        }
+        return result
       }),
       created: chunk.created,
       model: chunk.model,
@@ -85,7 +102,6 @@ export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
     message: RequestMessage,
   ): ChatCompletionMessageParam {
     const baseMessage = super.parseRequestMessage(message)
-
     if (
       message.role === 'assistant' &&
       message.providerMetadata?.deepseek?.reasoningContent
@@ -95,7 +111,6 @@ export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
         reasoning_content: message.providerMetadata.deepseek.reasoningContent,
       } as unknown as ChatCompletionMessageParam
     }
-
     return baseMessage
   }
 }
