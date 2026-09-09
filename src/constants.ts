@@ -469,9 +469,7 @@ export type ModelPricing = {
 export type LongContextPricingRule = {
   thresholdPromptTokens: number
   thresholdInclusive: boolean
-  pricing?: ModelPricing
-  inputMultiplier?: number
-  outputMultiplier?: number
+  pricing: ModelPricing
 }
 
 export const OPENAI_PRICES: Record<string, ModelPricing> = {
@@ -535,14 +533,12 @@ export const LONG_CONTEXT_PRICING_RULES: Record<
   'openai/gpt-6-astra': {
     thresholdPromptTokens: 272_000,
     thresholdInclusive: false,
-    inputMultiplier: 2,
-    outputMultiplier: 1.5,
+    pricing: { input: 20, output: 75 },
   },
   'openai/gpt-5.6-sol': {
     thresholdPromptTokens: 272_000,
     thresholdInclusive: false,
-    inputMultiplier: 2,
-    outputMultiplier: 1.5,
+    pricing: { input: 8, output: 30 },
   },
   'gemini/gemini-3.1-pro-preview': {
     thresholdPromptTokens: 200_000,

@@ -91,18 +91,16 @@ function LLMResponseInfoButton({
     return assistantMessageWithModel?.metadata?.model
   }, [messages])
 
-  const assistantMessages = useMemo(
+  const cost = useMemo(
     () =>
-      messages.filter(
-        (message): message is ChatAssistantMessage =>
-          message.role === 'assistant',
+      calculateMessageGroupCost(
+        messages.filter(
+          (message): message is ChatAssistantMessage =>
+            message.role === 'assistant',
+        ),
       ),
     [messages],
   )
-
-  const cost = useMemo<number | null>(() => {
-    return calculateMessageGroupCost(assistantMessages)
-  }, [assistantMessages])
 
   return (
     <Tooltip.Provider delayDuration={0}>

@@ -56,7 +56,9 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'openai' }
+      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
+        providerType: 'openai'
+      }
       const isAstra = model.model === 'gpt-6-astra'
       const efforts: readonly string[] = isAstra
         ? ASTRA_REASONING_EFFORTS
@@ -65,12 +67,7 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
         isAstra || (typedModel.reasoning?.enabled ?? false),
       )
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        isAstra &&
-          ['none', 'minimal'].includes(
-            typedModel.reasoning?.reasoning_effort ?? '',
-          )
-          ? 'low'
-          : (typedModel.reasoning?.reasoning_effort ?? 'medium'),
+        typedModel.reasoning?.reasoning_effort ?? 'medium',
       )
 
       const handleSubmit = async () => {
@@ -151,15 +148,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'openai-plan' }
+      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
+        providerType: 'openai-plan'
+      }
       const isAstra = model.model === 'gpt-6-astra'
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        isAstra &&
-          ['none', 'minimal'].includes(
-            typedModel.reasoning?.reasoning_effort ?? '',
-          )
-          ? 'low'
-          : (typedModel.reasoning?.reasoning_effort ?? ''),
+        typedModel.reasoning?.reasoning_effort ?? '',
       )
       const [reasoningSummary, setReasoningSummary] = useState<string>(
         typedModel.reasoning?.reasoning_summary ?? '',

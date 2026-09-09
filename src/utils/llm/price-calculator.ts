@@ -49,12 +49,7 @@ export const calculateLLMCost = ({
       ? usage.prompt_tokens >= rule.thresholdPromptTokens
       : usage.prompt_tokens > rule.thresholdPromptTokens)
   if (usesLongContextPricing) {
-    modelPricing =
-      rule.pricing ??
-      ({
-        input: modelPricing.input * (rule.inputMultiplier ?? 1),
-        output: modelPricing.output * (rule.outputMultiplier ?? 1),
-      } satisfies ModelPricing)
+    modelPricing = rule.pricing
   }
 
   // Gemini reports visible candidate tokens separately from thinking tokens,
