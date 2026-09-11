@@ -5,6 +5,7 @@ import {
   DEFAULT_EMBEDDING_MODELS,
   DEFAULT_PROVIDERS,
 } from '../../constants'
+import { cliSettingsSchema } from '../../types/cli.types'
 
 import { SETTINGS_SCHEMA_VERSION } from './migrations'
 import { parseSmartComposerSettings } from './settings'
@@ -25,6 +26,7 @@ describe('parseSmartComposerSettings', () => {
       embeddingModelId: DEFAULT_EMBEDDING_MODELS[0].id,
 
       systemPrompt: '',
+      cli: cliSettingsSchema.parse(undefined),
 
       ragOptions: {
         chunkSize: 1000,

@@ -11,8 +11,10 @@ import { ChatView } from './ChatView'
 import { ChatProps } from './components/chat-view/Chat'
 import { InstallerUpdateRequiredModal } from './components/modals/InstallerUpdateRequiredModal'
 import { APPLY_VIEW_TYPE, CHAT_VIEW_TYPE } from './constants'
+import { CliManager } from './core/cli/cliManager'
 import { McpManager } from './core/mcp/mcpManager'
 import { RAGEngine } from './core/rag/ragEngine'
+import { ToolManager } from './core/tools/toolManager'
 import { DatabaseManager } from './database/DatabaseManager'
 import { PGLiteAbortedException } from './database/exception'
 import { migrateToJsonDatabase } from './database/json/migrateToJsonDatabase'
@@ -36,6 +38,7 @@ export default class SmartComposerPlugin extends Plugin {
   }
   initialChatProps?: ChatProps // TODO: change this to use view state like ApplyView
   settingsChangeListeners: ((newSettings: SmartComposerSettings) => void)[] = []
+  toolManager: ToolManager
   mcpManager: McpManager | null = null
   dbManager: DatabaseManager | null = null
   ragEngine: RAGEngine | null = null
@@ -45,6 +48,10 @@ export default class SmartComposerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings()
+    this.toolManager = new ToolManager(
+      new CliManager(this.app, () => this.settings),
+      () => this.getMcpManager(),
+    )
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this))
     this.registerView(APPLY_VIEW_TYPE, (leaf) => new ApplyView(leaf))
@@ -161,6 +168,8 @@ export default class SmartComposerPlugin extends Plugin {
     // DatabaseManager cleanup
     this.dbManager?.cleanup()
     this.dbManager = null
+
+    this.toolManager?.cli.cleanup()
 
     // McpManager cleanup
     this.mcpManager?.cleanup()

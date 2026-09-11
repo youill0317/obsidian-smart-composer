@@ -1,3 +1,5 @@
+import type { CliExecution } from './cli.types'
+
 export type ToolCallRequest = {
   id: string
   name: string
@@ -10,6 +12,7 @@ export type ToolCallResponse =
         | ToolCallResponseStatus.PendingApproval
         | ToolCallResponseStatus.Rejected
         | ToolCallResponseStatus.Running
+      execution?: CliExecution
     }
   | {
       status: ToolCallResponseStatus.Success

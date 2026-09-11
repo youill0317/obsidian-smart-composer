@@ -8,6 +8,7 @@ import {
   DEFAULT_PROVIDERS,
 } from '../../constants'
 import { chatModelSchema } from '../../types/chat-model.types'
+import { cliSettingsSchema } from '../../types/cli.types'
 import { embeddingModelSchema } from '../../types/embedding-model.types'
 import { mcpServerConfigSchema } from '../../types/mcp.types'
 import { llmProviderSchema } from '../../types/provider.types'
@@ -65,6 +66,8 @@ export const smartComposerSettingsSchema = z.object({
     excludePatterns: [],
     includePatterns: [],
   }),
+
+  cli: cliSettingsSchema,
 
   // MCP configuration
   mcp: z

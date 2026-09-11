@@ -3,6 +3,7 @@ import { App } from 'obsidian'
 import { SettingsProvider } from '../../contexts/settings-context'
 import SmartComposerPlugin from '../../main'
 import { ReactModal } from '../common/ReactModal'
+import { CliSection } from '../settings/sections/CliSection'
 import { McpSection } from '../settings/sections/McpSection'
 
 type McpSectionComponentProps = {
@@ -34,6 +35,7 @@ function McpSectionComponent({ app, plugin }: McpSectionComponentProps) {
       }
     >
       <McpSection app={app} plugin={plugin} />
+      <CliSection app={app} plugin={plugin} />
     </SettingsProvider>
   )
 }

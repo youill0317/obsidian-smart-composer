@@ -15,9 +15,9 @@ import { v4 as uuidv4 } from 'uuid'
 import { ApplyViewState } from '../../ApplyView'
 import { APPLY_VIEW_TYPE } from '../../constants'
 import { useApp } from '../../contexts/app-context'
-import { useMcp } from '../../contexts/mcp-context'
 import { useRAG } from '../../contexts/rag-context'
 import { useSettings } from '../../contexts/settings-context'
+import { useTools } from '../../contexts/tools-context'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -87,7 +87,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
   const app = useApp()
   const { settings, setSettings } = useSettings()
   const { getRAGEngine } = useRAG()
-  const { getMcpManager } = useMcp()
+  const toolManager = useTools()
 
   const {
     createOrUpdateConversation,
@@ -144,6 +144,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
   })
 
   const { abortActiveStreams, submitChatMutation } = useChatStreamManager({
+    conversationId: currentConversationId,
     setChatMessages,
     autoScrollToBottom,
     promptGenerator,
@@ -352,12 +353,9 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         // The tool message no longer exists in the chat history.
         // This likely means a new message was submitted while this stream was running.
         // Abort the tool calls and keep the current chat history.
-        void (async () => {
-          const mcpManager = await getMcpManager()
-          toolMessage.toolCalls.forEach((toolCall) => {
-            mcpManager.abortToolCall(toolCall.request.id)
-          })
-        })()
+        toolMessage.toolCalls.forEach((toolCall) => {
+          void toolManager.abortToolCall(toolCall.request.id)
+        })
         return
       }
 
@@ -382,6 +380,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         submitChatMutation.mutate({
           chatMessages: updatedMessages,
           conversationId: currentConversationId,
+          resume: true,
         })
         requestAnimationFrame(() => {
           forceScrollToBottom()
@@ -393,7 +392,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       currentConversationId,
       submitChatMutation,
       setChatMessages,
-      getMcpManager,
+      toolManager,
       forceScrollToBottom,
     ],
   )

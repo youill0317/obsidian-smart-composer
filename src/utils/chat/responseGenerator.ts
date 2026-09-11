@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 
 import { BaseLLMProvider } from '../../core/llm/base'
-import { McpManager } from '../../core/mcp/mcpManager'
+import { ToolManager } from '../../core/tools/toolManager'
 import { ChatMessage, ChatToolMessage } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
 import { RequestTool } from '../../types/llm/request'
@@ -27,8 +27,9 @@ export type ResponseGeneratorParams = {
   enableTools: boolean
   maxAutoIterations: number
   promptGenerator: PromptGenerator
-  mcpManager: McpManager
+  toolManager: ToolManager
   abortSignal?: AbortSignal
+  consumeIteration?: () => boolean
 }
 
 export class ResponseGenerator {
@@ -37,10 +38,13 @@ export class ResponseGenerator {
   private readonly conversationId: string
   private readonly enableTools: boolean
   private readonly promptGenerator: PromptGenerator
-  private readonly mcpManager: McpManager
+  private readonly toolManager: ToolManager
   private readonly abortSignal?: AbortSignal
   private readonly receivedMessages: ChatMessage[]
   private readonly maxAutoIterations: number
+
+  public reachedLimit = false
+  private consumeIteration?: () => boolean
 
   private responseMessages: ChatMessage[] = [] // Response messages that are generated after the initial messages
   private subscribers: ((messages: ChatMessage[]) => void)[] = []
@@ -53,8 +57,9 @@ export class ResponseGenerator {
     this.maxAutoIterations = Math.max(1, params.maxAutoIterations) // Ensure maxAutoIterations is at least 1
     this.receivedMessages = params.messages
     this.promptGenerator = params.promptGenerator
-    this.mcpManager = params.mcpManager
+    this.toolManager = params.toolManager
     this.abortSignal = params.abortSignal
+    this.consumeIteration = params.consumeIteration
   }
 
   public subscribe(callback: (messages: ChatMessage[]) => void) {
@@ -67,6 +72,11 @@ export class ResponseGenerator {
 
   public async run() {
     for (let i = 0; i < this.maxAutoIterations; i++) {
+      if (this.abortSignal?.aborted) return
+      if (this.consumeIteration && !this.consumeIteration()) {
+        this.reachedLimit = true
+        return
+      }
       const { toolCallRequests } = await this.streamSingleResponse()
       if (toolCallRequests.length === 0) {
         return
@@ -75,17 +85,15 @@ export class ResponseGenerator {
       const toolMessage: ChatToolMessage = {
         role: 'tool' as const,
         id: uuidv4(),
-        toolCalls: toolCallRequests.map((toolCall) => ({
-          request: toolCall,
-          response: {
-            status: this.mcpManager.isToolExecutionAllowed({
-              requestToolName: toolCall.name,
-              conversationId: this.conversationId,
-            })
-              ? ToolCallResponseStatus.Running
-              : ToolCallResponseStatus.PendingApproval,
-          },
-        })),
+        toolCalls: await Promise.all(
+          toolCallRequests.map(async (toolCall) => ({
+            request: toolCall,
+            response: await this.toolManager.prepareCall(
+              toolCall,
+              this.conversationId,
+            ),
+          })),
+        ),
       }
 
       this.updateResponseMessages((messages) => [...messages, toolMessage])
@@ -97,11 +105,12 @@ export class ResponseGenerator {
               toolCall.response.status === ToolCallResponseStatus.Running,
           )
           .map(async (toolCall) => {
-            const response = await this.mcpManager.callTool({
+            const response = await this.toolManager.callTool({
               name: toolCall.request.name,
               args: toolCall.request.arguments,
               id: toolCall.request.id,
               signal: this.abortSignal,
+              conversationId: this.conversationId,
             })
             this.updateResponseMessages((messages) =>
               messages.map((message) =>
@@ -139,6 +148,7 @@ export class ResponseGenerator {
         return
       }
     }
+    this.reachedLimit = true
   }
 
   private async streamSingleResponse(): Promise<{
@@ -149,7 +159,7 @@ export class ResponseGenerator {
     })
 
     const availableTools = this.enableTools
-      ? await this.mcpManager.listAvailableTools()
+      ? await this.toolManager.listAvailableTools()
       : []
 
     // Set tools to undefined when no tools are available since some providers

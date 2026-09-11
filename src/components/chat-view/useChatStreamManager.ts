@@ -1,10 +1,10 @@
 import { UseMutationResult, useMutation } from '@tanstack/react-query'
 import { Notice } from 'obsidian'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { useApp } from '../../contexts/app-context'
-import { useMcp } from '../../contexts/mcp-context'
 import { useSettings } from '../../contexts/settings-context'
+import { useTools } from '../../contexts/tools-context'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -18,6 +18,7 @@ import { ResponseGenerator } from '../../utils/chat/responseGenerator'
 import { ErrorModal } from '../modals/ErrorModal'
 
 type UseChatStreamManagerParams = {
+  conversationId: string
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
   autoScrollToBottom: () => void
   promptGenerator: PromptGenerator
@@ -28,18 +29,24 @@ export type UseChatStreamManager = {
   submitChatMutation: UseMutationResult<
     void,
     Error,
-    { chatMessages: ChatMessage[]; conversationId: string }
+    { chatMessages: ChatMessage[]; conversationId: string; resume?: boolean }
   >
 }
 
 export function useChatStreamManager({
+  conversationId: currentConversationId,
   setChatMessages,
   autoScrollToBottom,
   promptGenerator,
 }: UseChatStreamManagerParams): UseChatStreamManager {
   const app = useApp()
   const { settings, setSettings } = useSettings()
-  const { getMcpManager } = useMcp()
+  const toolManager = useTools()
+
+  const budgetRef = useRef<{
+    conversationId: string
+    remaining: number
+  } | null>(null)
 
   const activeStreamAbortControllersRef = useRef<AbortController[]>([])
 
@@ -48,7 +55,10 @@ export function useChatStreamManager({
       abortController.abort()
     }
     activeStreamAbortControllersRef.current = []
-  }, [])
+    toolManager.cli.abortConversation(currentConversationId)
+  }, [toolManager, currentConversationId])
+
+  useEffect(() => () => abortActiveStreams(), [abortActiveStreams])
 
   const { providerClient, model } = useMemo(() => {
     try {
@@ -90,9 +100,11 @@ export function useChatStreamManager({
     mutationFn: async ({
       chatMessages,
       conversationId,
+      resume,
     }: {
       chatMessages: ChatMessage[]
       conversationId: string
+      resume?: boolean
     }) => {
       const lastMessage = chatMessages.at(-1)
       if (!lastMessage) {
@@ -107,16 +119,48 @@ export function useChatStreamManager({
       let unsubscribeResponseGenerator: (() => void) | undefined
 
       try {
-        const mcpManager = await getMcpManager()
+        const cliEnabled =
+          settings.chatOptions.enableTools &&
+          toolManager.cli.listAvailableTools().length > 0
+        const maxIterations = cliEnabled
+          ? settings.cli.maxAutoIterations
+          : settings.chatOptions.maxAutoIterations
+        if (cliEnabled) {
+          if (!resume)
+            budgetRef.current = { conversationId, remaining: maxIterations }
+          if (
+            !budgetRef.current ||
+            budgetRef.current.conversationId !== conversationId ||
+            budgetRef.current.remaining <= 0
+          ) {
+            new Notice(
+              'Automatic CLI work paused. Use Continue to start another round.',
+            )
+            return
+          }
+        }
         const responseGenerator = new ResponseGenerator({
           providerClient,
           model,
           messages: chatMessages,
           conversationId,
           enableTools: settings.chatOptions.enableTools,
-          maxAutoIterations: settings.chatOptions.maxAutoIterations,
+          maxAutoIterations: maxIterations,
+          consumeIteration: cliEnabled
+            ? () => {
+                const budget = budgetRef.current
+                if (
+                  !budget ||
+                  budget.conversationId !== conversationId ||
+                  budget.remaining <= 0
+                )
+                  return false
+                budget.remaining--
+                return true
+              }
+            : undefined,
           promptGenerator,
-          mcpManager,
+          toolManager,
           abortSignal: abortController.signal,
         })
 
@@ -143,6 +187,10 @@ export function useChatStreamManager({
         )
 
         await responseGenerator.run()
+        if (cliEnabled && responseGenerator.reachedLimit)
+          new Notice(
+            'Automatic CLI round limit reached. Use Continue if more work is needed.',
+          )
       } catch (error) {
         // Ignore AbortError
         if (error instanceof Error && error.name === 'AbortError') {
