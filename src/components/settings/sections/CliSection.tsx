@@ -27,8 +27,13 @@ export function CliSection({
   const [status, setStatus] = useState<Record<string, string>>({})
   useEffect(() => setStatus({}), [settings.cli.connections])
   const disabled = plugin.toolManager.cli.disabled
-  const saveConnections = (connections: CliConnection[]) =>
-    setSettings({ ...settings, cli: { ...settings.cli, connections } })
+  const saveConnections = (
+    update: (connections: CliConnection[]) => CliConnection[],
+  ) =>
+    setSettings((current) => ({
+      ...current,
+      cli: { ...current.cli, connections: update(current.cli.connections) },
+    }))
   const edit = (connection?: CliConnection) =>
     new ReactModal({
       app,
@@ -87,7 +92,9 @@ export function CliSection({
       <div className="smtcmp-settings-desc">
         Use installed command-line tools directly. Install and sign in from your
         terminal first. Reviewed Obsidian queries run automatically; other
-        commands require approval. A test runs help (and checks the vault for
+        commands require approval. Enabling the Obsidian preset lets the model
+        search and read any note in this vault, and sends the results to your
+        selected model provider. A test runs help (and checks the vault for
         Obsidian).
       </div>
       {disabled ? (
@@ -107,10 +114,10 @@ export function CliSection({
               onChange={(value) => {
                 const n = Number(value)
                 if (Number.isInteger(n) && n >= 1 && n <= 50)
-                  void setSettings({
-                    ...settings,
-                    cli: { ...settings.cli, maxAutoIterations: n },
-                  })
+                  void setSettings((current) => ({
+                    ...current,
+                    cli: { ...current.cli, maxAutoIterations: n },
+                  }))
               }}
             />
           </ObsidianSetting>
@@ -120,10 +127,14 @@ export function CliSection({
               <ObsidianButton
                 text="Add Obsidian preset"
                 onClick={() => {
-                  void saveConnections([
-                    ...settings.cli.connections,
-                    { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
-                  ])
+                  void saveConnections((connections) =>
+                    connections.some((c) => c.preset === 'obsidian')
+                      ? connections
+                      : [
+                          ...connections,
+                          { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
+                        ],
+                  )
                 }}
               />
             )}
@@ -134,8 +145,8 @@ export function CliSection({
                 <ObsidianToggle
                   value={connection.enabled}
                   onChange={(enabled) => {
-                    void saveConnections(
-                      settings.cli.connections.map((c) =>
+                    void saveConnections((connections) =>
+                      connections.map((c) =>
                         c.id === connection.id ? { ...c, enabled } : c,
                       ),
                     )
@@ -151,10 +162,8 @@ export function CliSection({
                 <ObsidianButton
                   text="Remove"
                   onClick={() => {
-                    void saveConnections(
-                      settings.cli.connections.filter(
-                        (c) => c.id !== connection.id,
-                      ),
+                    void saveConnections((connections) =>
+                      connections.filter((c) => c.id !== connection.id),
                     )
                   }}
                 />
@@ -197,18 +206,17 @@ function CliForm({
       })
       if (parsed.preset === 'obsidian' && parsed.args.length)
         throw new Error('Obsidian uses no fixed arguments.')
-      const settings = plugin.settings
-      await plugin.setSettings({
-        ...settings,
+      await plugin.setSettings((current) => ({
+        ...current,
         cli: {
-          ...settings.cli,
+          ...current.cli,
           connections: connection
-            ? settings.cli.connections.map((c) =>
+            ? current.cli.connections.map((c) =>
                 c.id === connection.id ? parsed : c,
               )
-            : [...settings.cli.connections, parsed],
+            : [...current.cli.connections, parsed],
         },
-      })
+      }))
       onClose()
     } catch (error) {
       new Notice(error instanceof Error ? error.message : String(error))

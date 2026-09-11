@@ -88,15 +88,25 @@ export class ResponseGenerator {
         toolCalls: await Promise.all(
           toolCallRequests.map(async (toolCall) => ({
             request: toolCall,
-            response: await this.toolManager.prepareCall(
-              toolCall,
-              this.conversationId,
-            ),
+            response: this.abortSignal?.aborted
+              ? { status: ToolCallResponseStatus.Aborted }
+              : await this.toolManager.prepareCall(
+                  toolCall,
+                  this.conversationId,
+                ),
           })),
         ),
       }
 
+      // Keep a result for every request so Continue can send a valid tool history.
+      if (this.abortSignal?.aborted) {
+        toolMessage.toolCalls = toolMessage.toolCalls.map((call) => ({
+          ...call,
+          response: { status: ToolCallResponseStatus.Aborted },
+        }))
+      }
       this.updateResponseMessages((messages) => [...messages, toolMessage])
+      if (this.abortSignal?.aborted) return
 
       await Promise.all(
         toolMessage.toolCalls
@@ -105,13 +115,15 @@ export class ResponseGenerator {
               toolCall.response.status === ToolCallResponseStatus.Running,
           )
           .map(async (toolCall) => {
-            const response = await this.toolManager.callTool({
-              name: toolCall.request.name,
-              args: toolCall.request.arguments,
-              id: toolCall.request.id,
-              signal: this.abortSignal,
-              conversationId: this.conversationId,
-            })
+            const response = this.abortSignal?.aborted
+              ? { status: ToolCallResponseStatus.Aborted as const }
+              : await this.toolManager.callTool({
+                  name: toolCall.request.name,
+                  args: toolCall.request.arguments,
+                  id: toolCall.request.id,
+                  signal: this.abortSignal,
+                  conversationId: this.conversationId,
+                })
             this.updateResponseMessages((messages) =>
               messages.map((message) =>
                 message.id === toolMessage.id && message.role === 'tool'

@@ -92,3 +92,38 @@ it('retains MCP-only iteration limits and stops without tools or after cancellat
   expect(streamResponse).toHaveBeenCalledTimes(2)
   expect(manager.callTool).toHaveBeenCalledTimes(1)
 })
+
+it('does not dispatch tools when stopped during asynchronous preparation', async () => {
+  const { params, manager } = setup()
+  let ready!: (response: { status: Status }) => void
+  let started!: () => void
+  const preparing = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  manager.prepareCall.mockImplementationOnce(() => {
+    started()
+    return new Promise((resolve) => {
+      ready = resolve
+    })
+  })
+  const controller = new AbortController()
+  const generator = new ResponseGenerator({
+    ...params,
+    abortSignal: controller.signal,
+  })
+  let messages: ChatMessage[] = []
+  generator.subscribe((value) => {
+    messages = value
+  })
+  const running = generator.run()
+  await preparing
+  controller.abort()
+  ready({ status: Status.Running })
+  await running
+  expect(manager.callTool).not.toHaveBeenCalled()
+  expect(manager.prepareCall).toHaveBeenCalledTimes(1)
+  const result = messages.at(-1)
+  expect(result?.role === 'tool' && result.toolCalls[0].response.status).toBe(
+    Status.Aborted,
+  )
+})

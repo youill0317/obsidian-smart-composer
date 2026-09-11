@@ -6,6 +6,8 @@ import { App, FileSystemAdapter } from 'obsidian'
 import { smartComposerSettingsSchema } from '../../settings/schema/setting.types'
 import { CLI_TOOL_NAME, CliExecution } from '../../types/cli.types'
 import { ToolCallResponseStatus as Status } from '../../types/tool-call.types'
+// Match the chat UI's load order for the existing MCP/helper dependency.
+import '../mcp/tool-name-utils'
 import { McpManager } from '../mcp/mcpManager'
 import { ToolManager } from '../tools/toolManager'
 
@@ -142,12 +144,31 @@ it('validates real execution previews before asking for approval', async () => {
       [],
       ['read'],
       ['delete'],
+      ['task', 'line=3', 'done'],
+      ['task', 'ref=note.md:0', 'done'],
+      ['sync:restore', 'version=1'],
+      ['publish:add'],
+      ['publish:remove'],
+      ['template:insert', 'name=Example'],
       ['read', 'vault=Other', 'path=x'],
       ['vault:open', 'name=Other'],
     ]) {
       await expect(
         manager.prepare({ cliId: 'obsidian', args }),
       ).rejects.toThrow()
+    }
+    for (const args of [
+      ['task', 'path=note.md', 'line=3', 'done'],
+      ['task', 'ref=note.md:3', 'done'],
+      ['task', 'daily', 'line=3', 'done'],
+      ['sync:restore', 'path=note.md', 'version=1'],
+      ['publish:add', 'path=note.md'],
+      ['publish:add', 'changed'],
+      ['publish:remove', 'path=note.md'],
+    ]) {
+      expect(
+        (await manager.prepare({ cliId: 'obsidian', args })).automatic,
+      ).toBe(false)
     }
     const invalid = await new ToolManager(manager, async () => {
       throw Error('unused')
@@ -181,4 +202,35 @@ it('validates real execution previews before asking for approval', async () => {
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+it('honors cancellation before and during MCP initialization', async () => {
+  const cli = new CliManager({} as App, () =>
+    smartComposerSettingsSchema.parse({}),
+  )
+  const mcp = new McpManager({
+    settings: smartComposerSettingsSchema.parse({}),
+    registerSettingsListener: () => () => {},
+  })
+  const controller = new AbortController()
+  controller.abort()
+  expect(
+    await mcp.callTool({ name: 'server__write', signal: controller.signal }),
+  ).toEqual({ status: Status.Aborted })
+  const call = jest.spyOn(mcp, 'callTool')
+  let ready!: (manager: McpManager) => void
+  const initialization = new Promise<McpManager>((resolve) => {
+    ready = resolve
+  })
+  const tools = new ToolManager(cli, () => initialization)
+  const pendingController = new AbortController()
+  const pending = tools.callTool({
+    name: 'server__write',
+    id: 'pending',
+    signal: pendingController.signal,
+  })
+  pendingController.abort()
+  ready(mcp)
+  expect(await pending).toEqual({ status: Status.Aborted })
+  expect(call).not.toHaveBeenCalled()
 })

@@ -363,6 +363,8 @@ export class McpManager {
       throw new McpNotAvailableException()
     }
 
+    if (signal?.aborted) return { status: ToolCallResponseStatus.Aborted }
+
     const toolAbortController = new AbortController()
     if (id !== undefined) {
       const existingAbortController = this.activeToolCalls.get(id)
@@ -371,9 +373,10 @@ export class McpManager {
       }
       this.activeToolCalls.set(id, toolAbortController)
     }
+    const abort = () => toolAbortController.abort()
     const compositeSignal = toolAbortController.signal
     if (signal) {
-      signal.addEventListener('abort', () => toolAbortController.abort())
+      signal.addEventListener('abort', abort, { once: true })
     }
 
     try {
@@ -435,6 +438,7 @@ export class McpManager {
         error: error.message || 'Unknown error occurred',
       }
     } finally {
+      signal?.removeEventListener('abort', abort)
       if (id !== undefined) {
         this.activeToolCalls.delete(id)
       }

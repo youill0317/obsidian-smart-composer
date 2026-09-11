@@ -133,15 +133,39 @@ export class CliManager {
         'history',
         'history:read',
         'history:restore',
+        'sync:history',
+        'sync:read',
+        'sync:restore',
+        'sync:open',
+        'publish:remove',
+        'publish:add',
+        'task',
       ])
+      const parameters = fullArgs.slice(1)
+      const explicitTarget = parameters.some((arg) =>
+        /^(path|file)=.+/.test(arg),
+      )
+      const taskTarget =
+        fullArgs[0] === 'task' &&
+        parameters.some(
+          (arg) => arg === 'daily' || /^ref=.+:[1-9]\d*$/.test(arg),
+        )
+      const publishChanged =
+        fullArgs[0] === 'publish:add' && parameters.includes('changed')
       if (
         fileCommands.has(fullArgs[0]) &&
-        !fullArgs.slice(1).some((arg) => /^(path|file)=.+/.test(arg))
+        !explicitTarget &&
+        !taskTarget &&
+        !publishChanged
       ) {
         throw new Error(
           'Specify an explicit path= or file= target; the active file may change before execution.',
         )
       }
+      if (fullArgs[0] === 'template:insert')
+        throw new Error(
+          'template:insert targets the active editor. Use template:read followed by append with an explicit path= target instead.',
+        )
       if (connection.args.length)
         throw new Error('The Obsidian preset does not accept fixed arguments.')
       if (

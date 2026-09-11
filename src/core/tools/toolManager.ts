@@ -68,7 +68,9 @@ export class ToolManager {
         false,
         params.conversationId,
       )
-    return (await this.getMcp()).callTool(params)
+    const mcp = await this.getMcp()
+    if (params.signal?.aborted) return { status: Status.Aborted }
+    return mcp.callTool(params)
   }
 
   async abortToolCall(id: string) {
