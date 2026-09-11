@@ -49,7 +49,11 @@ windowsTest(
           },
           new AbortController().signal,
         )
-        expect(result.exitCode).toBe(0)
+        expect({
+          command,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+        }).toEqual({ command, exitCode: 0, stderr: '' })
         expect(JSON.parse(result.stdout)).toEqual(args)
       }
     } finally {

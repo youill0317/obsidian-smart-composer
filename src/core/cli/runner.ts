@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'child_process'
+import { join } from 'path'
 import { StringDecoder } from 'string_decoder'
 
 import { CliExecution } from '../../types/cli.types'
@@ -89,12 +90,35 @@ export function runCli(
       stop()
     }, execution.timeoutSeconds * 1000)
     try {
-      child = spawn(execution.command, execution.args, {
+      const options = {
         cwd: execution.cwd,
         env: process.env,
         windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+        stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
+      }
+      if (
+        process.platform === 'win32' &&
+        /\.(cmd|bat)$/i.test(execution.command)
+      ) {
+        // Batch files parse forwarded arguments twice. cross-spawn only applies
+        // this protection to node_modules/.bin/*.cmd; global/custom shims need it too.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const escape = require('cross-spawn/lib/util/escape') as {
+          command: (value: string) => string
+          argument: (value: string, doubleEscape: boolean) => string
+        }
+        const commandLine = [
+          escape.command(execution.command),
+          ...execution.args.map((arg) => escape.argument(arg, true)),
+        ].join(' ')
+        child = nodeSpawn(
+          join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'),
+          ['/d', '/v:off', '/s', '/c', `"${commandLine}"`],
+          { ...options, windowsVerbatimArguments: true },
+        )
+      } else {
+        child = spawn(execution.command, execution.args, options)
+      }
       for (const channel of ['stdout', 'stderr'] as const) {
         child[channel]?.on('data', (chunk: Buffer) => {
           const remaining = Math.max(0, OUTPUT_LIMIT - sizes[channel])
