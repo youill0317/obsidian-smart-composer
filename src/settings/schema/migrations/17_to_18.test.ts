@@ -8,6 +8,8 @@ import {
   migrateFrom17To18,
 } from './17_to_18'
 
+import { SETTINGS_SCHEMA_VERSION } from './index'
+
 describe('Migration from v17 to v18', () => {
   const apiModel = {
     providerType: 'openai',
@@ -131,7 +133,7 @@ describe('Migration from v17 to v18', () => {
     const first = migrateFrom17To18(migrateFrom16To17(initial))
     expect(migrateFrom17To18(first)).toEqual(first)
     const settings = parseSmartComposerSettings(initial)
-    expect(settings.version).toBe(18)
+    expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
     expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
     expect(settings.chatModelId).toBe('gpt-6-astra (plan)')
     expect(settings.applyModelId).toBe('gpt-6-astra')

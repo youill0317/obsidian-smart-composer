@@ -121,7 +121,7 @@ function McpServerComponent({
   app: App
   plugin: SmartComposerPlugin
 }) {
-  const { settings, setSettings } = useSettings()
+  const { setSettings } = useSettings()
   const [isOpen, setIsOpen] = useState(false)
 
   const handleEdit = useCallback(() => {
@@ -135,30 +135,30 @@ function McpServerComponent({
       message: message,
       ctaText: 'Delete',
       onConfirm: async () => {
-        await setSettings({
-          ...settings,
+        await setSettings((current) => ({
+          ...current,
           mcp: {
-            ...settings.mcp,
-            servers: settings.mcp.servers.filter((s) => s.id !== server.name),
+            ...current.mcp,
+            servers: current.mcp.servers.filter((s) => s.id !== server.name),
           },
-        })
+        }))
       },
     }).open()
-  }, [server.name, settings, setSettings, app])
+  }, [server.name, setSettings, app])
 
   const handleToggleEnabled = useCallback(
     (enabled: boolean) => {
-      setSettings({
-        ...settings,
+      setSettings((current) => ({
+        ...current,
         mcp: {
-          ...settings.mcp,
-          servers: settings.mcp.servers.map((s) =>
+          ...current.mcp,
+          servers: current.mcp.servers.map((s) =>
             s.id === server.name ? { ...s, enabled } : s,
           ),
         },
-      })
+      }))
     },
-    [settings, setSettings, server.name],
+    [setSettings, server.name],
   )
 
   return (
@@ -276,7 +276,7 @@ function McpToolComponent({
   tool: McpTool
   server: McpServerState
 }) {
-  const { settings, setSettings } = useSettings()
+  const { setSettings } = useSettings()
 
   const toolOption = server.config.toolOptions[tool.name]
   const disabled = toolOption?.disabled ?? false
@@ -288,11 +288,11 @@ function McpToolComponent({
       disabled: !enabled,
       allowAutoExecution: allowAutoExecution,
     }
-    setSettings({
-      ...settings,
+    setSettings((current) => ({
+      ...current,
       mcp: {
-        ...settings.mcp,
-        servers: settings.mcp.servers.map((s) =>
+        ...current.mcp,
+        servers: current.mcp.servers.map((s) =>
           s.id === server.name
             ? {
                 ...s,
@@ -301,7 +301,7 @@ function McpToolComponent({
             : s,
         ),
       },
-    })
+    }))
   }
 
   const handleToggleAutoExecution = (autoExecution: boolean) => {
@@ -310,11 +310,11 @@ function McpToolComponent({
       ...toolOptions[tool.name],
       allowAutoExecution: autoExecution,
     }
-    setSettings({
-      ...settings,
+    setSettings((current) => ({
+      ...current,
       mcp: {
-        ...settings.mcp,
-        servers: settings.mcp.servers.map((s) =>
+        ...current.mcp,
+        servers: current.mcp.servers.map((s) =>
           s.id === server.name
             ? {
                 ...s,
@@ -323,7 +323,7 @@ function McpToolComponent({
             : s,
         ),
       },
-    })
+    }))
   }
 
   return (

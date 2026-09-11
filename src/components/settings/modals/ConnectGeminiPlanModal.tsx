@@ -87,9 +87,9 @@ function ConnectGeminiPlanModalComponent({
     ) {
       throw new Error('Gemini Plan provider not found.')
     }
-    await plugin.setSettings({
-      ...plugin.settings,
-      providers: plugin.settings.providers.map((p) => {
+    await plugin.setSettings((current) => ({
+      ...current,
+      providers: current.providers.map((p) => {
         if (p.type === 'gemini-plan' && p.id === GEMINI_PLAN_PROVIDER_ID) {
           return {
             ...p,
@@ -103,7 +103,7 @@ function ConnectGeminiPlanModalComponent({
         }
         return p
       }),
-    })
+    }))
   }
 
   const ensureAuthContext = async () => {

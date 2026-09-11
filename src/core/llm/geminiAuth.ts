@@ -35,7 +35,6 @@ type GeminiCallbackConfig = {
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
 
 let geminiCallbackServer: Server | undefined
-let isGeminiCallbackStopping = false
 
 export function buildGeminiAuthorizeUrl(params: {
   pkce: GeminiPkceCodes
@@ -129,6 +128,7 @@ export async function startGeminiCallbackServer(params: {
   const http = require('http') as typeof import('http')
 
   return new Promise((resolve, reject) => {
+    let finalized = false
     const timeout = setTimeout(() => {
       finalize(
         new Error('OAuth callback timeout - authorization took too long'),
@@ -187,22 +187,19 @@ export async function startGeminiCallbackServer(params: {
     })
 
     const finalize = (error?: Error, code?: string) => {
-      if (isGeminiCallbackStopping) return
-      isGeminiCallbackStopping = true
+      if (finalized) return
+      finalized = true
       clearTimeout(timeout)
-      server.close(() => {
-        geminiCallbackServer = undefined
-        isGeminiCallbackStopping = false
-        if (error) {
-          reject(error)
-          return
-        }
-        if (code) {
-          resolve(code)
-          return
-        }
+      if (geminiCallbackServer === server) geminiCallbackServer = undefined
+      // Other HTTP connections must not delay the OAuth result.
+      server.close()
+      if (error) {
+        reject(error)
+      } else if (code) {
+        resolve(code)
+      } else {
         reject(new Error('OAuth callback failed'))
-      })
+      }
     }
 
     server.on('error', (error) => {

@@ -92,12 +92,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           return
         }
 
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
+        await plugin.setSettings((current) => ({
+          ...current,
+          chatModels: current.chatModels.map((m) =>
             m.id === model.id ? updatedModel : m,
           ),
-        })
+        }))
         onClose()
       }
 
@@ -181,12 +181,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           return
         }
 
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
+        await plugin.setSettings((current) => ({
+          ...current,
+          chatModels: current.chatModels.map((m) =>
             m.id === model.id ? updatedModel : m,
           ),
-        })
+        }))
         onClose()
       }
 
@@ -287,12 +287,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           return
         }
 
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
+        await plugin.setSettings((current) => ({
+          ...current,
+          chatModels: current.chatModels.map((m) =>
             m.id === model.id ? updatedModel : m,
           ),
-        })
+        }))
         onClose()
       }
 
@@ -399,12 +399,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           return
         }
 
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
+        await plugin.setSettings((current) => ({
+          ...current,
+          chatModels: current.chatModels.map((m) =>
             m.id === model.id ? updatedModel : m,
           ),
-        })
+        }))
         onClose()
       }
 
@@ -529,12 +529,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
             search_context_size: searchContextSize,
           },
         }
-        await plugin.setSettings({
-          ...plugin.settings,
-          chatModels: plugin.settings.chatModels.map((m) =>
+        await plugin.setSettings((current) => ({
+          ...current,
+          chatModels: current.chatModels.map((m) =>
             m.id === model.id ? updatedModel : m,
           ),
-        })
+        }))
         onClose()
       }
 

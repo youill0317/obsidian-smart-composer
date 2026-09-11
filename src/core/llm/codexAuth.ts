@@ -40,7 +40,6 @@ type CodexCallbackConfig = {
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
 
 let codexCallbackServer: Server | undefined
-let isCodexCallbackStopping = false
 
 export function buildCodexAuthorizeUrl(params: {
   redirectUri?: string
@@ -116,6 +115,7 @@ export async function startCodexCallbackServer(params: {
   const http = require('http') as typeof import('http')
 
   return new Promise((resolve, reject) => {
+    let finalized = false
     const timeout = setTimeout(() => {
       finalize(
         new Error('OAuth callback timeout - authorization took too long'),
@@ -174,22 +174,19 @@ export async function startCodexCallbackServer(params: {
     })
 
     const finalize = (error?: Error, code?: string) => {
-      if (isCodexCallbackStopping) return
-      isCodexCallbackStopping = true
+      if (finalized) return
+      finalized = true
       clearTimeout(timeout)
-      server.close(() => {
-        codexCallbackServer = undefined
-        isCodexCallbackStopping = false
-        if (error) {
-          reject(error)
-          return
-        }
-        if (code) {
-          resolve(code)
-          return
-        }
+      if (codexCallbackServer === server) codexCallbackServer = undefined
+      // Other HTTP connections must not delay the OAuth result.
+      server.close()
+      if (error) {
+        reject(error)
+      } else if (code) {
+        resolve(code)
+      } else {
         reject(new Error('OAuth callback failed'))
-      })
+      }
     }
 
     server.on('error', (error) => {

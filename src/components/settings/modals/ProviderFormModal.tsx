@@ -52,6 +52,7 @@ function ProviderFormComponent({
   provider,
   onClose,
 }: ProviderFormComponentProps) {
+  const [apiKeyChanged, setApiKeyChanged] = useState(false)
   const [formData, setFormData] = useState<LLMProvider>(
     provider
       ? { ...provider }
@@ -83,14 +84,21 @@ function ProviderFormComponent({
         return
       }
 
-      await plugin.setSettings({
-        ...plugin.settings,
-        providers: [
-          ...plugin.settings.providers.slice(0, currentProviderIndex),
-          formData,
-          ...plugin.settings.providers.slice(currentProviderIndex + 1),
-        ],
-      })
+      await plugin.setSettings((current) => ({
+        ...current,
+        providers: current.providers.map((item) =>
+          item.id === formData.id
+            ? {
+                ...formData,
+                apiKey: apiKeyChanged ? formData.apiKey : item.apiKey,
+                credentialsSecretId:
+                  apiKeyChanged && !formData.apiKey
+                    ? undefined
+                    : item.credentialsSecretId,
+              }
+            : item,
+        ),
+      }))
     } else {
       if (
         plugin.settings.providers.some((p: LLMProvider) => p.id === formData.id)
@@ -107,10 +115,10 @@ function ProviderFormComponent({
         return
       }
 
-      await plugin.setSettings({
-        ...plugin.settings,
-        providers: [...plugin.settings.providers, formData],
-      })
+      await plugin.setSettings((current) => ({
+        ...current,
+        providers: [...current.providers, formData],
+      }))
     }
 
     onClose()
@@ -172,11 +180,28 @@ function ProviderFormComponent({
             <ObsidianTextInput
               value={formData.apiKey ?? ''}
               placeholder="Enter your API Key"
-              onChange={(value: string) =>
+              type="password"
+              onChange={(value: string) => {
+                setApiKeyChanged(true)
                 setFormData((prev) => ({ ...prev, apiKey: value }))
-              }
+              }}
             />
           </ObsidianSetting>
+
+          {(provider?.apiKey || provider?.credentialsSecretId) && (
+            <ObsidianSetting
+              name="Clear API key"
+              desc="Clear the saved API key when you save this form."
+            >
+              <ObsidianButton
+                text="Clear"
+                onClick={() => {
+                  setApiKeyChanged(true)
+                  setFormData((prev) => ({ ...prev, apiKey: '' }))
+                }}
+              />
+            </ObsidianSetting>
+          )}
 
           <ObsidianSetting
             name="Base URL"

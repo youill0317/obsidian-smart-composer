@@ -1,6 +1,9 @@
-import { SmartComposerSettings } from '../../settings/schema/setting.types'
+import {
+  SettingsSetter,
+  SmartComposerSettings,
+} from '../../settings/schema/setting.types'
 import { ChatModel } from '../../types/chat-model.types'
-import { LLMProvider } from '../../types/provider.types'
+import { LLMProvider, llmProviderSchema } from '../../types/provider.types'
 
 import { AnthropicProvider } from './anthropic'
 import { AnthropicClaudeCodeProvider } from './anthropicClaudeCodeProvider'
@@ -34,25 +37,44 @@ export function getProviderClient({
 }: {
   providerId: string
   settings: SmartComposerSettings
-  setSettings?: (newSettings: SmartComposerSettings) => void | Promise<void>
+  setSettings?: SettingsSetter
 }): BaseLLMProvider<LLMProvider> {
-  const provider = settings.providers.find((p) => p.id === providerId)
-  if (!provider) {
+  const configured = settings.providers.find((p) => p.id === providerId)
+  if (!configured) {
     throw new Error(`Provider ${providerId} not found`)
   }
 
+  // Providers rotate OAuth tokens internally. Never mutate a settings snapshot.
+  const provider = llmProviderSchema.parse(configured)
+  let expectedOauth = JSON.stringify(
+    'oauth' in configured ? configured.oauth : undefined,
+  )
   const onProviderUpdate = setSettings
     ? async (targetProviderId: string, update: Partial<LLMProvider>) => {
-        const updatedProviders: LLMProvider[] = settings.providers.map(
-          (item) =>
-            item.id === targetProviderId
-              ? ({ ...item, ...update } as LLMProvider)
-              : item,
-        )
-        await setSettings({
-          ...settings,
-          providers: updatedProviders,
+        await setSettings((current) => {
+          const latest = current.providers.find(
+            (item) => item.id === targetProviderId,
+          )
+          if (
+            !latest ||
+            latest.type !== provider.type ||
+            JSON.stringify('oauth' in latest ? latest.oauth : undefined) !==
+              expectedOauth
+          ) {
+            throw new Error(
+              'Credentials changed while the request was running. Please retry.',
+            )
+          }
+          return {
+            ...current,
+            providers: current.providers.map((item) =>
+              item.id === targetProviderId
+                ? ({ ...item, ...update } as LLMProvider)
+                : item,
+            ),
+          }
         })
+        if ('oauth' in update) expectedOauth = JSON.stringify(update.oauth)
       }
     : undefined
 
@@ -115,7 +137,7 @@ export function getChatModelClient({
 }: {
   modelId: string
   settings: SmartComposerSettings
-  setSettings: (newSettings: SmartComposerSettings) => void | Promise<void>
+  setSettings: SettingsSetter
 }): {
   providerClient: BaseLLMProvider<LLMProvider>
   model: ChatModel

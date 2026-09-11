@@ -95,3 +95,8 @@ export type SettingMigration = {
   toVersion: number
   migrate: (data: Record<string, unknown>) => Record<string, unknown>
 }
+
+export type SettingsUpdate =
+  | SmartComposerSettings
+  | ((current: SmartComposerSettings) => SmartComposerSettings)
+export type SettingsSetter = (update: SettingsUpdate) => void | Promise<void>

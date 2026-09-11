@@ -6,6 +6,7 @@ import { useSettings } from '../../../contexts/settings-context'
 import SmartComposerPlugin from '../../../main'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
+import { CredentialStorageStatus } from '../CredentialStorageStatus'
 import { ConnectClaudePlanModal } from '../modals/ConnectClaudePlanModal'
 import { ConnectGeminiPlanModal } from '../modals/ConnectGeminiPlanModal'
 import { ConnectOpenAIPlanModal } from '../modals/ConnectOpenAIPlanModal'
@@ -65,16 +66,17 @@ export function PlanConnectionsSection({
             : 'Disconnect Gemini from Smart Composer?',
       ctaText: 'Disconnect',
       onConfirm: async () => {
-        await setSettings({
-          ...settings,
-          providers: settings.providers.map((p) => {
+        await setSettings((current) => ({
+          ...current,
+          providers: current.providers.map((p) => {
             if (p.id !== providerId || p.type !== providerType) return p
             return {
               ...p,
               oauth: undefined,
+              credentialsSecretId: undefined,
             }
           }),
-        })
+        }))
       },
     }).open()
   }
@@ -109,6 +111,10 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">Claude</div>
             <PlanConnectionStatusBadge connected={isClaudeConnected} />
           </div>
+          <CredentialStorageStatus
+            plugin={plugin}
+            providerId={CLAUDE_PLAN_PROVIDER_ID}
+          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your Claude Code usage from your Claude plan.
@@ -125,7 +131,7 @@ export function PlanConnectionsSection({
                 Connect
               </button>
             )}
-            {isClaudeConnected && (
+            {(isClaudeConnected || claudePlanProvider?.credentialsSecretId) && (
               <button onClick={() => disconnect('anthropic-plan')}>
                 Disconnect
               </button>
@@ -138,6 +144,10 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">OpenAI</div>
             <PlanConnectionStatusBadge connected={isOpenAIConnected} />
           </div>
+          <CredentialStorageStatus
+            plugin={plugin}
+            providerId={OPENAI_PLAN_PROVIDER_ID}
+          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your Codex usage from your ChatGPT plan.
@@ -160,7 +170,7 @@ export function PlanConnectionsSection({
                 Connect
               </button>
             )}
-            {isOpenAIConnected && (
+            {(isOpenAIConnected || openAIPlanProvider?.credentialsSecretId) && (
               <button onClick={() => disconnect('openai-plan')}>
                 Disconnect
               </button>
@@ -173,6 +183,10 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">Gemini</div>
             <PlanConnectionStatusBadge connected={isGeminiConnected} />
           </div>
+          <CredentialStorageStatus
+            plugin={plugin}
+            providerId={GEMINI_PLAN_PROVIDER_ID}
+          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your Gemini Code Assist usage from your Google AI Plan.
@@ -189,7 +203,7 @@ export function PlanConnectionsSection({
                 Connect
               </button>
             )}
-            {isGeminiConnected && (
+            {(isGeminiConnected || geminiPlanProvider?.credentialsSecretId) && (
               <button onClick={() => disconnect('gemini-plan')}>
                 Disconnect
               </button>

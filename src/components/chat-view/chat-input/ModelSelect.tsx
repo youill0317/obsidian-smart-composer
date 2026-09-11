@@ -27,10 +27,10 @@ export function ModelSelect() {
                 <DropdownMenu.Item
                   key={chatModelOption.id}
                   onSelect={() => {
-                    setSettings({
-                      ...settings,
+                    setSettings((current) => ({
+                      ...current,
                       chatModelId: chatModelOption.id,
-                    })
+                    }))
                   }}
                   asChild
                 >

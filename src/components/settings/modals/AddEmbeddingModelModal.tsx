@@ -122,10 +122,10 @@ function AddEmbeddingModelModalComponent({
         )
       }
 
-      await plugin.setSettings({
-        ...plugin.settings,
-        embeddingModels: [...plugin.settings.embeddingModels, embeddingModel],
-      })
+      await plugin.setSettings((current) => ({
+        ...current,
+        embeddingModels: [...current.embeddingModels, embeddingModel],
+      }))
 
       onClose()
     } catch (error) {

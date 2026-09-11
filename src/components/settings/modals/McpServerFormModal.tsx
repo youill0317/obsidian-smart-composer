@@ -103,12 +103,12 @@ function McpServerFormComponent({
         .strict()
         .parse(parsedParameters)
 
-      const newSettings = {
-        ...plugin.settings,
+      await plugin.setSettings((current) => ({
+        ...current,
         mcp: {
-          ...plugin.settings.mcp,
+          ...current.mcp,
           servers: existingServer
-            ? plugin.settings.mcp.servers.map((server) =>
+            ? current.mcp.servers.map((server) =>
                 server.id === existingServer.id
                   ? {
                       ...server,
@@ -118,7 +118,7 @@ function McpServerFormComponent({
                   : server,
               )
             : [
-                ...plugin.settings.mcp.servers,
+                ...current.mcp.servers,
                 {
                   id: serverName,
                   parameters: validatedParameters,
@@ -127,9 +127,7 @@ function McpServerFormComponent({
                 },
               ],
         },
-      }
-
-      await plugin.setSettings(newSettings)
+      }))
 
       onClose()
     } catch (error) {
