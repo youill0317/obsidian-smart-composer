@@ -70,8 +70,10 @@ export class CliManager {
       throw new Error('CLI connection is missing or disabled.')
     if (!(this.app.vault.adapter instanceof FileSystemAdapter))
       throw new Error('CLI requires a local vault.')
-    const path = await import('path')
-    const fs = await import('fs')
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require('path') as typeof import('path')
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs') as typeof import('fs')
     const vaultPath = this.app.vault.adapter.getBasePath()
     const cwd =
       connection.preset === 'obsidian' ? vaultPath : connection.cwd || vaultPath
