@@ -6,8 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { editorStateToPlainText } from '../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { useApp } from '../contexts/app-context'
 import { ChatConversationMetadata } from '../database/json/chat/types'
-import { ChatMessage, SerializedChatMessage } from '../types/chat'
+import {
+  ChatMessage,
+  ChatToolMessage,
+  SerializedChatMessage,
+} from '../types/chat'
 import { Mentionable } from '../types/mentionable'
+import { ToolCallResponseStatus } from '../types/tool-call.types'
 import {
   deserializeMentionable,
   serializeMentionable,
@@ -127,6 +132,18 @@ export function useChatHistory(): UseChatHistory {
   }
 }
 
+// A running process cannot be resumed from a saved conversation.
+// Persist an interrupted snapshot; a result received while visible replaces it.
+const snapshotToolCalls = (toolCalls: ChatToolMessage['toolCalls']) =>
+  toolCalls.map((call) =>
+    call.response.status === ToolCallResponseStatus.Running
+      ? {
+          ...call,
+          response: { status: ToolCallResponseStatus.Aborted as const },
+        }
+      : call,
+  )
+
 const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
   switch (message.role) {
     case 'user':
@@ -152,7 +169,7 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
     case 'tool':
       return {
         role: 'tool',
-        toolCalls: message.toolCalls,
+        toolCalls: snapshotToolCalls(message.toolCalls),
         id: message.id,
       }
   }
@@ -189,7 +206,7 @@ const deserializeChatMessage = (
     case 'tool':
       return {
         role: 'tool',
-        toolCalls: message.toolCalls,
+        toolCalls: snapshotToolCalls(message.toolCalls),
         id: message.id,
       }
   }

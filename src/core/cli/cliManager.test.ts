@@ -199,6 +199,13 @@ it('validates real execution previews before asking for approval', async () => {
     expect(
       (await manager.prepare({ cliId: 'obsidian', args: [] })).automatic,
     ).toBe(false)
+    const request = { cliId: 'obsidian', args: ['plain'] }
+    const direct = await manager.prepare(request)
+    expect(direct.batchArgumentMode).toBe('direct')
+    settings.cli.connections[0].batchArgumentMode = 'forwarded'
+    const changed = await manager.execute('changed-mode', request, direct)
+    expect(changed.status).toBe(Status.PendingApproval)
+    expect(run).not.toHaveBeenCalled()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

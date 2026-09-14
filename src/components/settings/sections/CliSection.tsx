@@ -11,6 +11,7 @@ import {
 } from '../../../types/cli.types'
 import { ToolCallResponseStatus } from '../../../types/tool-call.types'
 import { ObsidianButton } from '../../common/ObsidianButton'
+import { ObsidianDropdown } from '../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../common/ObsidianSetting'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../common/ObsidianToggle'
@@ -247,6 +248,22 @@ function CliForm({
             desc={'JSON array, for example ["--no-color"].'}
           >
             <ObsidianTextInput value={args} onChange={setArgs} />
+          </ObsidianSetting>
+          <ObsidianSetting
+            name="Batch file arguments"
+            desc="For .cmd/.bat only: choose Forwarded for npm commands or wrappers that pass %* to another program."
+          >
+            <ObsidianDropdown
+              value={draft.batchArgumentMode}
+              options={{
+                direct: 'Direct (ordinary script)',
+                forwarded: 'Forwarded (npm / wrapper)',
+              }}
+              onChange={(value) => {
+                if (value === 'direct' || value === 'forwarded')
+                  setDraft({ ...draft, batchArgumentMode: value })
+              }}
+            />
           </ObsidianSetting>
           <ObsidianSetting
             name="Working folder"

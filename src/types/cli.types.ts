@@ -15,6 +15,8 @@ export const cliConnectionSchema = z.object({
     .min(1)
     .refine((value) => !value.includes('\0'), 'NUL is not allowed'),
   args: z.array(text).default([]),
+  // Preserve the argument handling of connections saved before this option existed.
+  batchArgumentMode: z.enum(['direct', 'forwarded']).default('forwarded'),
   cwd: text.default(''),
   instructions: z.string().default(''),
   enabled: z.boolean().default(false),
@@ -28,6 +30,7 @@ export const DEFAULT_OBSIDIAN_CLI: CliConnection = {
   preset: 'obsidian',
   command: 'Obsidian.com',
   args: [],
+  batchArgumentMode: 'direct',
   cwd: '',
   instructions:
     'Use help <command> to check syntax. Search with a limit, read relevant notes, and use exact vault-relative path= targets. The current vault is fixed. Verify changes by reading the result; exit code alone is not proof. Do not automatically retry a timed-out write. For content parameters use literal \\n and \\t as documented by Obsidian.',
@@ -61,6 +64,7 @@ export type CliExecution = {
   cwd: string
   stdin?: string
   timeoutSeconds: number
+  batchArgumentMode?: 'direct' | 'forwarded'
   automatic: boolean
   configuration: string
 }

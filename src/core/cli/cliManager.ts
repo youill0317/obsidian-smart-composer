@@ -184,6 +184,7 @@ export class CliManager {
       cwd,
       stdin: request.stdin,
       timeoutSeconds: connection.timeoutSeconds,
+      batchArgumentMode: connection.batchArgumentMode,
       automatic:
         connection.preset === 'obsidian' &&
         isObsidianReadOnly(request.args, request.stdin),

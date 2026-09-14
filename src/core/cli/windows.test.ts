@@ -6,6 +6,51 @@ import { runCli } from './runner'
 
 const windowsTest = process.platform === 'win32' ? it : it.skip
 windowsTest(
+  'passes ordinary batch parameters without extra quotes',
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'smart-composer-script-'))
+    try {
+      const command = join(directory, 'direct.cmd')
+      writeFileSync(
+        command,
+        '@echo off\r\nchcp 65001 >nul\r\nset "value=%~1"\r\nset value\r\n',
+      )
+      for (const argument of [
+        'plain',
+        '한글 path',
+        'a&b',
+        '%PATH%',
+        '!value!',
+        'tail\\',
+        'a"b',
+        '^',
+        '|',
+      ]) {
+        const result = await runCli(
+          {
+            cliId: 'test',
+            name: 'Test',
+            command,
+            args: [argument],
+            cwd: directory,
+            timeoutSeconds: 5,
+            automatic: false,
+            configuration: '',
+            batchArgumentMode: 'direct',
+          },
+          new AbortController().signal,
+        )
+        expect(result.exitCode).toBe(0)
+        expect(result.stdout.trim()).toBe(`value=${argument}`)
+        expect(result.stderr).toBe('')
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)
+
+windowsTest(
   'executes batch and npm-style shims with literal arguments',
   async () => {
     const directory = mkdtempSync(join(tmpdir(), 'smart-composer-cli-'))
@@ -46,6 +91,7 @@ windowsTest(
             timeoutSeconds: 5,
             automatic: false,
             configuration: '',
+            batchArgumentMode: 'forwarded',
           },
           new AbortController().signal,
         )

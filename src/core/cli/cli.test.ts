@@ -1,5 +1,6 @@
 import {
   CliExecution,
+  cliConnectionSchema,
   cliRequestSchema,
   cliSettingsSchema,
 } from '../../types/cli.types'
@@ -57,6 +58,11 @@ it('allows only documented read-only argument forms', () => {
       .success,
   ).toBe(false)
   const first = cliSettingsSchema.parse(undefined)
+  expect(first.connections[0].batchArgumentMode).toBe('direct')
+  expect(
+    cliConnectionSchema.parse({ id: 'old', name: 'Old', command: 'old.cmd' })
+      .batchArgumentMode,
+  ).toBe('forwarded')
   first.connections[0].enabled = true
   expect(cliSettingsSchema.parse(undefined).connections[0].enabled).toBe(false)
 })

@@ -100,8 +100,8 @@ export function runCli(
         process.platform === 'win32' &&
         /\.(cmd|bat)$/i.test(execution.command)
       ) {
-        // Batch files parse forwarded arguments twice. cross-spawn only applies
-        // this protection to node_modules/.bin/*.cmd; global/custom shims need it too.
+        // Only forwarding wrappers (such as npm shims using %*) parse args twice.
+        // Ordinary scripts consuming %1/%~1 must receive a single escaped argument.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const escape = require('cross-spawn/lib/util/escape') as {
           command: (value: string) => string
@@ -109,7 +109,11 @@ export function runCli(
         }
         const commandLine = [
           escape.command(execution.command),
-          ...execution.args.map((arg) => escape.argument(arg, true)),
+          ...execution.args.map((arg) =>
+            execution.batchArgumentMode === 'direct'
+              ? escape.command(`"${arg}"`)
+              : escape.argument(arg, true),
+          ),
         ].join(' ')
         child = nodeSpawn(
           join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'),
