@@ -71,7 +71,8 @@ export function CliSection({
             'Obsidian CLI returned no output. Check installer 1.12.7+ and CLI activation.',
           )
         if (args[0] === 'vault') {
-          const { win32 } = await import('path')
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { win32 } = require('path') as typeof import('path')
           if (
             win32.normalize(result.stdout.trim()).toLowerCase() !==
             win32.normalize(execution.cwd).toLowerCase()
