@@ -21,7 +21,9 @@ function SimiliartySearchItem({
   return (
     <div onClick={handleClick} className="smtcmp-similarity-search-item">
       <div className="smtcmp-similarity-search-item__similarity">
-        {chunk.similarity.toFixed(3)}
+        {Number.isFinite(chunk.similarity)
+          ? chunk.similarity.toFixed(3)
+          : 'Unavailable'}
       </div>
       <div className="smtcmp-similarity-search-item__path">
         {path.basename(chunk.path)}

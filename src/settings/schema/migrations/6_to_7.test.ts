@@ -127,7 +127,7 @@ describe('Migration from v6 to v7', () => {
     ])
   })
 
-  it('should remove provider with id "perplexity"', () => {
+  it('preserves a custom provider with id "perplexity"', () => {
     const oldSettings = {
       version: 6,
       providers: [
@@ -144,7 +144,18 @@ describe('Migration from v6 to v7', () => {
       ],
     }
     const result = migrateFrom6To7(oldSettings)
-    expect(result.providers).toEqual(DEFAULT_PROVIDERS_V7)
+    expect(result.providers).toEqual([
+      ...DEFAULT_PROVIDERS_V7.map((provider) =>
+        provider.id === 'perplexity'
+          ? {
+              type: 'openai-compatible',
+              id: 'perplexity',
+              baseUrl: 'https://api.perplexity.ai',
+              apiKey: 'perplexity-api-key',
+            }
+          : provider,
+      ),
+    ])
   })
 
   it('should use default models if chatModels is not present', () => {

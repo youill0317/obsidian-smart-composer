@@ -1,6 +1,22 @@
 import { ParsedTagContent, parseTagContents } from './parse-tag-content'
 
 describe('parseSmtcmpBlocks', () => {
+  it.each(['smtcmpBlock', 'smtcmpblock'])(
+    'supports the legacy %s tag',
+    (tagName) => {
+      expect(
+        parseTagContents(`<${tagName} language="markdown">old</${tagName}>`),
+      ).toEqual([
+        {
+          type: 'smtcmp_block',
+          content: 'old',
+          language: 'markdown',
+          filename: undefined,
+        },
+      ])
+    },
+  )
+
   it('should parse a string with smtcmp_block elements', () => {
     const input = `Some text before
 <smtcmp_block language="markdown" filename="example.md">

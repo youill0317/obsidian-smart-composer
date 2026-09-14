@@ -1,6 +1,12 @@
 import { migrateFrom0To1 } from './0_to_1'
 
 describe('settings 0_to_1 migration', () => {
+  it('keeps the legacy Groq apply model on Groq', () => {
+    expect(migrateFrom0To1({ applyModel: 'llama3-8b-8192' })).toMatchObject({
+      applyModelId: 'groq/llama3-8b-8192',
+    })
+  })
+
   it('should migrate from v0 to v1', () => {
     const oldSettings = {
       openAIApiKey: 'openai-api-key',

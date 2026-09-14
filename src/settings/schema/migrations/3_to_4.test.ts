@@ -46,7 +46,7 @@ describe('settings 3_to_4 migration', () => {
     expect(result.chatModelId).toBe('claude-3.5-sonnet')
   })
 
-  it('should update existing claude-3.7-sonnet if present', () => {
+  it('preserves a colliding custom claude-3.7-sonnet', () => {
     const oldSettings = {
       version: 3,
       chatModels: [
@@ -66,9 +66,9 @@ describe('settings 3_to_4 migration', () => {
     expect(result.chatModels).toEqual([
       {
         providerType: 'anthropic',
-        providerId: 'anthropic',
+        providerId: 'custom-provider',
         id: 'claude-3.7-sonnet',
-        model: 'claude-3-7-sonnet-latest',
+        model: 'old-model-name',
         enable: false,
       },
     ])

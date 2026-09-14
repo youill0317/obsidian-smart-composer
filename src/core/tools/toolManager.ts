@@ -8,6 +8,8 @@ import { CliManager } from '../cli/cliManager'
 import { McpManager } from '../mcp/mcpManager'
 
 export class ToolManager {
+  private availableToolByCallId = new Map<string, string>()
+
   constructor(
     readonly cli: CliManager,
     private getMcp: () => Promise<McpManager>,
@@ -29,10 +31,19 @@ export class ToolManager {
   async prepareCall(
     request: ToolCallRequest,
     conversationId: string,
+    availableToolNames: ReadonlySet<string>,
   ): Promise<ToolCallResponse> {
+    if (!availableToolNames.has(request.name)) {
+      this.availableToolByCallId.delete(request.id)
+      return {
+        status: Status.Error,
+        error: `Tool ${request.name} was not available for this request`,
+      }
+    }
     if (request.name === CLI_TOOL_NAME) {
       try {
         const execution = await this.cli.prepare(request.arguments)
+        this.rememberAvailableTool(request)
         return {
           status: execution.automatic ? Status.Running : Status.PendingApproval,
           execution,
@@ -48,6 +59,7 @@ export class ToolManager {
       requestToolName: request.name,
       conversationId,
     })
+    this.rememberAvailableTool(request)
     return { status: allowed ? Status.Running : Status.PendingApproval }
   }
 
@@ -59,6 +71,29 @@ export class ToolManager {
     approved?: CliExecution
     conversationId?: string
   }): Promise<ToolCallResponse> {
+    if (params.signal?.aborted) return { status: Status.Aborted }
+    if (this.availableToolByCallId.get(params.id) !== params.name) {
+      return {
+        status: Status.Error,
+        error: `Tool ${params.name} was not available for this request`,
+      }
+    }
+    let availableTools
+    try {
+      availableTools = await this.listAvailableTools()
+    } catch (error) {
+      return {
+        status: Status.Error,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    if (params.signal?.aborted) return { status: Status.Aborted }
+    if (!availableTools.some((tool) => tool.name === params.name)) {
+      return {
+        status: Status.Error,
+        error: `Tool ${params.name} is no longer available`,
+      }
+    }
     if (params.name === CLI_TOOL_NAME)
       return this.cli.execute(
         params.id,
@@ -69,7 +104,6 @@ export class ToolManager {
         params.conversationId,
       )
     const mcp = await this.getMcp()
-    if (params.signal?.aborted) return { status: Status.Aborted }
     return mcp.callTool(params)
   }
 
@@ -86,5 +120,13 @@ export class ToolManager {
   async allowToolForConversation(name: string, conversationId: string) {
     if (name !== CLI_TOOL_NAME)
       (await this.getMcp()).allowToolForConversation(name, conversationId)
+  }
+
+  private rememberAvailableTool(request: ToolCallRequest) {
+    this.availableToolByCallId.set(request.id, request.name)
+    if (this.availableToolByCallId.size > 1000)
+      this.availableToolByCallId.delete(
+        Array.from(this.availableToolByCallId.keys())[0],
+      )
   }
 }

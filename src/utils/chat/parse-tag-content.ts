@@ -25,7 +25,7 @@ export function parseTagContents(input: string): ParsedTagContent[] {
   })
   let lastEndOffset = 0
   for (const node of fragment.childNodes) {
-    if (node.nodeName === 'smtcmp_block') {
+    if (node.nodeName === 'smtcmp_block' || node.nodeName === 'smtcmpblock') {
       if (!node.sourceCodeLocation) {
         throw new Error('sourceCodeLocation is undefined')
       }

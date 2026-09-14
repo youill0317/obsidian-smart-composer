@@ -21,3 +21,9 @@ writeFileSync('versions.json', JSON.stringify(versions, null, 2))
 let packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 packageJson.version = targetVersion
 writeFileSync('package.json', JSON.stringify(packageJson, null, 2))
+
+// Keep npm ci and the version-bump PR aligned without resolving dependencies.
+const lockfile = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+lockfile.version = targetVersion
+lockfile.packages[''].version = targetVersion
+writeFileSync('package-lock.json', JSON.stringify(lockfile, null, 2) + '\n')

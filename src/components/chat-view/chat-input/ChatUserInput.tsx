@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { $nodesOfType, LexicalEditor, SerializedEditorState } from 'lexical'
+import { Notice } from 'obsidian'
 import {
   forwardRef,
   useCallback,
@@ -21,7 +22,11 @@ import {
   getMentionableKey,
   serializeMentionable,
 } from '../../../utils/chat/mentionable'
-import { fileToMentionableImage } from '../../../utils/llm/image'
+import { sanitizeSerializedEditorState } from '../../../utils/chat/serialized-editor-state'
+import {
+  filesToMentionableImages,
+  isSafeImageDataUrl,
+} from '../../../utils/llm/image'
 import { openMarkdownFile, readTFileContent } from '../../../utils/obsidian'
 import { ObsidianMarkdown } from '../ObsidianMarkdown'
 
@@ -34,6 +39,8 @@ import { NodeMutations } from './plugins/on-mutation/OnMutationPlugin'
 import { SubmitButton } from './SubmitButton'
 import ToolBadge from './ToolBadge'
 import { VaultChatButton } from './VaultChatButton'
+
+const MAX_PREVIEW_FILE_BYTES = 1024 * 1024
 
 export type ChatUserInputRef = {
   focus: () => void
@@ -69,6 +76,8 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
     const editorRef = useRef<LexicalEditor | null>(null)
     const contentEditableRef = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
+    const mentionablesRef = useRef(mentionables)
+    const imageUploadQueueRef = useRef(Promise.resolve())
 
     const [displayedMentionableKey, setDisplayedMentionableKey] = useState<
       string | null
@@ -80,6 +89,10 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
       }
     }, [addedBlockKey])
 
+    useEffect(() => {
+      mentionablesRef.current = mentionables
+    }, [mentionables])
+
     useImperativeHandle(ref, () => ({
       focus: () => {
         contentEditableRef.current?.focus()
@@ -89,6 +102,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
     const handleMentionNodeMutation = (
       mutations: NodeMutations<MentionNode>,
     ) => {
+      const currentMentionables = mentionablesRef.current
       const destroyedMentionableKeys: string[] = []
       const addedMentionables: SerializedMentionable[] = []
       mutations.forEach((mutation) => {
@@ -109,7 +123,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
           }
         } else if (mutation.mutation === 'created') {
           if (
-            mentionables.some(
+            currentMentionables.some(
               (m) =>
                 getMentionableKey(serializeMentionable(m)) === mentionableKey,
             ) ||
@@ -125,20 +139,20 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
         }
       })
 
-      setMentionables(
-        mentionables
-          .filter(
-            (m) =>
-              !destroyedMentionableKeys.includes(
-                getMentionableKey(serializeMentionable(m)),
-              ),
-          )
-          .concat(
-            addedMentionables
-              .map((m) => deserializeMentionable(m, app))
-              .filter((v) => !!v),
-          ),
-      )
+      const nextMentionables = currentMentionables
+        .filter(
+          (m) =>
+            !destroyedMentionableKeys.includes(
+              getMentionableKey(serializeMentionable(m)),
+            ),
+        )
+        .concat(
+          addedMentionables
+            .map((m) => deserializeMentionable(m, app))
+            .filter((v) => !!v),
+        )
+      mentionablesRef.current = nextMentionables
+      setMentionables(nextMentionables)
       if (addedMentionables.length > 0) {
         setDisplayedMentionableKey(
           getMentionableKey(addedMentionables[addedMentionables.length - 1]),
@@ -148,16 +162,22 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
 
     const handleCreateImageMentionables = useCallback(
       (mentionableImages: MentionableImage[]) => {
+        const currentMentionables = mentionablesRef.current
         const newMentionableImages = mentionableImages.filter(
           (m) =>
-            !mentionables.some(
+            !currentMentionables.some(
               (mentionable) =>
                 getMentionableKey(serializeMentionable(mentionable)) ===
                 getMentionableKey(serializeMentionable(m)),
             ),
         )
         if (newMentionableImages.length === 0) return
-        setMentionables([...mentionables, ...newMentionableImages])
+        const nextMentionables = [
+          ...currentMentionables,
+          ...newMentionableImages,
+        ]
+        mentionablesRef.current = nextMentionables
+        setMentionables(nextMentionables)
         setDisplayedMentionableKey(
           getMentionableKey(
             serializeMentionable(
@@ -166,18 +186,18 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
           ),
         )
       },
-      [mentionables, setMentionables],
+      [setMentionables],
     )
 
     const handleMentionableDelete = (mentionable: Mentionable) => {
       const mentionableKey = getMentionableKey(
         serializeMentionable(mentionable),
       )
-      setMentionables(
-        mentionables.filter(
-          (m) => getMentionableKey(serializeMentionable(m)) !== mentionableKey,
-        ),
+      const nextMentionables = mentionablesRef.current.filter(
+        (m) => getMentionableKey(serializeMentionable(m)) !== mentionableKey,
       )
+      mentionablesRef.current = nextMentionables
+      setMentionables(nextMentionables)
 
       editorRef.current?.update(() => {
         $nodesOfType(MentionNode).forEach((node) => {
@@ -188,11 +208,28 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
       })
     }
 
-    const handleUploadImages = async (images: File[]) => {
-      const mentionableImages = await Promise.all(
-        images.map((image) => fileToMentionableImage(image)),
+    const handleUploadImages = (images: File[]) => {
+      imageUploadQueueRef.current = imageUploadQueueRef.current.then(
+        async () => {
+          try {
+            const existingImages = mentionablesRef.current.filter(
+              (mentionable): mentionable is MentionableImage =>
+                mentionable.type === 'image',
+            )
+            const mentionableImages = await filesToMentionableImages(
+              images,
+              existingImages,
+            )
+            handleCreateImageMentionables(mentionableImages)
+          } catch (error) {
+            new Notice(
+              error instanceof Error
+                ? error.message
+                : 'Unable to attach images.',
+            )
+          }
+        },
       )
-      handleCreateImageMentionables(mentionableImages)
     }
 
     const handleSubmit = (options: { useVaultSearch?: boolean } = {}) => {
@@ -245,10 +282,11 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
 
         <LexicalContentEditable
           initialEditorState={(editor) => {
-            if (initialSerializedEditorState) {
-              editor.setEditorState(
-                editor.parseEditorState(initialSerializedEditorState),
-              )
+            const safeEditorState = sanitizeSerializedEditorState(
+              initialSerializedEditorState,
+            )
+            if (safeEditorState) {
+              editor.setEditorState(editor.parseEditorState(safeEditorState))
             }
           }}
           editorRef={editorRef}
@@ -257,7 +295,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
           onEnter={() => handleSubmit({ useVaultSearch: false })}
           onFocus={onFocus}
           onMentionNodeMutation={handleMentionNodeMutation}
-          onCreateImageMentionables={handleCreateImageMentionables}
+          onUploadImages={handleUploadImages}
           autoFocus={autoFocus}
           plugins={{
             onEnter: {
@@ -325,8 +363,14 @@ function MentionableContentPreview({
         displayedMentionable.type === 'current-file'
       ) {
         if (!displayedMentionable.file) return null
+        if (displayedMentionable.file.stat.size > MAX_PREVIEW_FILE_BYTES) {
+          return 'Preview unavailable: files larger than 1 MB are not loaded.'
+        }
         return await readTFileContent(displayedMentionable.file, app.vault)
       } else if (displayedMentionable.type === 'block') {
+        if (displayedMentionable.file.stat.size > MAX_PREVIEW_FILE_BYTES) {
+          return 'Preview unavailable: files larger than 1 MB are not loaded.'
+        }
         const fileContent = await readTFileContent(
           displayedMentionable.file,
           app.vault,
@@ -346,7 +390,10 @@ function MentionableContentPreview({
   })
 
   const displayImage: MentionableImage | null = useMemo(() => {
-    return displayedMentionable?.type === 'image' ? displayedMentionable : null
+    return displayedMentionable?.type === 'image' &&
+      isSafeImageDataUrl(displayedMentionable.data)
+      ? displayedMentionable
+      : null
   }, [displayedMentionable])
 
   return displayFileContent ? (
@@ -356,6 +403,10 @@ function MentionableContentPreview({
   ) : displayImage ? (
     <div className="smtcmp-chat-user-input-file-content-preview">
       <img src={displayImage.data} alt={displayImage.name} />
+    </div>
+  ) : displayedMentionable?.type === 'image' ? (
+    <div className="smtcmp-chat-user-input-file-content-preview">
+      Image preview unavailable: invalid or unsupported image data.
     </div>
   ) : null
 }

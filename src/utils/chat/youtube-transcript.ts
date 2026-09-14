@@ -5,13 +5,14 @@
  * Modified from the original code
  */
 
-import { requestUrl } from 'obsidian'
+import { fetchPublicText } from '../fetch-utils'
 
 const RE_YOUTUBE =
   /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36,gzip(gfe)'
 const RE_XML_TRANSCRIPT = /<text start="([^"]*)" dur="([^"]*)">([^<]*)<\/text>/g
+const MAX_TRANSCRIPT_ENTRIES = 25_000
 
 export function isYoutubeUrl(url: string) {
   return RE_YOUTUBE.test(url)
@@ -61,6 +62,7 @@ export class YoutubeTranscriptNotAvailableLanguageError extends YoutubeTranscrip
 
 export type TranscriptConfig = {
   lang?: string
+  signal?: AbortSignal
 }
 export type Transcript = {
   text: string
@@ -88,13 +90,20 @@ export class YoutubeTranscript {
     config?: TranscriptConfig,
   ): Promise<TranscriptAndMetadataResponse> {
     const identifier = this.retrieveVideoId(videoId)
-    const videoPageResponse = await requestUrl({
-      url: `https://www.youtube.com/watch?v=${identifier}`,
-      headers: {
-        ...(config?.lang && { 'Accept-Language': config.lang }),
-        'User-Agent': USER_AGENT,
+    const videoPageResponse = await fetchPublicText(
+      `https://www.youtube.com/watch?v=${identifier}`,
+      {
+        headers: {
+          ...(config?.lang && { 'Accept-Language': config.lang }),
+          'User-Agent': USER_AGENT,
+        },
+        maxBytes: 2 * 1024 * 1024,
+        signal: config?.signal,
       },
-    })
+    )
+    if (videoPageResponse.status < 200 || videoPageResponse.status >= 300) {
+      throw new YoutubeTranscriptVideoUnavailableError(videoId)
+    }
     const videoPageBody = videoPageResponse.text
 
     // Extract title using regex from <title> tags
@@ -158,26 +167,35 @@ export class YoutubeTranscript {
         : captions.captionTracks[0]
     ).baseUrl
 
-    const transcriptResponse = await requestUrl({
-      url: transcriptURL,
+    const transcriptResponse = await fetchPublicText(transcriptURL, {
       headers: {
         ...(config?.lang && { 'Accept-Language': config.lang }),
         'User-Agent': USER_AGENT,
       },
+      maxBytes: 5 * 1024 * 1024,
+      signal: config?.signal,
     })
     if (transcriptResponse.status !== 200) {
       throw new YoutubeTranscriptNotAvailableError(videoId)
     }
     const transcriptBody = transcriptResponse.text
-    const results = [...transcriptBody.matchAll(RE_XML_TRANSCRIPT)]
-    return {
-      title,
-      transcript: results.map((result) => ({
+    const transcript: Transcript[] = []
+    for (const result of transcriptBody.matchAll(RE_XML_TRANSCRIPT)) {
+      if (transcript.length >= MAX_TRANSCRIPT_ENTRIES) {
+        throw new YoutubeTranscriptError(
+          'Transcript contains too many entries to process safely.',
+        )
+      }
+      transcript.push({
         text: result[3],
         duration: parseFloat(result[2]),
         offset: parseFloat(result[1]),
         lang: config?.lang ?? captions.captionTracks[0].languageCode,
-      })),
+      })
+    }
+    return {
+      title,
+      transcript,
     }
   }
 

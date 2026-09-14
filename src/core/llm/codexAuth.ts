@@ -139,14 +139,12 @@ export async function startCodexCallbackServer(params: {
       if (!incomingState) {
         res.statusCode = 400
         res.end('Missing state parameter')
-        finalize(new Error('Missing state parameter'))
         return
       }
 
       if (incomingState !== state) {
         res.statusCode = 400
         res.end('Invalid state parameter')
-        finalize(new Error('Invalid state parameter'))
         return
       }
 

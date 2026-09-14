@@ -55,13 +55,10 @@ export const migrateFrom2To3: SettingMigration['migrate'] = (data) => {
       newData.providers.map((provider) => [provider.id, provider]),
     )
 
-    // Add new providers, overriding provider type if ID exists
+    // Add new providers. A colliding id with another type is user-owned.
     for (const newProvider of NEW_DEFAULT_PROVIDERS) {
       const existingProvider = existingProvidersMap.get(newProvider.id)
-      if (existingProvider) {
-        // Override the provider type while keeping other settings
-        existingProvider.type = newProvider.type
-      } else {
+      if (!existingProvider) {
         // Add new provider
         newData.providers.push({ ...newProvider })
       }
@@ -74,12 +71,16 @@ export const migrateFrom2To3: SettingMigration['migrate'] = (data) => {
       newData.chatModels.map((model) => [model.id, model]),
     )
 
-    // Add new chat models, overriding if ID exists
+    // Update only the known built-in routing. A custom collision may use a
+    // different endpoint or credential set.
     for (const newModel of NEW_DEFAULT_CHAT_MODELS) {
       const existingModel = existingModelsMap.get(newModel.id)
       if (existingModel) {
-        // Override the model while keeping any custom settings
-        Object.assign(existingModel, newModel)
+        if (
+          existingModel.providerType === newModel.providerType &&
+          existingModel.providerId === newModel.providerId
+        )
+          Object.assign(existingModel, newModel)
       } else {
         // Add new model
         newData.chatModels.push({ ...newModel })

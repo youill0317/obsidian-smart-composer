@@ -8,7 +8,6 @@ import {
   getTableColumns,
   gt,
   inArray,
-  like,
   or,
   sql,
   sum,
@@ -22,6 +21,9 @@ import {
 } from '../../../types/embedding'
 import { DatabaseNotInitializedException } from '../../exception'
 import { InsertEmbedding, SelectEmbedding, embeddingTable } from '../../schema'
+
+export const escapeLikePattern = (value: string) =>
+  value.replace(/[\\%_]/g, '\\$&')
 
 export class VectorRepository {
   private app: App
@@ -109,11 +111,27 @@ export class VectorRepository {
       .where(eq(embeddingTable.model, embeddingModel.id))
   }
 
-  async insertVectors(data: InsertEmbedding[]): Promise<void> {
+  async replaceVectorsForFile(
+    filePath: string,
+    embeddingModel: EmbeddingModelClient,
+    data: InsertEmbedding[],
+  ): Promise<void> {
     if (!this.db) {
       throw new DatabaseNotInitializedException()
     }
-    await this.db.insert(embeddingTable).values(data)
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(embeddingTable)
+        .where(
+          and(
+            eq(embeddingTable.path, filePath),
+            eq(embeddingTable.model, embeddingModel.id),
+          ),
+        )
+      if (data.length > 0) {
+        await tx.insert(embeddingTable).values(data)
+      }
+    })
   }
 
   async performSimilaritySearch(
@@ -126,6 +144,7 @@ export class VectorRepository {
         files: string[]
         folders: string[]
       }
+      allowedPaths?: string[]
     },
   ): Promise<
     (Omit<SelectEmbedding, 'embedding'> & {
@@ -134,6 +153,9 @@ export class VectorRepository {
   > {
     if (!this.db) {
       throw new DatabaseNotInitializedException()
+    }
+    if (options.allowedPaths?.length === 0) {
+      return []
     }
     const similarity = sql<number>`1 - (${cosineDistance(embeddingTable.embedding, queryVector)})`
     const similarityCondition = gt(similarity, options.minSimilarity)
@@ -149,14 +171,17 @@ export class VectorRepository {
       if (options.scope.folders.length > 0) {
         conditions.push(
           or(
-            ...options.scope.folders.map((folder) =>
-              like(embeddingTable.path, `${folder}/%`),
-            ),
+            ...options.scope.folders.map((folder) => {
+              const folderPattern = `${escapeLikePattern(
+                folder.replace(/\/+$/, ''),
+              )}/%`
+              return sql`${embeddingTable.path} LIKE ${folderPattern} ESCAPE '\\'`
+            }),
           ),
         )
       }
       if (conditions.length === 0) {
-        return undefined
+        return sql`false`
       }
       return or(...conditions)
     }
@@ -176,6 +201,9 @@ export class VectorRepository {
         and(
           similarityCondition,
           scopeCondition,
+          options.allowedPaths
+            ? inArray(embeddingTable.path, options.allowedPaths)
+            : undefined,
           eq(embeddingTable.model, embeddingModel.id),
           eq(embeddingTable.dimension, embeddingModel.dimension), // include this to fully utilize partial index
         ),

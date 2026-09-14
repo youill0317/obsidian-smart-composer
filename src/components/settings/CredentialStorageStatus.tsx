@@ -11,9 +11,8 @@ export function CredentialStorageStatus({
   return (
     <div className="setting-item-description" title={status.detail}>
       {status.label}
-      {(status.label === 'Plaintext' || status.label === 'Needs attention') && (
-        <div>{status.detail}</div>
-      )}
+      {(status.label === 'Session only' ||
+        status.label === 'Needs attention') && <div>{status.detail}</div>}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { App, TFile, htmlToMarkdown, requestUrl } from 'obsidian'
+import { App, TFile, htmlToMarkdown } from 'obsidian'
 
 import { editorStateToPlainText } from '../../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { QueryProgressState } from '../../components/chat-view/QueryProgress'
@@ -22,6 +22,13 @@ import {
 } from '../../types/mentionable'
 import { PromptLevel } from '../../types/prompt-level.types'
 import { ToolCallResponseStatus } from '../../types/tool-call.types'
+import {
+  MAX_TOTAL_URL_CONTENT_BYTES,
+  MAX_URL_ATTACHMENTS,
+  RequestTimeoutError,
+  ResponseTooLargeError,
+  fetchPublicText,
+} from '../fetch-utils'
 import { tokenCount } from '../llm/token'
 import {
   getNestedFiles,
@@ -30,6 +37,27 @@ import {
 } from '../obsidian'
 
 import { YoutubeTranscript, isYoutubeUrl } from './youtube-transcript'
+
+export type WebContentBudget = {
+  urlCount: number
+  contentBytes: number
+}
+
+export function createWebContentBudget(
+  messages: Pick<ChatUserMessage, 'mentionables'>[],
+): WebContentBudget {
+  const urlCount = messages.reduce(
+    (count, message) =>
+      count + message.mentionables.filter(({ type }) => type === 'url').length,
+    0,
+  )
+  if (urlCount > MAX_URL_ATTACHMENTS) {
+    throw new Error(
+      `A request can include at most ${MAX_URL_ATTACHMENTS} URL attachments. Remove some URLs and try again.`,
+    )
+  }
+  return { urlCount, contentBytes: 0 }
+}
 
 export class PromptGenerator {
   private getRagEngine: () => Promise<RAGEngine>
@@ -49,31 +77,41 @@ export class PromptGenerator {
 
   public async generateRequestMessages({
     messages,
+    signal,
   }: {
     messages: ChatMessage[]
+    signal?: AbortSignal
   }): Promise<RequestMessage[]> {
     if (messages.length === 0) {
       throw new Error('No messages provided')
     }
 
+    const messagesToCompile = messages.filter(
+      (message): message is ChatUserMessage =>
+        message.role === 'user' && !message.promptContent,
+    )
+    const webContentBudget = createWebContentBudget(messagesToCompile)
+
     // Ensure all user messages have prompt content
     // This is a fallback for cases where compilation was missed earlier in the process
-    const compiledMessages = await Promise.all(
-      messages.map(async (message) => {
-        if (message.role === 'user' && !message.promptContent) {
-          const { promptContent, similaritySearchResults } =
-            await this.compileUserMessagePrompt({
-              message,
-            })
-          return {
-            ...message,
-            promptContent,
-            similaritySearchResults,
-          }
-        }
-        return message
-      }),
-    )
+    const compiledMessages: ChatMessage[] = []
+    for (const message of messages) {
+      if (message.role === 'user' && !message.promptContent) {
+        const { promptContent, similaritySearchResults } =
+          await this.compileUserMessagePrompt({
+            message,
+            signal,
+            webContentBudget,
+          })
+        compiledMessages.push({
+          ...message,
+          promptContent,
+          similaritySearchResults,
+        })
+      } else {
+        compiledMessages.push(message)
+      }
+    }
 
     // find last user message
     let lastUserMessage: ChatUserMessage | undefined = undefined
@@ -248,10 +286,14 @@ ${message.annotations
     message,
     useVaultSearch,
     onQueryProgressChange,
+    signal,
+    webContentBudget,
   }: {
     message: ChatUserMessage
     useVaultSearch?: boolean
     onQueryProgressChange?: (queryProgress: QueryProgressState) => void
+    signal?: AbortSignal
+    webContentBudget?: WebContentBudget
   }): Promise<{
     promptContent: ChatUserMessage['promptContent']
     shouldUseRAG: boolean
@@ -260,6 +302,9 @@ ${message.annotations
     })[]
   }> {
     try {
+      throwIfAborted(signal)
+      const requestWebContentBudget =
+        webContentBudget ?? createWebContentBudget([message])
       if (!message.content) {
         return {
           promptContent: '',
@@ -290,11 +335,13 @@ ${message.annotations
       )
       const allFiles = [...files, ...nestedFiles]
       const fileContents = await readMultipleTFiles(allFiles, this.app.vault)
+      throwIfAborted(signal)
 
       // Count tokens incrementally to avoid long processing times on large content sets
       const exceedsTokenThreshold = async () => {
         let accTokenCount = 0
         for (const content of fileContents) {
+          throwIfAborted(signal)
           const count = await tokenCount(content)
           accTokenCount += count
           if (accTokenCount > this.settings.ragOptions.thresholdTokens) {
@@ -313,6 +360,7 @@ ${message.annotations
             ).processQuery({
               query,
               onQueryProgressChange: onQueryProgressChange,
+              signal,
             }) // TODO: Add similarity boosting for mentioned files or folders
           : await (
               await this.getRagEngine()
@@ -323,6 +371,7 @@ ${message.annotations
                 folders: folders.map((f) => f.path),
               },
               onQueryProgressChange: onQueryProgressChange,
+              signal,
             })
         filePrompt = `## Potentially Relevant Snippets from the current vault
 ${similaritySearchResults
@@ -358,22 +407,11 @@ ${similaritySearchResults
         (m): m is MentionableUrl => m.type === 'url',
       )
 
-      const urlPrompt =
-        urls.length > 0
-          ? `## Potentially Relevant Websearch Results
-${(
-  await Promise.all(
-    urls.map(
-      async ({ url }) => `\`\`\`
-Website URL: ${url}
-Website Content:
-${await this.getWebsiteContent(url)}
-\`\`\``,
-    ),
-  )
-).join('\n')}
-`
-          : ''
+      const urlPrompt = await this.getUrlPrompt(
+        urls,
+        signal,
+        requestWebContentBudget,
+      )
 
       const imageDataUrls = message.mentionables
         .filter((m): m is MentionableImage => m.type === 'image')
@@ -544,23 +582,71 @@ When writing out new markdown blocks, remember not to include "line_number|" at 
    * - filter visually hidden elements
    * ...
    */
-  private async getWebsiteContent(url: string): Promise<string> {
+  private async getWebsiteContent(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     if (isYoutubeUrl(url)) {
       try {
         // TODO: pass language based on user preferences
         const { title, transcript } =
-          await YoutubeTranscript.fetchTranscriptAndMetadata(url)
+          await YoutubeTranscript.fetchTranscriptAndMetadata(url, { signal })
 
         return `Title: ${title}
 Video Transcript:
 ${transcript.map((t) => `${t.offset}: ${t.text}`).join('\n')}`
       } catch (error) {
+        if (
+          error instanceof ResponseTooLargeError ||
+          error instanceof RequestTimeoutError ||
+          (error as { name?: string }).name === 'AbortError'
+        ) {
+          throw error
+        }
         console.error('Error fetching YouTube transcript', error)
       }
     }
 
-    const response = await requestUrl({ url })
+    const response = await fetchPublicText(url, {
+      maxBytes: 1024 * 1024,
+      signal,
+    })
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`The website returned HTTP ${response.status}.`)
+    }
     return htmlToMarkdown(response.text)
+  }
+
+  private async getUrlPrompt(
+    urls: MentionableUrl[],
+    signal: AbortSignal | undefined,
+    webContentBudget: WebContentBudget,
+  ): Promise<string> {
+    if (urls.length === 0) return ''
+
+    const sections: string[] = []
+    for (const { url } of urls) {
+      throwIfAborted(signal)
+      const content = await this.getWebsiteContent(url, signal)
+      const contentBytes = new TextEncoder().encode(content).byteLength
+      if (
+        webContentBudget.contentBytes + contentBytes >
+        MAX_TOTAL_URL_CONTENT_BYTES
+      ) {
+        throw new Error(
+          'The combined website content exceeds the 5 MB safety limit. Remove some URL attachments and try again.',
+        )
+      }
+      webContentBudget.contentBytes += contentBytes
+      sections.push(`\`\`\`
+Website URL: ${url}
+Website Content:
+${content}
+\`\`\``)
+    }
+    return `## Potentially Relevant Websearch Results
+${sections.join('\n')}
+`
   }
 
   private getModelPromptLevel(): PromptLevel {
@@ -568,5 +654,11 @@ ${transcript.map((t) => `${t.offset}: ${t.text}`).join('\n')}`
       (model) => model.id === this.settings.chatModelId,
     )
     return chatModel?.promptLevel ?? PromptLevel.Default
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError')
   }
 }

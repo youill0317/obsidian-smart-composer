@@ -1,5 +1,5 @@
 import { App, normalizePath } from 'obsidian'
-import path from 'path-browserify'
+import * as path from 'path-browserify'
 
 export abstract class AbstractJsonRepository<T, M> {
   protected dataDir: string
@@ -25,7 +25,7 @@ export abstract class AbstractJsonRepository<T, M> {
 
   public async create(row: T): Promise<void> {
     const fileName = this.generateFileName(row)
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.getFilePath(fileName)
     const content = JSON.stringify(row, null, 2)
 
     if (await this.app.vault.adapter.exists(filePath)) {
@@ -42,11 +42,11 @@ export abstract class AbstractJsonRepository<T, M> {
 
     if (oldFileName === newFileName) {
       // Simple update - filename hasn't changed
-      const filePath = normalizePath(path.join(this.dataDir, oldFileName))
+      const filePath = this.getFilePath(oldFileName)
       await this.app.vault.adapter.write(filePath, content)
     } else {
       // Filename has changed - create new file and delete old one
-      const newFilePath = normalizePath(path.join(this.dataDir, newFileName))
+      const newFilePath = this.getFilePath(newFileName)
       await this.app.vault.adapter.write(newFilePath, content)
       await this.delete(oldFileName)
     }
@@ -59,8 +59,16 @@ export abstract class AbstractJsonRepository<T, M> {
       .map((filePath) => path.basename(filePath))
       .filter((fileName) => fileName.endsWith('.json'))
       .map((fileName) => {
-        const metadata = this.parseFileName(fileName)
-        return metadata ? { ...metadata, fileName } : null
+        try {
+          const metadata = this.parseFileName(fileName)
+          return metadata ? { ...metadata, fileName } : null
+        } catch (error) {
+          console.error(
+            `Failed to parse JSON record filename: ${fileName}`,
+            error,
+          )
+          return null
+        }
       })
       .filter(
         (metadata): metadata is M & { fileName: string } => metadata !== null,
@@ -68,17 +76,38 @@ export abstract class AbstractJsonRepository<T, M> {
   }
 
   public async read(fileName: string): Promise<T | null> {
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.getFilePath(fileName)
     if (!(await this.app.vault.adapter.exists(filePath))) return null
 
-    const content = await this.app.vault.adapter.read(filePath)
-    return JSON.parse(content) as T
+    try {
+      const content = await this.app.vault.adapter.read(filePath)
+      return JSON.parse(content) as T
+    } catch (error) {
+      console.error(`Failed to read JSON record: ${filePath}`, error)
+      return null
+    }
   }
 
   public async delete(fileName: string): Promise<void> {
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.getFilePath(fileName)
     if (await this.app.vault.adapter.exists(filePath)) {
       await this.app.vault.adapter.remove(filePath)
     }
+  }
+
+  private getFilePath(fileName: string): string {
+    if (
+      fileName !== path.basename(fileName) ||
+      fileName.includes('/') ||
+      fileName.includes('\\')
+    ) {
+      throw new Error('JSON record path must stay inside its data directory')
+    }
+
+    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    if (!filePath.startsWith(`${this.dataDir}/`)) {
+      throw new Error('JSON record path must stay inside its data directory')
+    }
+    return filePath
   }
 }

@@ -8,6 +8,11 @@
 
 import { App, normalizePath } from 'obsidian'
 
+import {
+  assertSafeRecordId,
+  isRecord,
+  isSafeRecordId,
+} from '../../database/json/validation'
 import { ChatConversation, ChatConversationMeta } from '../../types/chat'
 
 const CURRENT_SCHEMA_VERSION = 3
@@ -23,6 +28,7 @@ export class ChatConversationManager {
   }
 
   async createChatConversation(id: string): Promise<ChatConversation> {
+    assertSafeRecordId(id)
     const newChatConversation: ChatConversation = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       id,
@@ -36,6 +42,7 @@ export class ChatConversationManager {
   }
 
   async deleteChatConversation(id: string): Promise<void> {
+    assertSafeRecordId(id)
     const filePath = this.getChatConversationPath(id)
     await this.app.vault.adapter.remove(filePath)
     const chatList = await this.getChatList()
@@ -47,11 +54,24 @@ export class ChatConversationManager {
   }
 
   async findChatConversation(id: string): Promise<ChatConversation | null> {
+    assertSafeRecordId(id)
     const filePath = this.getChatConversationPath(id)
     if (await this.app.vault.adapter.exists(filePath)) {
-      const content = await this.app.vault.adapter.read(filePath)
-      const chatConversation = JSON.parse(content) as ChatConversation
-      return chatConversation
+      try {
+        const content = await this.app.vault.adapter.read(filePath)
+        const chatConversation: unknown = JSON.parse(content)
+        if (
+          !isRecord(chatConversation) ||
+          chatConversation.id !== id ||
+          !Array.isArray(chatConversation.messages)
+        ) {
+          throw new Error('Invalid legacy chat record')
+        }
+        return chatConversation as ChatConversation
+      } catch (error) {
+        console.error(`Failed to read legacy chat ${id}`, error)
+        return null
+      }
     }
     return null
   }
@@ -59,6 +79,7 @@ export class ChatConversationManager {
   async saveChatConversation(
     chatConversation: ChatConversation,
   ): Promise<void> {
+    assertSafeRecordId(chatConversation.id)
     await this.ensureChatConversationDir()
     const filePath = this.getChatConversationPath(chatConversation.id)
     await this.app.vault.adapter.write(
@@ -71,12 +92,26 @@ export class ChatConversationManager {
   async getChatList(): Promise<ChatConversationMeta[]> {
     const chatListPath = this.getChatListPath()
     if (await this.app.vault.adapter.exists(chatListPath)) {
-      const content = await this.app.vault.adapter.read(chatListPath)
-      const chatList = JSON.parse(content) as ChatConversationMeta[]
-      return chatList.filter(
-        // TODO: should migrate from 2 to 3
-        (chat) => chat.schemaVersion >= SUPPORTED_SCHEMA_VERSION,
-      )
+      try {
+        const content = await this.app.vault.adapter.read(chatListPath)
+        const chatList: unknown = JSON.parse(content)
+        if (!Array.isArray(chatList))
+          throw new Error('Invalid legacy chat list')
+        return chatList.filter(
+          (chat): chat is ChatConversationMeta =>
+            isRecord(chat) &&
+            // TODO: should migrate from 2 to 3
+            typeof chat.schemaVersion === 'number' &&
+            chat.schemaVersion >= SUPPORTED_SCHEMA_VERSION &&
+            isSafeRecordId(chat.id) &&
+            typeof chat.title === 'string' &&
+            typeof chat.createdAt === 'number' &&
+            typeof chat.updatedAt === 'number',
+        )
+      } catch (error) {
+        console.error('Failed to read legacy chat list', error)
+        return []
+      }
     }
     return []
   }
@@ -119,6 +154,7 @@ export class ChatConversationManager {
   }
 
   private getChatConversationPath(id: string): string {
+    assertSafeRecordId(id)
     return normalizePath(`${CHAT_HISTORY_DIR}/${id}.json`)
   }
 }

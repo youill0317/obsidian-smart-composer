@@ -34,6 +34,8 @@ const customVector = customType<{ data: number[] }>({
 export type VectorMetaData = {
   startLine: number
   endLine: number
+  chunkIndex?: number
+  chunkCount?: number
 }
 
 // important: dimensions must be less than 2000!

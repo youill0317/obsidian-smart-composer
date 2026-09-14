@@ -13,7 +13,7 @@ import {
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
 
-import { BaseLLMProvider } from './base'
+import { BaseLLMProvider, ProviderEmbeddingOptions } from './base'
 import { CodexMessageAdapter } from './codexMessageAdapter'
 import {
   LLMAPIKeyInvalidException,
@@ -182,7 +182,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
   async getEmbedding(
     model: string,
     text: string,
-    options?: { dimensions?: number },
+    options?: ProviderEmbeddingOptions,
   ): Promise<number[]> {
     if (!this.client.apiKey) {
       throw new LLMAPIKeyNotSetException(
@@ -191,11 +191,14 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
     }
 
     try {
-      const embedding = await this.client.embeddings.create({
-        model: model,
-        input: text,
-        ...(options?.dimensions && { dimensions: options.dimensions }),
-      })
+      const embedding = await this.client.embeddings.create(
+        {
+          model: model,
+          input: text,
+          ...(options?.dimensions && { dimensions: options.dimensions }),
+        },
+        { signal: options?.signal },
+      )
       return embedding.data[0].embedding
     } catch (error) {
       if (error.status === 429) {

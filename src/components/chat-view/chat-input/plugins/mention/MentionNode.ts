@@ -21,11 +21,14 @@ import {
 } from 'lexical'
 
 import { SerializedMentionable } from '../../../../../types/mentionable'
+import { sanitizeSerializedMentionable } from '../../../../../utils/chat/serialized-editor-state'
 
 export const MENTION_NODE_TYPE = 'mention'
 export const MENTION_NODE_ATTRIBUTE = 'data-lexical-mention'
 export const MENTION_NODE_MENTION_NAME_ATTRIBUTE = 'data-lexical-mention-name'
 export const MENTION_NODE_MENTIONABLE_ATTRIBUTE = 'data-lexical-mentionable'
+const MENTION_NODE_PROVENANCE_ATTRIBUTE = 'data-smtcmp-mention-provenance'
+const mentionPasteProvenance = createPasteProvenance()
 
 export type SerializedMentionNode = Spread<
   {
@@ -38,20 +41,30 @@ export type SerializedMentionNode = Spread<
 function $convertMentionElement(
   domNode: HTMLElement,
 ): DOMConversionOutput | null {
+  if (
+    domNode.getAttribute(MENTION_NODE_PROVENANCE_ATTRIBUTE) !==
+    mentionPasteProvenance
+  ) {
+    return null
+  }
   const textContent = domNode.textContent
   const mentionName =
     domNode.getAttribute(MENTION_NODE_MENTION_NAME_ATTRIBUTE) ??
     domNode.textContent ??
     ''
-  const mentionable = JSON.parse(
-    domNode.getAttribute(MENTION_NODE_MENTIONABLE_ATTRIBUTE) ?? '{}',
-  )
-
-  if (textContent !== null) {
-    const node = $createMentionNode(
-      mentionName,
-      mentionable as SerializedMentionable,
+  let mentionable: SerializedMentionable | null = null
+  try {
+    mentionable = sanitizeSerializedMentionable(
+      JSON.parse(
+        domNode.getAttribute(MENTION_NODE_MENTIONABLE_ATTRIBUTE) ?? '{}',
+      ),
     )
+  } catch {
+    return null
+  }
+
+  if (textContent !== null && mentionable) {
+    const node = $createMentionNode(mentionName, mentionable)
     return {
       node,
     }
@@ -77,10 +90,10 @@ export class MentionNode extends TextNode {
       serializedNode.mentionable,
     )
     node.setTextContent(serializedNode.text)
-    node.setFormat(serializedNode.format)
-    node.setDetail(serializedNode.detail)
-    node.setMode(serializedNode.mode)
-    node.setStyle(serializedNode.style)
+    node.setFormat(0)
+    node.setDetail(0)
+    node.setMode('token')
+    node.setStyle('')
     return node
   }
 
@@ -121,6 +134,10 @@ export class MentionNode extends TextNode {
       MENTION_NODE_MENTIONABLE_ATTRIBUTE,
       JSON.stringify(this.__mentionable),
     )
+    element.setAttribute(
+      MENTION_NODE_PROVENANCE_ATTRIBUTE,
+      mentionPasteProvenance,
+    )
     element.textContent = this.__text
     return { element }
   }
@@ -158,6 +175,14 @@ export class MentionNode extends TextNode {
   getMentionable(): SerializedMentionable {
     return this.__mentionable
   }
+}
+
+function createPasteProvenance(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
 }
 
 export function $createMentionNode(

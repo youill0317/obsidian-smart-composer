@@ -9,6 +9,8 @@ import { openMarkdownFile, readTFileContent } from '../../utils/obsidian'
 import { ObsidianMarkdown } from './ObsidianMarkdown'
 import { MemoizedSyntaxHighlighterWrapper } from './SyntaxHighlighterWrapper'
 
+const MAX_REFERENCE_FILE_BYTES = 1024 * 1024
+
 export default function MarkdownReferenceBlock({
   filename,
   startLine,
@@ -35,6 +37,12 @@ export default function MarkdownReferenceBlock({
       const file = app.vault.getFileByPath(filename)
       if (!file) {
         setBlockContent(null)
+        return
+      }
+      if (file.stat.size > MAX_REFERENCE_FILE_BYTES) {
+        setBlockContent(
+          'Preview unavailable: files larger than 1 MB are not loaded.',
+        )
         return
       }
       const fileContent = await readTFileContent(file, app.vault)

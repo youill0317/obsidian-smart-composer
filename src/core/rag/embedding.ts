@@ -35,8 +35,12 @@ export const getEmbeddingModelClient = ({
         {
           dimensions: embeddingModel.outputDimension,
           purpose: options?.purpose,
+          signal: options?.signal,
         },
       )
+      if (!embedding.every(Number.isFinite)) {
+        throw new Error('Embedding response contains a non-finite value')
+      }
       if (embedding.length !== expectedDimension) {
         throw new Error(
           `Embedding dimension mismatch: expected ${expectedDimension}, got ${embedding.length}`,

@@ -14,6 +14,9 @@ export class DatabaseManager {
   private dbPath: string
   private pgClient: PGlite | null = null
   private db: PgliteDatabase | null = null
+  private saveQueue: Promise<void> = Promise.resolve()
+  private cleanupPromise: Promise<void> | null = null
+  private closing = false
   // WeakMap to prevent circular references
   private static managers = new WeakMap<
     DatabaseManager,
@@ -180,6 +183,15 @@ export class DatabaseManager {
   }
 
   async save(): Promise<void> {
+    if (!this.pgClient || this.closing) {
+      return
+    }
+    const result = this.saveQueue.then(() => this.saveNow())
+    this.saveQueue = result.catch(() => undefined)
+    return result
+  }
+
+  private async saveNow(): Promise<void> {
     if (!this.pgClient) {
       return
     }
@@ -191,13 +203,23 @@ export class DatabaseManager {
       )
     } catch (error) {
       console.error('Error saving database:', error)
+      throw error
     }
   }
 
-  async cleanup() {
-    // save before cleanup
-    await this.save()
-    // WeakMap cleanup
+  cleanup(): Promise<void> {
+    if (!this.cleanupPromise) {
+      this.cleanupPromise = this.cleanupInternal()
+    }
+    return this.cleanupPromise
+  }
+
+  private async cleanupInternal(): Promise<void> {
+    const vectorManager = DatabaseManager.managers.get(this)?.vectorManager
+    await vectorManager?.cleanup()
+    this.closing = true
+    await this.saveQueue
+    await this.saveNow()
     DatabaseManager.managers.delete(this)
     await this.pgClient?.close()
     this.pgClient = null

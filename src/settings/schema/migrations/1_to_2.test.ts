@@ -468,7 +468,7 @@ describe('settings 1_to_2 migration', () => {
     })
   })
 
-  it('should fallback to default model when grok model is specified', () => {
+  it('keeps Groq selections on Groq', () => {
     const oldSettings = {
       version: 1,
       openAIApiKey: '',
@@ -514,8 +514,8 @@ describe('settings 1_to_2 migration', () => {
       chatModels: V2_DEFAULT_CHAT_MODELS,
       embeddingModels: V2_DEFAULT_EMBEDDING_MODELS,
 
-      chatModelId: 'gpt-4o',
-      applyModelId: 'gpt-4o-mini',
+      chatModelId: 'groq/llama-3.1-70b',
+      applyModelId: 'groq/llama-3.1-8b',
       embeddingModelId: 'openai/text-embedding-3-small',
 
       systemPrompt: '',
@@ -528,5 +528,31 @@ describe('settings 1_to_2 migration', () => {
         includePatterns: [],
       },
     })
+  })
+
+  it('preserves the pre-3.1 Groq apply model', () => {
+    const result = migrateFrom1To2({
+      version: 1,
+      chatModelId: 'anthropic/claude-3.5-sonnet-latest',
+      applyModelId: 'groq/llama3-8b-8192',
+      embeddingModelId: 'openai/text-embedding-3-small',
+      ollamaChatModel: { baseUrl: '', model: '' },
+      ollamaApplyModel: { baseUrl: '', model: '' },
+      ollamaEmbeddingModel: { baseUrl: '', model: '' },
+      openAICompatibleChatModel: { baseUrl: '', apiKey: '', model: '' },
+      openAICompatibleApplyModel: { baseUrl: '', apiKey: '', model: '' },
+      systemPrompt: '',
+      ragOptions: {},
+    } as never)
+
+    expect(result.applyModelId).toBe('groq/llama3-8b-8192')
+    expect(
+      result.chatModels as { id: string; providerType: string }[],
+    ).toContainEqual(
+      expect.objectContaining({
+        id: 'groq/llama3-8b-8192',
+        providerType: 'groq',
+      }),
+    )
   })
 })

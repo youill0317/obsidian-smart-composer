@@ -45,8 +45,10 @@ export default class SmartComposerPlugin extends Plugin {
   private dbManagerInitPromise: Promise<DatabaseManager> | null = null
   private ragEngineInitPromise: Promise<RAGEngine> | null = null
   private timeoutIds: ReturnType<typeof setTimeout>[] = [] // Use ReturnType instead of number
+  private unloaded = false
 
   async onload() {
+    this.unloaded = false
     await this.loadSettings()
     this.toolManager = new ToolManager(
       new CliManager(this.app, () => this.settings),
@@ -152,21 +154,26 @@ export default class SmartComposerPlugin extends Plugin {
     void this.migrateToJsonStorage()
   }
 
-  onunload() {
+  async onunload() {
+    this.unloaded = true
     // clear all timers
     this.timeoutIds.forEach((id) => clearTimeout(id))
     this.timeoutIds = []
 
     // RagEngine cleanup
-    this.ragEngine?.cleanup()
+    const ragCleanup = this.ragEngine?.cleanup()
     this.ragEngine = null
 
     // Promise cleanup
+    const initializations = [
+      this.dbManagerInitPromise,
+      this.ragEngineInitPromise,
+    ]
     this.dbManagerInitPromise = null
     this.ragEngineInitPromise = null
 
     // DatabaseManager cleanup
-    this.dbManager?.cleanup()
+    const dbManager = this.dbManager
     this.dbManager = null
 
     this.toolManager?.cli.cleanup()
@@ -174,6 +181,14 @@ export default class SmartComposerPlugin extends Plugin {
     // McpManager cleanup
     this.mcpManager?.cleanup()
     this.mcpManager = null
+
+    try {
+      await ragCleanup
+      await dbManager?.cleanup()
+      await Promise.allSettled(initializations)
+    } catch (error) {
+      console.error('Failed to save the database during shutdown:', error)
+    }
   }
 
   async loadSettings() {
@@ -274,6 +289,9 @@ export default class SmartComposerPlugin extends Plugin {
   }
 
   async getDbManager(): Promise<DatabaseManager> {
+    if (this.unloaded) {
+      throw new DOMException('Plugin unloaded', 'AbortError')
+    }
     if (this.dbManager) {
       return this.dbManager
     }
@@ -281,7 +299,12 @@ export default class SmartComposerPlugin extends Plugin {
     if (!this.dbManagerInitPromise) {
       this.dbManagerInitPromise = (async () => {
         try {
-          this.dbManager = await DatabaseManager.create(this.app)
+          const dbManager = await DatabaseManager.create(this.app)
+          if (this.unloaded) {
+            await dbManager.cleanup()
+            throw new DOMException('Plugin unloaded', 'AbortError')
+          }
+          this.dbManager = dbManager
           return this.dbManager
         } catch (error) {
           this.dbManagerInitPromise = null
@@ -298,6 +321,9 @@ export default class SmartComposerPlugin extends Plugin {
   }
 
   async getRAGEngine(): Promise<RAGEngine> {
+    if (this.unloaded) {
+      throw new DOMException('Plugin unloaded', 'AbortError')
+    }
     if (this.ragEngine) {
       return this.ragEngine
     }
@@ -306,6 +332,9 @@ export default class SmartComposerPlugin extends Plugin {
       this.ragEngineInitPromise = (async () => {
         try {
           const dbManager = await this.getDbManager()
+          if (this.unloaded) {
+            throw new DOMException('Plugin unloaded', 'AbortError')
+          }
           this.ragEngine = new RAGEngine(
             this.app,
             this.settings,
@@ -355,6 +384,7 @@ export default class SmartComposerPlugin extends Plugin {
         console.log('Migration to JSON storage completed successfully')
       })
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
       console.error('Failed to migrate to JSON storage:', error)
       new Notice(
         'Failed to migrate to JSON storage. Please check the console for details.',

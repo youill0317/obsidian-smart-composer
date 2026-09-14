@@ -11,6 +11,7 @@ import {
   LLMResponseStreaming,
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
+import { fetchBoundedText } from '../../utils/fetch-utils'
 
 import { BaseLLMProvider, ProviderEmbeddingOptions } from './base'
 import {
@@ -22,7 +23,7 @@ import {
 const voyageEmbeddingResponseSchema = z.object({
   data: z.array(
     z.object({
-      embedding: z.array(z.number()),
+      embedding: z.array(z.number().finite()),
     }),
   ),
 })
@@ -72,21 +73,25 @@ export class VoyageProvider extends BaseLLMProvider<
       )
     }
 
-    const response = await fetch(`${this.baseUrl}/embeddings`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: text,
-        model,
-        ...(options?.purpose && { input_type: options.purpose }),
-        ...(options?.dimensions && {
-          output_dimension: options.dimensions,
+    const { response, text: responseText } = await fetchBoundedText(
+      `${this.baseUrl}/embeddings`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: text,
+          model,
+          ...(options?.purpose && { input_type: options.purpose }),
+          ...(options?.dimensions && {
+            output_dimension: options.dimensions,
+          }),
         }),
-      }),
-    })
+      },
+      { maxBytes: 256 * 1024, timeoutMs: 30_000, signal: options?.signal },
+    )
 
     if (response.status === 401 || response.status === 403) {
       throw new LLMAPIKeyInvalidException(
@@ -104,7 +109,7 @@ export class VoyageProvider extends BaseLLMProvider<
       )
     }
 
-    const parsed = voyageEmbeddingResponseSchema.parse(await response.json())
+    const parsed = voyageEmbeddingResponseSchema.parse(JSON.parse(responseText))
     const firstEmbedding = parsed.data[0]?.embedding
     if (!firstEmbedding || firstEmbedding.length === 0) {
       throw new Error('Voyage AI embedding response did not include a vector.')

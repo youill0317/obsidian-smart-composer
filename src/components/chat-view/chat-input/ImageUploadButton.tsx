@@ -16,7 +16,7 @@ export function ImageUploadButton({
     <label className="smtcmp-chat-user-input-submit-button">
       <input
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/gif,image/webp"
         multiple
         onChange={handleFileChange}
         style={{ display: 'none' }}

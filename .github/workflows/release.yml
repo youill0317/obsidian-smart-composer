@@ -5,28 +5,36 @@ on:
     tags:
       - '*'
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
+        with:
+          persist-credentials: false
 
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
         with:
           node-version: '18.x'
 
       - name: Set Tag variable
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
       - name: Bump version
-        run: npm run version $TAG
+        run: npm run version "$TAG"
 
       - name: Build plugin
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Create release
@@ -39,7 +47,7 @@ jobs:
             main.js manifest.json styles.css
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5
         with:
           commit-message: 'version bump: ${{ env.TAG }}'
           title: 'Version bump: ${{ env.TAG }}'

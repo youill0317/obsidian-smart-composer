@@ -205,4 +205,21 @@ describe('Migrate from version 5 to 6', () => {
       },
     ])
   })
+
+  test('preserves a colliding custom o3-mini routing', () => {
+    const custom = {
+      providerType: 'openai-compatible',
+      providerId: 'local',
+      id: 'o3-mini',
+      model: 'local-o3-mini',
+    }
+    const result = migrateFrom5To6({
+      version: 5,
+      chatModels: [custom],
+      applyModelId: custom.id,
+    })
+
+    expect(result.chatModels).toEqual([custom])
+    expect(result.applyModelId).toBe(custom.id)
+  })
 })

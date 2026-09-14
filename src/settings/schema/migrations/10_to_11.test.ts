@@ -128,4 +128,21 @@ describe('Migration from v10 to v11', () => {
       },
     ])
   })
+
+  it('preserves a custom model whose id collides with a new default', () => {
+    const custom = {
+      id: 'gpt-5',
+      providerType: 'openai-compatible',
+      providerId: 'local',
+      model: 'local-gpt-5',
+    }
+    const result = migrateFrom10To11({
+      version: 10,
+      chatModels: [custom],
+      chatModelId: custom.id,
+    })
+
+    expect(result.chatModels).toContainEqual(custom)
+    expect(result.chatModelId).toBe(custom.id)
+  })
 })

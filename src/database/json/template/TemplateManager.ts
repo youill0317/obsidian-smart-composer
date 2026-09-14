@@ -2,12 +2,19 @@ import fuzzysort from 'fuzzysort'
 import { App } from 'obsidian'
 import { v4 as uuidv4 } from 'uuid'
 
+import { sanitizeSerializedNodes } from '../../../utils/chat/serialized-editor-state'
 import { AbstractJsonRepository } from '../base'
 import { ROOT_DIR, TEMPLATE_DIR } from '../constants'
 import {
   DuplicateTemplateException,
   EmptyTemplateNameException,
 } from '../exception'
+import {
+  assertSafeRecordId,
+  isFiniteNumber,
+  isRecord,
+  isSafeRecordId,
+} from '../validation'
 
 import { TEMPLATE_SCHEMA_VERSION, Template, TemplateMetadata } from './types'
 
@@ -20,6 +27,7 @@ export class TemplateManager extends AbstractJsonRepository<
   }
 
   protected generateFileName(template: Template): string {
+    assertSafeRecordId(template.id)
     // Format: v{schemaVersion}_name_id.json (with name encoded)
     const encodedName = encodeURIComponent(template.name)
     return `v${TEMPLATE_SCHEMA_VERSION}_${encodedName}_${template.id}.json`
@@ -27,7 +35,7 @@ export class TemplateManager extends AbstractJsonRepository<
 
   protected parseFileName(fileName: string): TemplateMetadata | null {
     const match = fileName.match(
-      new RegExp(`^v${TEMPLATE_SCHEMA_VERSION}_(.+)_([0-9a-f-]+)\\.json$`),
+      new RegExp(`^v${TEMPLATE_SCHEMA_VERSION}_(.+)_([0-9a-f-]+)\\.json$`, 'i'),
     )
     if (!match) return null
 
@@ -54,24 +62,28 @@ export class TemplateManager extends AbstractJsonRepository<
     }
 
     const newTemplate: Template = {
-      id: uuidv4(),
       ...template,
+      id: uuidv4(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       schemaVersion: TEMPLATE_SCHEMA_VERSION,
     }
 
-    await this.create(newTemplate)
-    return newTemplate
+    const nodes = sanitizeSerializedNodes(newTemplate.content.nodes)
+    if (!nodes) throw new Error('Invalid template record')
+    const validTemplate = { ...newTemplate, content: { nodes } }
+    await this.create(validTemplate)
+    return validTemplate
   }
 
   public async findById(id: string): Promise<Template | null> {
+    assertSafeRecordId(id)
     const allMetadata = await this.listMetadata()
     const targetMetadata = allMetadata.find((meta) => meta.id === id)
 
     if (!targetMetadata) return null
 
-    return this.read(targetMetadata.fileName)
+    return this.readTemplate(targetMetadata)
   }
 
   public async findByName(name: string): Promise<Template | null> {
@@ -80,7 +92,7 @@ export class TemplateManager extends AbstractJsonRepository<
 
     if (!targetMetadata) return null
 
-    return this.read(targetMetadata.fileName)
+    return this.readTemplate(targetMetadata)
   }
 
   public async updateTemplate(
@@ -109,11 +121,15 @@ export class TemplateManager extends AbstractJsonRepository<
       updatedAt: Date.now(),
     }
 
-    await this.update(template, updatedTemplate)
-    return updatedTemplate
+    const nodes = sanitizeSerializedNodes(updatedTemplate.content.nodes)
+    if (!nodes) throw new Error('Invalid template record')
+    const validTemplate = { ...updatedTemplate, content: { nodes } }
+    await this.update(template, validTemplate)
+    return validTemplate
   }
 
   public async deleteTemplate(id: string): Promise<boolean> {
+    assertSafeRecordId(id)
     const template = await this.findById(id)
     if (!template) return false
 
@@ -133,10 +149,47 @@ export class TemplateManager extends AbstractJsonRepository<
 
     const templates = (
       await Promise.all(
-        results.map(async (result) => this.read(result.obj.fileName)),
+        results.map(async (result) => this.readTemplate(result.obj)),
       )
     ).filter((template): template is Template => template !== null)
 
     return templates
   }
+
+  private async readTemplate(metadata: {
+    fileName: string
+    id: string
+    name: string
+    schemaVersion: number
+  }): Promise<Template | null> {
+    const template = await this.read(metadata.fileName)
+    if (!isValidTemplate(template, metadata)) {
+      console.error(`Invalid template record: ${metadata.fileName}`)
+      return null
+    }
+    const nodes = sanitizeSerializedNodes(template.content.nodes)
+    if (!nodes) {
+      console.error(`Invalid template record: ${metadata.fileName}`)
+      return null
+    }
+    return { ...template, content: { nodes } }
+  }
+}
+
+function isValidTemplate(
+  value: unknown,
+  metadata: TemplateMetadata,
+): value is Template {
+  return (
+    isRecord(value) &&
+    isSafeRecordId(value.id) &&
+    value.id === metadata.id &&
+    value.name === metadata.name &&
+    value.schemaVersion === metadata.schemaVersion &&
+    typeof value.name === 'string' &&
+    isFiniteNumber(value.createdAt) &&
+    isFiniteNumber(value.updatedAt) &&
+    isRecord(value.content) &&
+    Array.isArray(value.content.nodes)
+  )
 }

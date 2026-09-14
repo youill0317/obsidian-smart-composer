@@ -13,7 +13,7 @@ import {
 import { LLMProvider } from '../../types/provider.types'
 import { formatMessages } from '../../utils/llm/request'
 
-import { BaseLLMProvider } from './base'
+import { BaseLLMProvider, ProviderEmbeddingOptions } from './base'
 import { LLMBaseUrlNotSetException } from './exception'
 import { NoStainlessOpenAI } from './NoStainlessOpenAI'
 import { OpenAIMessageAdapter } from './openaiMessageAdapter'
@@ -83,14 +83,17 @@ export class OpenAICompatibleProvider extends BaseLLMProvider<
   async getEmbedding(
     model: string,
     text: string,
-    options?: { dimensions?: number },
+    options?: ProviderEmbeddingOptions,
   ): Promise<number[]> {
-    const embedding = await this.client.embeddings.create({
-      model: model,
-      input: text,
-      encoding_format: 'float',
-      ...(options?.dimensions && { dimensions: options.dimensions }),
-    })
+    const embedding = await this.client.embeddings.create(
+      {
+        model: model,
+        input: text,
+        encoding_format: 'float',
+        ...(options?.dimensions && { dimensions: options.dimensions }),
+      },
+      { signal: options?.signal },
+    )
     return embedding.data[0].embedding
   }
 }

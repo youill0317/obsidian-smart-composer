@@ -13,7 +13,7 @@ import { parseSmartComposerSettings } from './schema/settings'
 
 type Storage = Pick<SecretStorage, 'getSecret' | 'setSecret'>
 export type CredentialStatus = {
-  label: 'Keychain' | 'Plaintext' | 'Needs attention' | 'Not configured'
+  label: 'Keychain' | 'Session only' | 'Needs attention' | 'Not configured'
   detail: string
 }
 
@@ -72,8 +72,8 @@ export class CredentialSettingsStore {
       ...parsed,
       providers: parsed.providers.map((provider) => {
         const id = provider.credentialsSecretId
-        // Plaintext is authoritative after a fallback, including interrupted
-        // migrations. Never restore an older Keychain value over it.
+        // A legacy plaintext value is authoritative during its one-time move.
+        // Never restore an older Keychain value over it.
         if (!id || hasCredentials(provider)) return provider
         try {
           if (!this.storage || !ownsSecret(id)) throw new Error()
@@ -148,10 +148,11 @@ export class CredentialSettingsStore {
         return { ...provider }
       }
 
-      const id =
+      const existingSecretId =
         provider.credentialsSecretId && ownsSecret(provider.credentialsSecretId)
           ? provider.credentialsSecretId
-          : 'smart-composer-' + uuidv4()
+          : undefined
+      const id = existingSecretId ?? 'smart-composer-' + uuidv4()
       let reason = 'Requires Obsidian 1.11.5+ with SecretStorage support.'
       if (this.storage) {
         try {
@@ -174,21 +175,24 @@ export class CredentialSettingsStore {
         }
       }
 
-      const fallback = { ...provider }
-      delete fallback.credentialsSecretId
+      const sessionOnly = { ...provider }
+      delete sessionOnly.apiKey
+      if ('oauth' in sessionOnly) delete sessionOnly.oauth
+      if (!existingSecretId) delete sessionOnly.credentialsSecretId
       statuses.set(provider.id, {
-        label: 'Plaintext',
+        label: 'Session only',
         detail:
-          reason + ' Credentials are stored in the plugin data.json file.',
+          reason +
+          ' Credentials are available only until Obsidian closes; re-enter or reconnect after Keychain access is restored.',
       })
       this.warnOnce(
         provider.id,
         'Smart Composer: ' +
           provider.id +
-          ' is using plaintext credential storage. ' +
+          ' credentials are session-only and were not written to data.json. ' +
           reason,
       )
-      return fallback
+      return sessionOnly
     })
     const diskSettings = { ...next, providers }
     // Do not publish success or clear any old secrets until this write succeeds.

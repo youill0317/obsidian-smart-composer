@@ -2,6 +2,7 @@ export type EmbeddingPurpose = 'query' | 'document'
 
 export type EmbeddingRequestOptions = {
   purpose?: EmbeddingPurpose
+  signal?: AbortSignal
 }
 
 export type EmbeddingModelClient = {

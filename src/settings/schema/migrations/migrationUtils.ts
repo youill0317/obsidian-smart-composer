@@ -16,17 +16,15 @@ export const getMigratedProviders = (
 
   const defaultProviders = defaultProvidersForVersion.map((provider) => {
     const existingProvider = (existingData.providers as unknown[]).find(
-      (p: unknown) =>
-        (p as { type: string }).type === provider.type &&
-        (p as { id: string }).id === provider.id,
-    )
-    return existingProvider
-      ? // FIXME: Replace Object.assign with deep merge to properly handle nested objects
-        // like reasoning, thinking, web_search_options. Object.assign only does shallow
-        // merging, which overwrites entire nested objects instead of merging their properties.
-        // This causes user settings to be overwritten by default settings.
-        Object.assign(existingProvider, provider)
-      : provider
+      (p: unknown) => (p as { id: string }).id === provider.id,
+    ) as { type?: unknown } | undefined
+    if (!existingProvider) return provider
+
+    // An id collision with another provider type is user-owned. Replacing it
+    // can route requests through credentials the user did not select.
+    return existingProvider.type === provider.type
+      ? { ...existingProvider, ...provider }
+      : existingProvider
   })
   const customProviders = (existingData.providers as unknown[]).filter(
     (p: unknown) =>
@@ -70,11 +68,16 @@ export const getMigratedChatModels = (
       },
     )
     if (existingModel) {
-      // FIXME: Replace Object.assign with deep merge to properly handle nested objects
-      // like reasoning, thinking, web_search_options. Object.assign only does shallow
-      // merging, which overwrites entire nested objects instead of merging their properties.
-      // This causes user settings to be overwritten by default settings.
-      return Object.assign(existingModel, model)
+      const existing = existingModel as {
+        providerType?: unknown
+        providerId?: unknown
+      }
+      // Only update a known built-in routing. A colliding custom id may use a
+      // local endpoint or different credentials and must remain user-owned.
+      return existing.providerType === model.providerType &&
+        existing.providerId === model.providerId
+        ? { ...existing, ...model }
+        : existing
     }
     return model
   })

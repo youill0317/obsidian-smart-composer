@@ -18,6 +18,7 @@ export const migrateFrom0To1: SettingMigration['migrate'] = (data) => {
   if ('applyModel' in newData && typeof newData.applyModel === 'string') {
     const APPLY_MODEL_MAP: Record<string, string> = {
       'gpt-4o-mini': 'openai/gpt-4o-mini',
+      'llama3-8b-8192': 'groq/llama3-8b-8192',
       'llama-3.1-8b-instant': 'groq/llama-3.1-8b-instant',
       'llama-3.1-70b-versatile': 'groq/llama-3.1-70b-versatile',
       'llama3.1:8b': 'ollama',

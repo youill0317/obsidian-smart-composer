@@ -48,7 +48,7 @@ export function ObsidianToggle({ value, onChange }: ObsidianToggleProps) {
   useEffect(() => {
     if (!toggleComponent) return
     toggleComponent.setValue(value)
-  }, [toggleComponent, value])
+  }) // Reapply the controlled value after a rejected change, even if unchanged.
 
   return <div ref={containerRef} style={{ display: 'contents' }} />
 }
