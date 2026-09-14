@@ -59,14 +59,28 @@ function queueResponse(
 }
 
 describe('bounded HTTP helpers', () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(
+    globalThis,
+    'navigator',
+  )
+
   beforeEach(() => {
     mockLookup.mockReset()
     mockRequest.mockReset()
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { userAgent: 'Smart Composer test browser' },
+    })
   })
 
   afterEach(() => {
     Platform.isDesktop = true
     jest.restoreAllMocks()
+    if (originalNavigator) {
+      Object.defineProperty(globalThis, 'navigator', originalNavigator)
+    } else {
+      Reflect.deleteProperty(globalThis, 'navigator')
+    }
   })
 
   it('gives mobile users an actionable attachment error', async () => {
@@ -121,9 +135,24 @@ describe('bounded HTTP helpers', () => {
       servername: 'example.com',
       headers: {
         'Accept-Encoding': 'identity',
-        'User-Agent': expect.any(String),
+        'User-Agent': 'Smart Composer test browser',
       },
     })
+  })
+
+  it('supports a runtime without browser user agent information', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: undefined })
+    mockLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }])
+    queueResponse(200, {}, 'public page')
+
+    await expect(fetchPublicText('https://example.com')).resolves.toMatchObject(
+      {
+        text: 'public page',
+      },
+    )
+    expect(mockRequest.mock.calls[0][0].headers).not.toHaveProperty(
+      'User-Agent',
+    )
   })
 
   it('stops reading a public response at the byte limit', async () => {
