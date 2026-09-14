@@ -1,12 +1,13 @@
 import clsx from 'clsx'
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react'
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useMcp } from '../../contexts/mcp-context'
 import { useSettings } from '../../contexts/settings-context'
+import { useTools } from '../../contexts/tools-context'
 import { InvalidToolNameException } from '../../core/mcp/exception'
 import { parseToolName } from '../../core/mcp/tool-name-utils'
 import { ChatToolMessage } from '../../types/chat'
+import { CLI_TOOL_NAME, CliExecution } from '../../types/cli.types'
 import {
   ToolCallRequest,
   ToolCallResponse,
@@ -57,6 +58,8 @@ const ToolMessage = memo(function ToolMessage({
   conversationId: string
   onMessageUpdate: (message: ChatToolMessage) => void
 }) {
+  const latest = useRef({ message, onMessageUpdate })
+  latest.current = { message, onMessageUpdate }
   return (
     <div className="smtcmp-toolcall-container">
       {message.toolCalls.map((toolCall, index) => (
@@ -68,14 +71,16 @@ const ToolMessage = memo(function ToolMessage({
             request={toolCall.request}
             response={toolCall.response}
             conversationId={conversationId}
-            onResponseUpdate={(response) =>
-              onMessageUpdate({
-                ...message,
-                toolCalls: message.toolCalls.map((t) =>
+            onResponseUpdate={(response) => {
+              const updated = {
+                ...latest.current.message,
+                toolCalls: latest.current.message.toolCalls.map((t) =>
                   t.request.id === toolCall.request.id ? { ...t, response } : t,
                 ),
-              })
-            }
+              }
+              latest.current.message = updated
+              latest.current.onMessageUpdate(updated)
+            }}
           />
         </div>
       ))}
@@ -100,7 +105,12 @@ function ToolCallItem({
     handleAllowAutoExecution,
     handleReject,
     handleAbort,
-  } = useToolCall(request, conversationId, onResponseUpdate)
+  } = useToolCall(
+    request,
+    conversationId,
+    onResponseUpdate,
+    'execution' in response ? response.execution : undefined,
+  )
 
   const [isOpen, setIsOpen] = useState(
     // Open by default if the tool call requires approval
@@ -155,7 +165,21 @@ function ToolCallItem({
         <div className="smtcmp-toolcall-content">
           <div className="smtcmp-toolcall-content-section">
             <div>Parameters:</div>
-            <ObsidianCodeBlock language="json" content={parameters} />
+            <ObsidianCodeBlock
+              language="json"
+              content={
+                'execution' in response && response.execution
+                  ? JSON.stringify(
+                      response.execution,
+                      (key, value: unknown) =>
+                        key === 'configuration' || key === 'automatic'
+                          ? undefined
+                          : value,
+                      2,
+                    )
+                  : parameters
+              }
+            />
           </div>
           {response.status === ToolCallResponseStatus.Success && (
             <div className="smtcmp-toolcall-content-section">
@@ -176,31 +200,41 @@ function ToolCallItem({
         <div className="smtcmp-toolcall-footer">
           {response.status === ToolCallResponseStatus.PendingApproval && (
             <div className="smtcmp-toolcall-footer-actions">
-              <SplitButton
-                primaryText="Allow"
-                onPrimaryClick={() => {
-                  handleToolCall()
-                  setIsOpen(false)
-                }}
-                menuOptions={[
-                  {
-                    label: 'Always allow this tool',
-                    onClick: () => {
-                      handleToolCall()
-                      handleAllowAutoExecution()
-                      setIsOpen(false)
+              {request.name === CLI_TOOL_NAME ? (
+                <button
+                  onClick={() => {
+                    void handleToolCall()
+                  }}
+                >
+                  Allow this execution
+                </button>
+              ) : (
+                <SplitButton
+                  primaryText="Allow"
+                  onPrimaryClick={() => {
+                    handleToolCall()
+                    setIsOpen(false)
+                  }}
+                  menuOptions={[
+                    {
+                      label: 'Always allow this tool',
+                      onClick: () => {
+                        handleToolCall()
+                        handleAllowAutoExecution()
+                        setIsOpen(false)
+                      },
                     },
-                  },
-                  {
-                    label: 'Allow for this chat',
-                    onClick: () => {
-                      handleToolCall()
-                      handleAllowForConversation()
-                      setIsOpen(false)
+                    {
+                      label: 'Allow for this chat',
+                      onClick: () => {
+                        handleToolCall()
+                        handleAllowForConversation()
+                        setIsOpen(false)
+                      },
                     },
-                  },
-                ]}
-              />
+                  ]}
+                />
+              )}
               <button
                 onClick={() => {
                   handleReject()
@@ -226,27 +260,53 @@ function useToolCall(
   request: ToolCallRequest,
   conversationId: string,
   onResponseUpdate: (response: ToolCallResponse) => void,
+  approved?: CliExecution,
 ) {
   const { settings, setSettings } = useSettings()
-  const { getMcpManager } = useMcp()
+  const toolManager = useTools()
 
+  const updateRef = useRef(onResponseUpdate)
+  updateRef.current = onResponseUpdate
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [request.id])
+  const running = useRef(false)
   const handleToolCall = useCallback(async () => {
-    const mcpManager = await getMcpManager()
+    if (running.current) return
+    running.current = true
+    const manager = toolManager
     onResponseUpdate({
       status: ToolCallResponseStatus.Running,
+      execution: approved,
     })
-    const toolCallResponse: ToolCallResponse = await mcpManager.callTool({
-      name: request.name,
-      args: request.arguments,
-      id: request.id,
-    })
-    onResponseUpdate(toolCallResponse)
-  }, [request, onResponseUpdate, getMcpManager])
+    try {
+      const toolCallResponse = await manager.callTool({
+        name: request.name,
+        args: request.arguments,
+        id: request.id,
+        approved,
+        conversationId,
+      })
+      if (mounted.current) updateRef.current(toolCallResponse)
+    } catch (error) {
+      if (mounted.current)
+        updateRef.current({
+          status: ToolCallResponseStatus.Error,
+          error: error instanceof Error ? error.message : String(error),
+        })
+    } finally {
+      running.current = false
+    }
+  }, [request, onResponseUpdate, toolManager, approved, conversationId])
 
   const handleAllowForConversation = useCallback(async () => {
-    const mcpManager = await getMcpManager()
-    mcpManager.allowToolForConversation(request.name, conversationId)
-  }, [request, conversationId, getMcpManager])
+    const manager = toolManager
+    manager.allowToolForConversation(request.name, conversationId)
+  }, [request, conversationId, toolManager])
 
   const handleAllowAutoExecution = useCallback(async () => {
     const { serverName, toolName } = parseToolName(request.name)
@@ -290,12 +350,12 @@ function useToolCall(
   }, [onResponseUpdate])
 
   const handleAbort = useCallback(async () => {
-    const mcpManager = await getMcpManager()
-    mcpManager.abortToolCall(request.id)
+    const manager = toolManager
+    manager.abortToolCall(request.id)
     onResponseUpdate({
       status: ToolCallResponseStatus.Aborted,
     })
-  }, [request, onResponseUpdate, getMcpManager])
+  }, [request, onResponseUpdate, toolManager])
 
   return {
     handleToolCall,

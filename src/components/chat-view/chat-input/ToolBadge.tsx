@@ -3,19 +3,17 @@ import { Eye, EyeOff, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { useApp } from '../../../contexts/app-context'
-import { useMcp } from '../../../contexts/mcp-context'
 import { usePlugin } from '../../../contexts/plugin-context'
 import { useSettings } from '../../../contexts/settings-context'
-import { McpManager } from '../../../core/mcp/mcpManager'
+import { useTools } from '../../../contexts/tools-context'
 import { McpSectionModal } from '../../modals/McpSectionModal'
 
 export default function ToolBadge() {
   const plugin = usePlugin()
   const app = useApp()
   const { settings, setSettings } = useSettings()
-  const { getMcpManager } = useMcp()
+  const toolManager = useTools()
 
-  const [mcpManager, setMcpManager] = useState<McpManager | null>(null)
   const [toolCount, setToolCount] = useState(0)
 
   const handleBadgeClick = useCallback(() => {
@@ -37,29 +35,31 @@ export default function ToolBadge() {
   )
 
   useEffect(() => {
-    const initMCPManager = async () => {
-      const mcpManager = await getMcpManager()
-      setMcpManager(mcpManager)
-
-      const tools = await mcpManager.listAvailableTools()
-      setToolCount(tools.length)
-    }
-    initMCPManager()
-  }, [getMcpManager])
-
-  useEffect(() => {
-    if (mcpManager) {
-      const unsubscribe = mcpManager.subscribeServersChange(
-        async (_servers) => {
-          const tools = await mcpManager.listAvailableTools()
-          setToolCount(tools.length)
-        },
-      )
-      return () => {
-        unsubscribe()
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const tools = await toolManager.listAvailableTools()
+        if (!cancelled) setToolCount(tools.length)
+      } catch {
+        if (!cancelled) setToolCount(0)
       }
     }
-  }, [mcpManager])
+    void refresh()
+    let unsubscribe: (() => void) | undefined
+    void plugin
+      .getMcpManager()
+      .then((manager) => {
+        if (!cancelled)
+          unsubscribe = manager.subscribeServersChange(() => {
+            void refresh()
+          })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [toolManager, plugin, settings.cli, settings.mcp])
 
   return (
     <div

@@ -10,7 +10,6 @@ import { ChatViewProvider } from './contexts/chat-view-context'
 import { DarkModeProvider } from './contexts/dark-mode-context'
 import { DatabaseProvider } from './contexts/database-context'
 import { DialogContainerProvider } from './contexts/dialog-container-context'
-import { McpProvider } from './contexts/mcp-context'
 import { PluginProvider } from './contexts/plugin-context'
 import { RAGProvider } from './contexts/rag-context'
 import { SettingsProvider } from './contexts/settings-context'
@@ -87,24 +86,17 @@ export class ChatView extends ItemView {
                   getDatabaseManager={() => this.plugin.getDbManager()}
                 >
                   <RAGProvider getRAGEngine={() => this.plugin.getRAGEngine()}>
-                    <McpProvider
-                      getMcpManager={() => this.plugin.getMcpManager()}
-                    >
-                      <QueryClientProvider client={queryClient}>
-                        <React.StrictMode>
-                          <DialogContainerProvider
-                            container={
-                              this.containerEl.children[1] as HTMLElement
-                            }
-                          >
-                            <Chat
-                              ref={this.chatRef}
-                              {...this.initialChatProps}
-                            />
-                          </DialogContainerProvider>
-                        </React.StrictMode>
-                      </QueryClientProvider>
-                    </McpProvider>
+                    <QueryClientProvider client={queryClient}>
+                      <React.StrictMode>
+                        <DialogContainerProvider
+                          container={
+                            this.containerEl.children[1] as HTMLElement
+                          }
+                        >
+                          <Chat ref={this.chatRef} {...this.initialChatProps} />
+                        </DialogContainerProvider>
+                      </React.StrictMode>
+                    </QueryClientProvider>
                   </RAGProvider>
                 </DatabaseProvider>
               </DarkModeProvider>

@@ -23,3 +23,15 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  windows-cli:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Test Windows CLI execution
+        run: npx jest --runInBand src/core/cli/cli.test.ts src/core/cli/windows.test.ts

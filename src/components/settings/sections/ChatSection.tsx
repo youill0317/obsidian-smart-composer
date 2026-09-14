@@ -100,7 +100,7 @@ export function ChatSection() {
 
       <ObsidianSetting
         name="Enable tools"
-        desc="Allow the AI to use MCP tools."
+        desc="Allow the AI to use MCP and CLI tools."
       >
         <ObsidianToggle
           value={settings.chatOptions.enableTools}
