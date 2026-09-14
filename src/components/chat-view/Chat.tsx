@@ -226,52 +226,16 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         forceScrollToBottom()
       })
 
-      const lastMessage = inputChatMessages.at(-1)
-      if (lastMessage?.role !== 'user') {
-        throw new Error('Last message is not a user message')
-      }
-
-      const compiledMessages = await Promise.all(
-        inputChatMessages.map(async (message) => {
-          if (message.role === 'user' && message.id === lastMessage.id) {
-            const { promptContent, similaritySearchResults } =
-              await promptGenerator.compileUserMessagePrompt({
-                message,
-                useVaultSearch,
-                onQueryProgressChange: setQueryProgress,
-              })
-            return {
-              ...message,
-              promptContent,
-              similaritySearchResults,
-            }
-          } else if (message.role === 'user' && !message.promptContent) {
-            // Ensure all user messages have prompt content
-            // This is a fallback for cases where compilation was missed earlier in the process
-            const { promptContent, similaritySearchResults } =
-              await promptGenerator.compileUserMessagePrompt({
-                message,
-              })
-            return {
-              ...message,
-              promptContent,
-              similaritySearchResults,
-            }
-          }
-          return message
-        }),
-      )
-
-      setChatMessages(compiledMessages)
       submitChatMutation.mutate({
-        chatMessages: compiledMessages,
+        chatMessages: inputChatMessages,
         conversationId: currentConversationId,
+        useVaultSearch,
+        onQueryProgressChange: setQueryProgress,
       })
     },
     [
       submitChatMutation,
       currentConversationId,
-      promptGenerator,
       abortActiveStreams,
       forceScrollToBottom,
     ],

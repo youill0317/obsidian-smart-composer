@@ -2,13 +2,10 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { COMMAND_PRIORITY_LOW, PASTE_COMMAND, PasteCommandType } from 'lexical'
 import { useEffect } from 'react'
 
-import { MentionableImage } from '../../../../../types/mentionable'
-import { fileToMentionableImage } from '../../../../../utils/llm/image'
-
 export default function ImagePastePlugin({
-  onCreateImageMentionables,
+  onUploadImages,
 }: {
-  onCreateImageMentionables?: (mentionables: MentionableImage[]) => void
+  onUploadImages?: (files: File[]) => void
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -23,11 +20,7 @@ export default function ImagePastePlugin({
       )
       if (images.length === 0) return false
 
-      Promise.all(images.map((image) => fileToMentionableImage(image))).then(
-        (mentionableImages) => {
-          onCreateImageMentionables?.(mentionableImages)
-        },
-      )
+      onUploadImages?.(images)
       return true
     }
 
@@ -36,7 +29,7 @@ export default function ImagePastePlugin({
       handlePaste,
       COMMAND_PRIORITY_LOW,
     )
-  }, [editor, onCreateImageMentionables])
+  }, [editor, onUploadImages])
 
   return null
 }

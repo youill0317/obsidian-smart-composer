@@ -26,6 +26,7 @@ const settings = {
 describe('getEmbeddingModelClient', () => {
   it('forwards the embedding purpose and effective dimension', async () => {
     const getEmbedding = jest.fn().mockResolvedValue([0.1, 0.2, 0.3])
+    const signal = new AbortController().signal
     mockedGetProviderClient.mockReturnValue({ getEmbedding } as never)
 
     const client = getEmbeddingModelClient({
@@ -34,12 +35,13 @@ describe('getEmbeddingModelClient', () => {
     })
 
     await expect(
-      client.getEmbedding('query text', { purpose: 'query' }),
+      client.getEmbedding('query text', { purpose: 'query', signal }),
     ).resolves.toEqual([0.1, 0.2, 0.3])
     expect(client.dimension).toBe(3)
     expect(getEmbedding).toHaveBeenCalledWith('voyage-4', 'query text', {
       dimensions: 3,
       purpose: 'query',
+      signal,
     })
   })
 
@@ -55,6 +57,22 @@ describe('getEmbeddingModelClient', () => {
 
     await expect(client.getEmbedding('document text')).rejects.toThrow(
       'Embedding dimension mismatch: expected 3, got 2',
+    )
+  })
+
+  it('rejects non-finite embedding values from every provider', async () => {
+    mockedGetProviderClient.mockReturnValue({
+      getEmbedding: jest
+        .fn()
+        .mockResolvedValue([0.1, Number.POSITIVE_INFINITY, 0.3]),
+    } as never)
+    const client = getEmbeddingModelClient({
+      settings,
+      embeddingModelId: 'voyage/test',
+    })
+
+    await expect(client.getEmbedding('document text')).rejects.toThrow(
+      'non-finite value',
     )
   })
 })

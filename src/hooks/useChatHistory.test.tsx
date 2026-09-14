@@ -95,3 +95,164 @@ it('saves interrupted tool calls as aborted without changing live or completed r
     jest.useRealTimers()
   }
 })
+
+it('cancels a queued save before deleting a chat', async () => {
+  jest.useFakeTimers()
+  try {
+    const manager = {
+      createChat: jest.fn().mockResolvedValue(null),
+      deleteChat: jest.fn().mockResolvedValue(true),
+      findById: jest.fn().mockResolvedValue(null),
+      listChats: jest.fn().mockResolvedValue([]),
+      updateChat: jest.fn().mockResolvedValue(null),
+    }
+    jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+    jest
+      .mocked(useChatManager)
+      .mockReturnValue(manager as unknown as ChatManager)
+    let history!: ReturnType<typeof useChatHistory>
+    const Harness = () => {
+      history = useChatHistory()
+      return null
+    }
+    renderToStaticMarkup(<Harness />)
+
+    history.createOrUpdateConversation('deleted', [])
+    await history.deleteConversation('deleted')
+    await jest.advanceTimersByTimeAsync(1000)
+
+    expect(manager.deleteChat).toHaveBeenCalledWith('deleted')
+    expect(manager.findById).not.toHaveBeenCalled()
+    expect(manager.createChat).not.toHaveBeenCalled()
+    expect(manager.updateChat).not.toHaveBeenCalled()
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+it('waits for an inflight save before deleting a chat', async () => {
+  jest.useFakeTimers()
+  try {
+    let finishUpdate!: () => void
+    const update = new Promise<void>((resolve) => {
+      finishUpdate = resolve
+    })
+    const manager = {
+      createChat: jest.fn().mockResolvedValue(null),
+      deleteChat: jest.fn().mockResolvedValue(true),
+      findById: jest.fn().mockResolvedValue({ id: 'deleted', messages: [] }),
+      listChats: jest.fn().mockResolvedValue([]),
+      updateChat: jest.fn().mockReturnValue(update),
+    }
+    jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+    jest
+      .mocked(useChatManager)
+      .mockReturnValue(manager as unknown as ChatManager)
+    let history!: ReturnType<typeof useChatHistory>
+    const Harness = () => {
+      history = useChatHistory()
+      return null
+    }
+    renderToStaticMarkup(<Harness />)
+    const message = {
+      role: 'assistant' as const,
+      id: 'message',
+      content: 'saved',
+    }
+
+    history.createOrUpdateConversation('deleted', [message])
+    await jest.advanceTimersByTimeAsync(300)
+    expect(manager.updateChat).toHaveBeenCalled()
+
+    const deletion = history.deleteConversation('deleted')
+    expect(manager.deleteChat).not.toHaveBeenCalled()
+    finishUpdate()
+    await deletion
+
+    expect(manager.deleteChat).toHaveBeenCalledWith('deleted')
+    expect(manager.updateChat.mock.invocationCallOrder[0]).toBeLessThan(
+      manager.deleteChat.mock.invocationCallOrder[0],
+    )
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+it('waits for an inflight title rename before deleting the renamed file', async () => {
+  let finishRename!: () => void
+  const rename = new Promise<void>((resolve) => {
+    finishRename = resolve
+  })
+  const manager = {
+    createChat: jest.fn().mockResolvedValue(null),
+    deleteChat: jest.fn().mockResolvedValue(true),
+    findById: jest
+      .fn()
+      .mockResolvedValue({ id: 'renamed', messages: [], title: 'Old' }),
+    listChats: jest.fn().mockResolvedValue([]),
+    updateChat: jest.fn().mockReturnValue(rename),
+  }
+  jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+  jest.mocked(useChatManager).mockReturnValue(manager as unknown as ChatManager)
+  let history!: ReturnType<typeof useChatHistory>
+  const Harness = () => {
+    history = useChatHistory()
+    return null
+  }
+  renderToStaticMarkup(<Harness />)
+
+  const titleUpdate = history.updateConversationTitle('renamed', 'New')
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(manager.updateChat).toHaveBeenCalledWith('renamed', { title: 'New' })
+
+  const deletion = history.deleteConversation('renamed')
+  expect(manager.deleteChat).not.toHaveBeenCalled()
+  finishRename()
+  await titleUpdate
+  await deletion
+
+  expect(manager.updateChat.mock.invocationCallOrder[0]).toBeLessThan(
+    manager.deleteChat.mock.invocationCallOrder[0],
+  )
+})
+
+it('keeps pending saves for different conversations', async () => {
+  jest.useFakeTimers()
+  try {
+    const manager = {
+      createChat: jest.fn().mockResolvedValue(null),
+      deleteChat: jest.fn().mockResolvedValue(true),
+      findById: jest.fn().mockResolvedValue(null),
+      listChats: jest.fn().mockResolvedValue([]),
+      updateChat: jest.fn().mockResolvedValue(null),
+    }
+    jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+    jest
+      .mocked(useChatManager)
+      .mockReturnValue(manager as unknown as ChatManager)
+    let history!: ReturnType<typeof useChatHistory>
+    const Harness = () => {
+      history = useChatHistory()
+      return null
+    }
+    renderToStaticMarkup(<Harness />)
+
+    history.createOrUpdateConversation('first', [])
+    history.createOrUpdateConversation('second', [])
+    await jest.advanceTimersByTimeAsync(300)
+
+    expect(manager.createChat).toHaveBeenCalledTimes(2)
+    expect(manager.createChat).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: 'first' }),
+    )
+    expect(manager.createChat).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: 'second' }),
+    )
+  } finally {
+    jest.useRealTimers()
+  }
+})

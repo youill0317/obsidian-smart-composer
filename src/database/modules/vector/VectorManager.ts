@@ -1,5 +1,4 @@
 import { PgliteDatabase } from 'drizzle-orm/pglite'
-import { backOff } from 'exponential-backoff'
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import { minimatch } from 'minimatch'
 import { App, TFile } from 'obsidian'
@@ -25,11 +24,56 @@ import { chunkArray } from '../../../utils/common/chunk-array'
 
 import { VectorRepository } from './VectorRepository'
 
+export type VectorScope = {
+  files: string[]
+  folders: string[]
+}
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException('Operation aborted', 'AbortError')
+  }
+}
+
+const waitForRetry = (delay: number, signal?: AbortSignal) => {
+  let abort: (() => void) | undefined
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException('Operation aborted', 'AbortError'),
+      )
+      return
+    }
+    const timeoutId = setTimeout(() => {
+      if (abort) signal?.removeEventListener('abort', abort)
+      resolve()
+    }, delay)
+    abort = () => {
+      clearTimeout(timeoutId)
+      reject(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException('Operation aborted', 'AbortError'),
+      )
+    }
+    if (signal) {
+      signal.addEventListener('abort', abort, { once: true })
+    }
+  })
+}
+
 export class VectorManager {
   private app: App
   private repository: VectorRepository
   private saveCallback: (() => Promise<void>) | null = null
   private vacuumCallback: (() => Promise<void>) | null = null
+  private mutationQueue: Promise<void> = Promise.resolve()
+  private activeAbortController: AbortController | null = null
+  private closing = false
 
   private async requestSave() {
     try {
@@ -48,6 +92,7 @@ export class VectorManager {
           showReportBugButton: true,
         },
       ).open()
+      throw error
     }
   }
 
@@ -76,20 +121,35 @@ export class VectorManager {
     options: {
       minSimilarity: number
       limit: number
-      scope?: {
-        files: string[]
-        folders: string[]
-      }
+      scope?: VectorScope
+      excludePatterns?: string[]
+      includePatterns?: string[]
     },
   ): Promise<
     (Omit<SelectEmbedding, 'embedding'> & {
       similarity: number
     })[]
   > {
+    if (
+      options.scope &&
+      options.scope.files.length === 0 &&
+      options.scope.folders.length === 0
+    ) {
+      return []
+    }
+    const allowedPaths =
+      (options.excludePatterns?.length ?? 0) > 0 ||
+      (options.includePatterns?.length ?? 0) > 0
+        ? this.getAllowedFiles({
+            excludePatterns: options.excludePatterns ?? [],
+            includePatterns: options.includePatterns ?? [],
+            scope: options.scope,
+          }).map((file) => file.path)
+        : undefined
     return await this.repository.performSimilaritySearch(
       queryVector,
       embeddingModel,
-      options,
+      { ...options, allowedPaths },
     )
   }
 
@@ -100,53 +160,90 @@ export class VectorManager {
       excludePatterns: string[]
       includePatterns: string[]
       reindexAll?: boolean
+      scope?: VectorScope
+      signal?: AbortSignal
     },
     updateProgress?: (indexProgress: IndexProgress) => void,
   ): Promise<void> {
-    let filesToIndex: TFile[]
-    if (options.reindexAll) {
-      filesToIndex = await this.getFilesToIndex({
-        embeddingModel: embeddingModel,
-        excludePatterns: options.excludePatterns,
-        includePatterns: options.includePatterns,
-        reindexAll: true,
-      })
-      await this.repository.clearAllVectors(embeddingModel)
-    } else {
-      await this.deleteVectorsForDeletedFiles(embeddingModel)
-      filesToIndex = await this.getFilesToIndex({
-        embeddingModel: embeddingModel,
-        excludePatterns: options.excludePatterns,
-        includePatterns: options.includePatterns,
-      })
-      await this.repository.deleteVectorsForMultipleFiles(
-        filesToIndex.map((file) => file.path),
-        embeddingModel,
-      )
-    }
-
-    if (filesToIndex.length === 0) {
-      return
-    }
-
-    const textSplitter = RecursiveCharacterTextSplitter.fromLanguage(
-      'markdown',
-      {
-        chunkSize: options.chunkSize,
-        // TODO: Use token-based chunking after migrating to WebAssembly-based tiktoken
-        // Current token counting method is too slow for practical use
-        // lengthFunction: async (text) => {
-        //   return await tokenCount(text)
-        // },
-      },
+    return this.runMutation(
+      (signal) =>
+        this.updateVaultIndexInternal(
+          embeddingModel,
+          { ...options, signal },
+          updateProgress,
+        ),
+      options.signal,
     )
+  }
 
-    const failedFiles: { path: string; error: string }[] = []
-    const contentChunks = (
+  private async updateVaultIndexInternal(
+    embeddingModel: EmbeddingModelClient,
+    options: {
+      chunkSize: number
+      excludePatterns: string[]
+      includePatterns: string[]
+      reindexAll?: boolean
+      scope?: VectorScope
+      signal?: AbortSignal
+    },
+    updateProgress?: (indexProgress: IndexProgress) => void,
+  ): Promise<void> {
+    let didMutate = false
+    try {
+      throwIfAborted(options.signal)
+      const allowedFiles = this.getAllowedFiles({
+        excludePatterns: options.excludePatterns,
+        includePatterns: options.includePatterns,
+      })
+      const allowedPaths = new Set(allowedFiles.map((file) => file.path))
+      const indexedPaths =
+        await this.repository.getIndexedFilePaths(embeddingModel)
+      const stalePaths = [...new Set(indexedPaths)].filter(
+        (path) => !allowedPaths.has(path),
+      )
+      if (stalePaths.length > 0) {
+        await this.repository.deleteVectorsForMultipleFiles(
+          stalePaths,
+          embeddingModel,
+        )
+        didMutate = true
+      }
+
+      const filesToIndex = await this.getFilesToIndex({
+        embeddingModel,
+        excludePatterns: options.excludePatterns,
+        includePatterns: options.includePatterns,
+        reindexAll: options.reindexAll,
+        scope: options.scope,
+      })
+
+      if (filesToIndex.length === 0) {
+        return
+      }
+
+      const textSplitter = RecursiveCharacterTextSplitter.fromLanguage(
+        'markdown',
+        {
+          chunkSize: options.chunkSize,
+          // TODO: Use token-based chunking after migrating to WebAssembly-based tiktoken
+          // Current token counting method is too slow for practical use
+          // lengthFunction: async (text) => {
+          //   return await tokenCount(text)
+          // },
+        },
+      )
+
+      const failedFiles: { path: string; error: unknown }[] = []
+      const chunksByFile = new Map<
+        string,
+        Omit<InsertEmbedding, 'model' | 'dimension'>[]
+      >()
       await Promise.all(
         filesToIndex.map(async (file) => {
           try {
+            throwIfAborted(options.signal)
             const fileContent = await this.app.vault.cachedRead(file)
+            throwIfAborted(options.signal)
             // Remove null bytes from the content
             // eslint-disable-next-line no-control-regex
             const sanitizedContent = fileContent.replace(/\x00/g, '')
@@ -154,73 +251,72 @@ export class VectorManager {
             const fileDocuments = await textSplitter.createDocuments([
               sanitizedContent,
             ])
-            return fileDocuments.map(
-              (chunk): Omit<InsertEmbedding, 'model' | 'dimension'> => {
-                return {
-                  path: file.path,
-                  mtime: file.stat.mtime,
-                  content: chunk.pageContent,
-                  metadata: {
-                    startLine: chunk.metadata.loc.lines.from as number,
-                    endLine: chunk.metadata.loc.lines.to as number,
-                  },
-                }
-              },
+            chunksByFile.set(
+              file.path,
+              fileDocuments.map(
+                (
+                  chunk,
+                  chunkIndex,
+                ): Omit<InsertEmbedding, 'model' | 'dimension'> => {
+                  return {
+                    path: file.path,
+                    mtime: file.stat.mtime,
+                    content: chunk.pageContent,
+                    metadata: {
+                      startLine: chunk.metadata.loc.lines.from as number,
+                      endLine: chunk.metadata.loc.lines.to as number,
+                      chunkIndex,
+                      chunkCount: fileDocuments.length,
+                    },
+                  }
+                },
+              ),
             )
           } catch (error) {
             failedFiles.push({
               path: file.path,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              error,
             })
-            return [] // Return empty array for failed files
           }
         }),
       )
-    ).flat()
+      throwIfAborted(options.signal)
+      const contentChunks = [...chunksByFile.values()].flat()
 
-    if (failedFiles.length > 0) {
-      const errorDetails =
-        `Failed to process ${failedFiles.length} file(s):\n\n` +
-        failedFiles
-          .map(({ path, error }) => `File: ${path}\nError: ${error}`)
-          .join('\n\n')
+      updateProgress?.({
+        completedChunks: 0,
+        totalChunks: contentChunks.length,
+        totalFiles: filesToIndex.length,
+      })
 
-      new ErrorModal(
-        this.app,
-        'Error: chunk embedding failed',
-        `Some files failed to process. Please report this issue to the developer if it persists.`,
-        `[Error Log]\n\n${errorDetails}`,
-        {
-          showReportBugButton: true,
-        },
-      ).open()
-    }
+      let completedChunks = 0
+      const batchChunks = chunkArray(contentChunks, 100)
+      const failedChunks: {
+        path: string
+        metadata: VectorMetaData
+        error: unknown
+      }[] = []
+      const embeddedByFile = new Map<string, InsertEmbedding[]>()
+      const failedPaths = new Set(failedFiles.map(({ path }) => path))
+      const processedChunks = new Map<string, number>()
 
-    if (contentChunks.length === 0) {
-      throw new Error('All files failed to process. Stopping indexing process.')
-    }
+      for (const [path, chunks] of chunksByFile) {
+        if (chunks.length === 0) {
+          await this.repository.replaceVectorsForFile(path, embeddingModel, [])
+          didMutate = true
+        }
+      }
 
-    updateProgress?.({
-      completedChunks: 0,
-      totalChunks: contentChunks.length,
-      totalFiles: filesToIndex.length,
-    })
-
-    let completedChunks = 0
-    const batchChunks = chunkArray(contentChunks, 100)
-    const failedChunks: {
-      path: string
-      metadata: VectorMetaData
-      error: string
-    }[] = []
-
-    try {
       for (const batchChunk of batchChunks) {
         const embeddingChunks: (InsertEmbedding | null)[] = await Promise.all(
           batchChunk.map(async (chunk) => {
+            if (failedPaths.has(chunk.path)) {
+              return null
+            }
             try {
-              return await backOff(
-                async () => {
+              for (let attempt = 0; ; attempt += 1) {
+                try {
+                  throwIfAborted(options.signal)
                   if (chunk.content.length === 0) {
                     throw new Error(
                       `Chunk content is empty in file: ${chunk.path}`,
@@ -235,7 +331,7 @@ export class VectorManager {
 
                   const embedding = await embeddingModel.getEmbedding(
                     chunk.content,
-                    { purpose: 'document' },
+                    { purpose: 'document', signal: options.signal },
                   )
                   completedChunks += 1
 
@@ -254,34 +350,34 @@ export class VectorManager {
                     embedding,
                     metadata: chunk.metadata,
                   }
-                },
-                {
-                  numOfAttempts: 8,
-                  startingDelay: 2000,
-                  timeMultiple: 2,
-                  maxDelay: 60000,
-                  retry: (error) => {
-                    if (
+                } catch (error) {
+                  if (
+                    attempt >= 7 ||
+                    !(
                       error instanceof LLMRateLimitExceededException ||
-                      error.status === 429
-                    ) {
-                      updateProgress?.({
-                        completedChunks,
-                        totalChunks: contentChunks.length,
-                        totalFiles: filesToIndex.length,
-                        waitingForRateLimit: true,
-                      })
-                      return true
-                    }
-                    return false
-                  },
-                },
-              )
+                      (error as { status?: number }).status === 429
+                    )
+                  ) {
+                    throw error
+                  }
+                  updateProgress?.({
+                    completedChunks,
+                    totalChunks: contentChunks.length,
+                    totalFiles: filesToIndex.length,
+                    waitingForRateLimit: true,
+                  })
+                  await waitForRetry(
+                    Math.min(2000 * 2 ** attempt, 60000),
+                    options.signal,
+                  )
+                }
+              }
             } catch (error) {
+              failedPaths.add(chunk.path)
               failedChunks.push({
                 path: chunk.path,
                 metadata: chunk.metadata,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error,
               })
 
               return null
@@ -292,65 +388,93 @@ export class VectorManager {
         const validEmbeddingChunks = embeddingChunks.filter(
           (chunk) => chunk !== null,
         )
-        // If all chunks in this batch failed, stop processing
-        if (validEmbeddingChunks.length === 0 && batchChunk.length > 0) {
-          throw new Error(
-            'All chunks in batch failed to embed. Stopping indexing process.',
+        for (const chunk of validEmbeddingChunks) {
+          const fileChunks = embeddedByFile.get(chunk.path) ?? []
+          fileChunks.push(chunk)
+          embeddedByFile.set(chunk.path, fileChunks)
+        }
+        throwIfAborted(options.signal)
+        for (const chunk of batchChunk) {
+          processedChunks.set(
+            chunk.path,
+            (processedChunks.get(chunk.path) ?? 0) + 1,
           )
         }
-        await this.repository.insertVectors(validEmbeddingChunks)
+        for (const path of new Set(batchChunk.map((chunk) => chunk.path))) {
+          if (processedChunks.get(path) === chunksByFile.get(path)?.length) {
+            if (!failedPaths.has(path)) {
+              await this.repository.replaceVectorsForFile(
+                path,
+                embeddingModel,
+                embeddedByFile.get(path) ?? [],
+              )
+              didMutate = true
+            }
+            embeddedByFile.delete(path)
+          }
+        }
       }
-    } catch (error) {
-      if (
-        error instanceof LLMAPIKeyNotSetException ||
-        error instanceof LLMAPIKeyInvalidException ||
-        error instanceof LLMBaseUrlNotSetException
-      ) {
-        new ErrorModal(this.app, 'Error', (error as Error).message, undefined, {
-          showSettingsButton: true,
-        }).open()
-      } else {
-        const errorDetails =
-          `Failed to process ${failedChunks.length} file(s):\n\n` +
-          failedChunks
-            .map((chunk) => `File: ${chunk.path}\nError: ${chunk.error}`)
-            .join('\n\n')
 
-        new ErrorModal(
-          this.app,
-          'Error: embedding failed',
-          `The indexing process was interrupted because several files couldn't be processed.
+      const failures = [...failedFiles, ...failedChunks]
+      if (failures.length > 0) {
+        const firstError = failures[0].error
+        if (
+          firstError instanceof DOMException &&
+          firstError.name === 'AbortError'
+        ) {
+          throw firstError
+        }
+        if (
+          firstError instanceof LLMAPIKeyNotSetException ||
+          firstError instanceof LLMAPIKeyInvalidException ||
+          firstError instanceof LLMBaseUrlNotSetException
+        ) {
+          new ErrorModal(this.app, 'Error', firstError.message, undefined, {
+            showSettingsButton: true,
+          }).open()
+        } else {
+          const errorDetails =
+            `Failed to index ${failedPaths.size} file(s):\n\n` +
+            failures
+              .map(
+                ({ path, error }) =>
+                  `File: ${path}\nError: ${
+                    error instanceof Error ? error.message : 'Unknown error'
+                  }`,
+              )
+              .join('\n\n')
+
+          new ErrorModal(
+            this.app,
+            'Error: embedding failed',
+            `Some files couldn't be indexed.
 Please report this issue to the developer if it persists.`,
-          `[Error Log]\n\n${errorDetails}`,
-          {
-            showReportBugButton: true,
-          },
-        ).open()
+            `[Error Log]\n\n${errorDetails}`,
+            { showReportBugButton: true },
+          ).open()
+        }
+        if (firstError instanceof Error) {
+          throw firstError
+        }
+        throw new Error(`Failed to index: ${[...failedPaths].join(', ')}`)
       }
     } finally {
-      await this.requestSave()
-    }
-  }
-
-  async clearAllVectors(embeddingModel: EmbeddingModelClient) {
-    await this.repository.clearAllVectors(embeddingModel)
-    await this.requestVacuum()
-    await this.requestSave()
-  }
-
-  private async deleteVectorsForDeletedFiles(
-    embeddingModel: EmbeddingModelClient,
-  ) {
-    const indexedFilePaths =
-      await this.repository.getIndexedFilePaths(embeddingModel)
-    for (const filePath of indexedFilePaths) {
-      if (!this.app.vault.getAbstractFileByPath(filePath)) {
-        await this.repository.deleteVectorsForMultipleFiles(
-          [filePath],
-          embeddingModel,
-        )
+      if (didMutate) {
+        await this.requestSave()
       }
     }
+  }
+
+  async clearAllVectors(
+    embeddingModel: EmbeddingModelClient,
+    signal?: AbortSignal,
+  ) {
+    return this.runMutation(async (operationSignal) => {
+      throwIfAborted(operationSignal)
+      await this.repository.clearAllVectors(embeddingModel)
+      await this.requestVacuum()
+      await this.requestSave()
+    }, signal)
   }
 
   private async getFilesToIndex({
@@ -358,23 +482,19 @@ Please report this issue to the developer if it persists.`,
     excludePatterns,
     includePatterns,
     reindexAll,
+    scope,
   }: {
     embeddingModel: EmbeddingModelClient
     excludePatterns: string[]
     includePatterns: string[]
     reindexAll?: boolean
+    scope?: VectorScope
   }): Promise<TFile[]> {
-    let filesToIndex = this.app.vault.getMarkdownFiles()
-
-    filesToIndex = filesToIndex.filter((file) => {
-      return !excludePatterns.some((pattern) => minimatch(file.path, pattern))
+    let filesToIndex = this.getAllowedFiles({
+      excludePatterns,
+      includePatterns,
+      scope,
     })
-
-    if (includePatterns.length > 0) {
-      filesToIndex = filesToIndex.filter((file) => {
-        return includePatterns.some((pattern) => minimatch(file.path, pattern))
-      })
-    }
 
     if (reindexAll) {
       return filesToIndex
@@ -388,12 +508,26 @@ Please report this issue to the developer if it persists.`,
           file.path,
           embeddingModel,
         )
-        if (fileChunks.length === 0) {
+        const chunkIndexes = new Set(
+          fileChunks.map((chunk) => chunk.metadata.chunkIndex),
+        )
+        const complete = fileChunks.every(
+          (chunk) =>
+            chunk.dimension === embeddingModel.dimension &&
+            chunk.metadata.chunkCount === fileChunks.length &&
+            chunk.metadata.chunkIndex !== undefined,
+        )
+        if (
+          fileChunks.length === 0 ||
+          !complete ||
+          chunkIndexes.size !== fileChunks.length ||
+          !fileChunks.every((_, index) => chunkIndexes.has(index))
+        ) {
           // File is not indexed, so we need to index it
           const fileContent = await this.app.vault.cachedRead(file)
           if (fileContent.length === 0) {
-            // Ignore empty files
-            return null
+            // Ignore new empty files, but remove vectors left from old content.
+            return fileChunks.length > 0 ? file : null
           }
           return file
         }
@@ -407,6 +541,75 @@ Please report this issue to the developer if it persists.`,
     ).then((files) => files.filter(Boolean) as TFile[])
 
     return filesToIndex
+  }
+
+  private getAllowedFiles({
+    excludePatterns,
+    includePatterns,
+    scope,
+  }: {
+    excludePatterns: string[]
+    includePatterns: string[]
+    scope?: VectorScope
+  }): TFile[] {
+    const files = new Set(scope?.files)
+    const folders = scope?.folders.map((folder) =>
+      folder.endsWith('/') ? folder : `${folder}/`,
+    )
+    return this.app.vault.getMarkdownFiles().filter((file) => {
+      if (excludePatterns.some((pattern) => minimatch(file.path, pattern))) {
+        return false
+      }
+      if (
+        includePatterns.length > 0 &&
+        !includePatterns.some((pattern) => minimatch(file.path, pattern))
+      ) {
+        return false
+      }
+      return (
+        !scope ||
+        files.has(file.path) ||
+        folders?.some((folder) => file.path.startsWith(folder))
+      )
+    })
+  }
+
+  private runMutation<T>(
+    operation: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (this.closing) {
+      return Promise.reject(new DOMException('Operation aborted', 'AbortError'))
+    }
+    const result = this.mutationQueue.then(async () => {
+      if (this.closing) {
+        throw new DOMException('Operation aborted', 'AbortError')
+      }
+      throwIfAborted(signal)
+      const controller = new AbortController()
+      this.activeAbortController = controller
+      const abort = () => controller.abort(signal?.reason)
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        return await operation(controller.signal)
+      } finally {
+        signal?.removeEventListener('abort', abort)
+        if (this.activeAbortController === controller) {
+          this.activeAbortController = null
+        }
+      }
+    })
+    this.mutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  async cleanup(): Promise<void> {
+    this.closing = true
+    this.activeAbortController?.abort()
+    await this.mutationQueue
   }
 
   async getEmbeddingStats(): Promise<EmbeddingDbStats[]> {

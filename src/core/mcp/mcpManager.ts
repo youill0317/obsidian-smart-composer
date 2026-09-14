@@ -253,7 +253,7 @@ export class McpManager {
   }
 
   public async listAvailableTools(): Promise<McpTool[]> {
-    if (this.disabled) {
+    if (this.disabled || !this.settings.chatOptions.enableTools) {
       return []
     }
 
@@ -308,6 +308,8 @@ export class McpManager {
     requestToolName: string
     conversationId?: string
   }): boolean {
+    if (!this.isToolAvailable(requestToolName)) return false
+
     // Check if the tool is allowed for the conversation
     if (conversationId) {
       if (
@@ -364,6 +366,13 @@ export class McpManager {
     }
 
     if (signal?.aborted) return { status: ToolCallResponseStatus.Aborted }
+
+    if (!this.isToolAvailable(name)) {
+      return {
+        status: ToolCallResponseStatus.Error,
+        error: `MCP tool ${name} is disabled or unavailable`,
+      }
+    }
 
     const toolAbortController = new AbortController()
     if (id !== undefined) {
@@ -456,5 +465,21 @@ export class McpManager {
       return true
     }
     return false
+  }
+
+  private isToolAvailable(requestToolName: string): boolean {
+    if (this.disabled || !this.settings.chatOptions.enableTools) return false
+    try {
+      const { serverName, toolName } = parseToolName(requestToolName)
+      const server = this.servers.find((server) => server.name === serverName)
+      return !!(
+        server?.status === McpServerStatus.Connected &&
+        server.config.enabled &&
+        !server.config.toolOptions[toolName]?.disabled
+      )
+    } catch (error) {
+      if (error instanceof InvalidToolNameException) return false
+      throw error
+    }
   }
 }

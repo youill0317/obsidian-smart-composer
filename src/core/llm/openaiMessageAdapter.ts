@@ -57,7 +57,7 @@ export class OpenAIMessageAdapter {
   ): Promise<LLMResponseNonStreaming> {
     const response = await client.chat.completions.create(
       this.buildChatCompletionCreateParams({
-        request,
+        request: this.withSupportedPrediction(client, request),
         stream: false,
       }),
       {
@@ -74,7 +74,7 @@ export class OpenAIMessageAdapter {
   ): Promise<AsyncIterable<LLMResponseStreaming>> {
     const stream = await client.chat.completions.create(
       this.buildChatCompletionCreateParams({
-        request,
+        request: this.withSupportedPrediction(client, request),
         stream: true,
       }),
       {
@@ -91,6 +91,21 @@ export class OpenAIMessageAdapter {
     for await (const chunk of stream) {
       yield this.parseStreamingResponseChunk(chunk)
     }
+  }
+
+  private withSupportedPrediction<T extends LLMRequest>(
+    client: OpenAI,
+    request: T,
+  ): T {
+    if (
+      !request.prediction ||
+      (client.baseURL.replace(/\/+$/, '') === 'https://api.openai.com/v1' &&
+        /^gpt-(4o(?:-mini)?|4\.1(?:-mini|-nano)?)(?:-\d{4}-\d{2}-\d{2})?$/.test(
+          request.model,
+        ))
+    )
+      return request
+    return { ...request, prediction: undefined }
   }
 
   protected buildChatCompletionCreateParams(params: {

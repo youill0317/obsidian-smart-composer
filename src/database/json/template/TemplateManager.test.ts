@@ -3,6 +3,10 @@ import { App } from 'obsidian'
 import { TemplateManager } from './TemplateManager'
 import { TEMPLATE_SCHEMA_VERSION, Template } from './types'
 
+jest.mock('fuzzysort', () => ({
+  default: jest.requireActual('fuzzysort'),
+}))
+
 const mockAdapter = {
   exists: jest.fn().mockResolvedValue(true),
   mkdir: jest.fn().mockResolvedValue(undefined),
@@ -24,6 +28,7 @@ describe('TemplateManager', () => {
   let templateManager: TemplateManager
 
   beforeEach(() => {
+    jest.clearAllMocks()
     templateManager = new TemplateManager(mockApp)
   })
 
@@ -83,5 +88,66 @@ describe('TemplateManager', () => {
         expect(metadata.schemaVersion).toBe(template.schemaVersion)
       }
     })
+  })
+
+  it('does not overwrite another JSON file when the stored body ID is poisoned', async () => {
+    const id = '123e4567-e89b-12d3-a456-426614174000'
+    const fileName = `v1_Template_${id}.json`
+    mockAdapter.list.mockResolvedValue({
+      files: [`.smtcmp_json_db/templates/${fileName}`],
+      folders: [],
+    })
+    mockAdapter.exists.mockResolvedValue(true)
+    mockAdapter.read.mockResolvedValue(
+      JSON.stringify({
+        id: '../../../.obsidian/plugins/example/data',
+        name: 'Template',
+        content: { nodes: [] },
+        createdAt: 1,
+        updatedAt: 1,
+        schemaVersion: TEMPLATE_SCHEMA_VERSION,
+      }),
+    )
+    jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(
+      templateManager.updateTemplate(id, { name: 'Changed' }),
+    ).resolves.toBeNull()
+    await expect(templateManager.deleteTemplate(id)).resolves.toBe(false)
+    expect(mockAdapter.write).not.toHaveBeenCalled()
+    expect(mockAdapter.remove).not.toHaveBeenCalled()
+  })
+
+  it('skips corrupt template records without breaking search results', async () => {
+    const validId = '123e4567-e89b-12d3-a456-426614174000'
+    const corruptId = '223e4567-e89b-12d3-a456-426614174000'
+    const validFile = `v1_Valid_${validId}.json`
+    const corruptFile = `v1_Corrupt_${corruptId}.json`
+    mockAdapter.list.mockResolvedValue({
+      files: [
+        `.smtcmp_json_db/templates/${validFile}`,
+        `.smtcmp_json_db/templates/${corruptFile}`,
+      ],
+      folders: [],
+    })
+    mockAdapter.exists.mockResolvedValue(true)
+    mockAdapter.read.mockImplementation(async (filePath: string) => {
+      if (filePath.endsWith(validFile)) {
+        return JSON.stringify({
+          id: validId,
+          name: 'Valid',
+          content: { nodes: [] },
+          createdAt: 1,
+          updatedAt: 1,
+          schemaVersion: TEMPLATE_SCHEMA_VERSION,
+        })
+      }
+      return '{'
+    })
+    jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(templateManager.searchTemplates('')).resolves.toEqual([
+      expect.objectContaining({ id: validId, name: 'Valid' }),
+    ])
   })
 })

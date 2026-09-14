@@ -185,5 +185,22 @@ describe('settings 7_to_8 migration', () => {
         },
       ])
     })
+
+    it('preserves a custom model whose id collides with a new default', () => {
+      const custom = {
+        providerType: 'openai-compatible',
+        providerId: 'local',
+        id: 'gpt-4.1',
+        model: 'local-model',
+      }
+      const migratedSettings = migrateFrom7To8({
+        version: 7,
+        chatModels: [custom],
+        chatModelId: custom.id,
+      })
+
+      expect(migratedSettings.chatModels).toContainEqual(custom)
+      expect(migratedSettings.chatModelId).toBe(custom.id)
+    })
   })
 })

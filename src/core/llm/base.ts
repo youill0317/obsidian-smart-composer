@@ -13,6 +13,7 @@ import { LLMProvider } from '../../types/provider.types'
 export type ProviderEmbeddingOptions = {
   dimensions?: number
   purpose?: 'query' | 'document'
+  signal?: AbortSignal
 }
 
 // TODO: do these really have to be class? why not just function?

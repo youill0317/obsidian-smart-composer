@@ -4,6 +4,7 @@ import { BaseLLMProvider } from '../../core/llm/base'
 import { ToolManager } from '../../core/tools/toolManager'
 import { ChatMessage, ChatToolMessage } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
+import { CLI_TOOL_NAME } from '../../types/cli.types'
 import { RequestTool } from '../../types/llm/request'
 import {
   Annotation,
@@ -19,6 +20,10 @@ import {
 import { fetchAnnotationTitles } from './fetch-annotation-titles'
 import { PromptGenerator } from './promptGenerator'
 
+type AvailableTool = Awaited<
+  ReturnType<ToolManager['listAvailableTools']>
+>[number]
+
 export type ResponseGeneratorParams = {
   providerClient: BaseLLMProvider<LLMProvider>
   model: ChatModel
@@ -29,7 +34,7 @@ export type ResponseGeneratorParams = {
   promptGenerator: PromptGenerator
   toolManager: ToolManager
   abortSignal?: AbortSignal
-  consumeIteration?: () => boolean
+  cliAutoIterationBudget?: { remaining: number }
 }
 
 export class ResponseGenerator {
@@ -42,9 +47,10 @@ export class ResponseGenerator {
   private readonly abortSignal?: AbortSignal
   private readonly receivedMessages: ChatMessage[]
   private readonly maxAutoIterations: number
+  private readonly requestedAnnotationTitleUrls = new Set<string>()
 
   public reachedLimit = false
-  private consumeIteration?: () => boolean
+  private cliAutoIterationBudget?: { remaining: number }
 
   private responseMessages: ChatMessage[] = [] // Response messages that are generated after the initial messages
   private subscribers: ((messages: ChatMessage[]) => void)[] = []
@@ -59,7 +65,7 @@ export class ResponseGenerator {
     this.promptGenerator = params.promptGenerator
     this.toolManager = params.toolManager
     this.abortSignal = params.abortSignal
-    this.consumeIteration = params.consumeIteration
+    this.cliAutoIterationBudget = params.cliAutoIterationBudget
   }
 
   public subscribe(callback: (messages: ChatMessage[]) => void) {
@@ -71,16 +77,54 @@ export class ResponseGenerator {
   }
 
   public async run() {
-    for (let i = 0; i < this.maxAutoIterations; i++) {
+    let mcpIterationsRemaining = this.maxAutoIterations
+    const maxIterations =
+      mcpIterationsRemaining + (this.cliAutoIterationBudget?.remaining ?? 0)
+    for (let i = 0; i < maxIterations; i++) {
       if (this.abortSignal?.aborted) return
-      if (this.consumeIteration && !this.consumeIteration()) {
+      const cliIterationsRemaining = this.cliAutoIterationBudget?.remaining ?? 0
+      if (mcpIterationsRemaining <= 0 && cliIterationsRemaining <= 0) {
         this.reachedLimit = true
         return
       }
-      const { toolCallRequests } = await this.streamSingleResponse()
+      const currentlyAvailableTools = this.enableTools
+        ? await this.toolManager.listAvailableTools()
+        : []
+      const availableTools = currentlyAvailableTools.filter((tool) =>
+        tool.name === CLI_TOOL_NAME
+          ? cliIterationsRemaining > 0
+          : mcpIterationsRemaining > 0,
+      )
+      if (currentlyAvailableTools.length > 0 && availableTools.length === 0) {
+        this.reachedLimit = true
+        return
+      }
+      const { toolCallRequests, availableToolNames } =
+        await this.streamSingleResponse(availableTools)
       if (toolCallRequests.length === 0) {
         return
       }
+      const hasUnadvertisedToolCall = toolCallRequests.some(
+        (request) => !availableToolNames.has(request.name),
+      )
+
+      if (
+        this.cliAutoIterationBudget &&
+        toolCallRequests.some(
+          (request) =>
+            request.name === CLI_TOOL_NAME &&
+            availableToolNames.has(request.name),
+        )
+      )
+        this.cliAutoIterationBudget.remaining--
+      if (
+        toolCallRequests.some(
+          (request) =>
+            request.name !== CLI_TOOL_NAME &&
+            availableToolNames.has(request.name),
+        )
+      )
+        mcpIterationsRemaining--
 
       const toolMessage: ChatToolMessage = {
         role: 'tool' as const,
@@ -93,6 +137,7 @@ export class ResponseGenerator {
               : await this.toolManager.prepareCall(
                   toolCall,
                   this.conversationId,
+                  availableToolNames,
                 ),
           })),
         ),
@@ -159,20 +204,24 @@ export class ResponseGenerator {
         // Only 'success' or 'error' states are considered complete
         return
       }
+      if (hasUnadvertisedToolCall) {
+        this.reachedLimit = true
+        return
+      }
     }
     this.reachedLimit = true
   }
 
-  private async streamSingleResponse(): Promise<{
+  private async streamSingleResponse(availableTools: AvailableTool[]): Promise<{
     toolCallRequests: ToolCallRequest[]
+    availableToolNames: Set<string>
   }> {
     const requestMessages = await this.promptGenerator.generateRequestMessages({
       messages: [...this.receivedMessages, ...this.responseMessages],
+      signal: this.abortSignal,
     })
 
-    const availableTools = this.enableTools
-      ? await this.toolManager.listAvailableTools()
-      : []
+    const availableToolNames = new Set(availableTools.map((tool) => tool.name))
 
     // Set tools to undefined when no tools are available since some providers
     // reject empty tools arrays.
@@ -256,6 +305,7 @@ export class ResponseGenerator {
     )
     return {
       toolCallRequests: toolCallRequests,
+      availableToolNames,
     }
   }
 
@@ -277,28 +327,33 @@ export class ResponseGenerator {
 
     if (annotations) {
       // For annotations with empty titles, fetch the title of the URL and update the chat messages
-      fetchAnnotationTitles(annotations, (url, title) => {
-        this.updateResponseMessages((messages) =>
-          messages.map((message) =>
-            message.id === responseMessageId && message.role === 'assistant'
-              ? {
-                  ...message,
-                  annotations: message.annotations?.map((a) =>
-                    a.type === 'url_citation' && a.url_citation.url === url
-                      ? {
-                          ...a,
-                          url_citation: {
-                            ...a.url_citation,
-                            title: title ?? undefined,
-                          },
-                        }
-                      : a,
-                  ),
-                }
-              : message,
-          ),
-        )
-      })
+      fetchAnnotationTitles(
+        annotations,
+        (url, title) => {
+          this.updateResponseMessages((messages) =>
+            messages.map((message) =>
+              message.id === responseMessageId && message.role === 'assistant'
+                ? {
+                    ...message,
+                    annotations: message.annotations?.map((a) =>
+                      a.type === 'url_citation' && a.url_citation.url === url
+                        ? {
+                            ...a,
+                            url_citation: {
+                              ...a.url_citation,
+                              title: title ?? undefined,
+                            },
+                          }
+                        : a,
+                    ),
+                  }
+                : message,
+            ),
+          )
+        },
+        this.abortSignal,
+        this.requestedAnnotationTitleUrls,
+      )
     }
 
     const providerMetadata = chunk.choices[0]?.delta?.providerMetadata

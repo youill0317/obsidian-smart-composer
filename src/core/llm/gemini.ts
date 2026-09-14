@@ -27,7 +27,7 @@ import {
 import { LLMProvider } from '../../types/provider.types'
 import { parseImageDataUrl } from '../../utils/llm/image'
 
-import { BaseLLMProvider } from './base'
+import { BaseLLMProvider, ProviderEmbeddingOptions } from './base'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -546,7 +546,7 @@ export class GeminiProvider extends BaseLLMProvider<
   async getEmbedding(
     model: string,
     text: string,
-    options?: { dimensions?: number },
+    options?: ProviderEmbeddingOptions,
   ): Promise<number[]> {
     if (!this.apiKey) {
       throw new LLMAPIKeyNotSetException(
@@ -558,8 +558,11 @@ export class GeminiProvider extends BaseLLMProvider<
       const response = await this.client.models.embedContent({
         model: model,
         contents: text,
-        ...(options?.dimensions && {
-          config: { outputDimensionality: options.dimensions },
+        ...((options?.dimensions !== undefined || options?.signal) && {
+          config: {
+            outputDimensionality: options.dimensions,
+            abortSignal: options.signal,
+          },
         }),
       })
       return response.embeddings?.[0]?.values ?? []

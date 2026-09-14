@@ -13,9 +13,22 @@ import {
 } from '../../core/llm/exception'
 import { getChatModelClient } from '../../core/llm/manager'
 import { ChatMessage } from '../../types/chat'
-import { PromptGenerator } from '../../utils/chat/promptGenerator'
+import {
+  PromptGenerator,
+  createWebContentBudget,
+} from '../../utils/chat/promptGenerator'
 import { ResponseGenerator } from '../../utils/chat/responseGenerator'
 import { ErrorModal } from '../modals/ErrorModal'
+
+import { QueryProgressState } from './QueryProgress'
+
+type SubmitChatParams = {
+  chatMessages: ChatMessage[]
+  conversationId: string
+  resume?: boolean
+  useVaultSearch?: boolean
+  onQueryProgressChange?: (queryProgress: QueryProgressState) => void
+}
 
 type UseChatStreamManagerParams = {
   conversationId: string
@@ -26,11 +39,7 @@ type UseChatStreamManagerParams = {
 
 export type UseChatStreamManager = {
   abortActiveStreams: () => void
-  submitChatMutation: UseMutationResult<
-    void,
-    Error,
-    { chatMessages: ChatMessage[]; conversationId: string; resume?: boolean }
-  >
+  submitChatMutation: UseMutationResult<void, Error, SubmitChatParams>
 }
 
 export function useChatStreamManager({
@@ -45,7 +54,7 @@ export function useChatStreamManager({
 
   const budgetRef = useRef<{
     conversationId: string
-    remaining: number
+    cli: { remaining: number }
   } | null>(null)
 
   const activeStreamAbortControllersRef = useRef<AbortController[]>([])
@@ -101,11 +110,9 @@ export function useChatStreamManager({
       chatMessages,
       conversationId,
       resume,
-    }: {
-      chatMessages: ChatMessage[]
-      conversationId: string
-      resume?: boolean
-    }) => {
+      useVaultSearch,
+      onQueryProgressChange,
+    }: SubmitChatParams) => {
       const lastMessage = chatMessages.at(-1)
       if (!lastMessage) {
         // chatMessages is empty
@@ -119,46 +126,67 @@ export function useChatStreamManager({
       let unsubscribeResponseGenerator: (() => void) | undefined
 
       try {
+        const messagesToCompile = chatMessages.filter(
+          (message): message is Extract<ChatMessage, { role: 'user' }> =>
+            message.role === 'user' &&
+            (message.id === lastMessage.id || !message.promptContent),
+        )
+        const webContentBudget = createWebContentBudget(messagesToCompile)
+        const compiledMessages: ChatMessage[] = []
+        for (const message of chatMessages) {
+          if (
+            message.role === 'user' &&
+            (message.id === lastMessage.id || !message.promptContent)
+          ) {
+            const { promptContent, similaritySearchResults } =
+              await promptGenerator.compileUserMessagePrompt({
+                message,
+                useVaultSearch:
+                  message.id === lastMessage.id ? useVaultSearch : undefined,
+                onQueryProgressChange:
+                  message.id === lastMessage.id
+                    ? (progress) => {
+                        if (!abortController.signal.aborted) {
+                          onQueryProgressChange?.(progress)
+                        }
+                      }
+                    : undefined,
+                signal: abortController.signal,
+                webContentBudget,
+              })
+            compiledMessages.push({
+              ...message,
+              promptContent,
+              similaritySearchResults,
+            })
+          } else {
+            compiledMessages.push(message)
+          }
+        }
+        if (abortController.signal.aborted) return
+        setChatMessages(compiledMessages)
+
         const cliEnabled =
           settings.chatOptions.enableTools &&
           toolManager.cli.listAvailableTools().length > 0
-        const maxIterations = cliEnabled
-          ? settings.cli.maxAutoIterations
-          : settings.chatOptions.maxAutoIterations
         if (cliEnabled) {
           if (!resume)
-            budgetRef.current = { conversationId, remaining: maxIterations }
-          if (
-            !budgetRef.current ||
-            budgetRef.current.conversationId !== conversationId ||
-            budgetRef.current.remaining <= 0
-          ) {
-            new Notice(
-              'Automatic CLI work paused. Use Continue to start another round.',
-            )
-            return
-          }
+            budgetRef.current = {
+              conversationId,
+              cli: { remaining: settings.cli.maxAutoIterations },
+            }
         }
         const responseGenerator = new ResponseGenerator({
           providerClient,
           model,
-          messages: chatMessages,
+          messages: compiledMessages,
           conversationId,
           enableTools: settings.chatOptions.enableTools,
-          maxAutoIterations: maxIterations,
-          consumeIteration: cliEnabled
-            ? () => {
-                const budget = budgetRef.current
-                if (
-                  !budget ||
-                  budget.conversationId !== conversationId ||
-                  budget.remaining <= 0
-                )
-                  return false
-                budget.remaining--
-                return true
-              }
-            : undefined,
+          maxAutoIterations: settings.chatOptions.maxAutoIterations,
+          cliAutoIterationBudget:
+            cliEnabled && budgetRef.current?.conversationId === conversationId
+              ? budgetRef.current.cli
+              : undefined,
           promptGenerator,
           toolManager,
           abortSignal: abortController.signal,
@@ -187,11 +215,17 @@ export function useChatStreamManager({
         )
 
         await responseGenerator.run()
-        if (cliEnabled && responseGenerator.reachedLimit)
+        if (
+          cliEnabled &&
+          responseGenerator.reachedLimit &&
+          budgetRef.current?.conversationId === conversationId &&
+          budgetRef.current.cli.remaining <= 0
+        )
           new Notice(
             'Automatic CLI round limit reached. Use Continue if more work is needed.',
           )
       } catch (error) {
+        abortController.abort()
         // Ignore AbortError
         if (error instanceof Error && error.name === 'AbortError') {
           return

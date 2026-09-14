@@ -24,6 +24,7 @@ describe('ChatManager', () => {
   let chatManager: ChatManager
 
   beforeEach(() => {
+    jest.clearAllMocks()
     chatManager = new ChatManager(mockApp)
   })
 
@@ -76,5 +77,135 @@ describe('ChatManager', () => {
         expect(metadata.schemaVersion).toBe(chat.schemaVersion)
       }
     })
+  })
+
+  it('rejects a migrated chat ID that would escape the chat directory', async () => {
+    mockAdapter.exists.mockResolvedValue(false)
+
+    await expect(
+      chatManager.createChat({ id: '../../../.obsidian/plugins/example/data' }),
+    ).rejects.toThrow('Invalid record ID')
+    expect(mockAdapter.write).not.toHaveBeenCalled()
+  })
+
+  it('rejects a stored chat with a malformed similarity score', async () => {
+    const id = '123e4567-e89b-12d3-a456-426614174000'
+    const fileName = `v1_Chat_1620000000000_${id}.json`
+    const chat = {
+      id,
+      title: 'Chat',
+      messages: [
+        {
+          role: 'user',
+          id: 'message',
+          content: null,
+          promptContent: 'hello',
+          mentionables: [],
+          similaritySearchResults: [
+            {
+              id: 1,
+              path: 'note.md',
+              mtime: 1,
+              content: 'text',
+              model: 'model',
+              dimension: 3,
+              metadata: { startLine: 1, endLine: 1 },
+              similarity: 'not-a-number',
+            },
+          ],
+        },
+      ],
+      createdAt: 1620000000000,
+      updatedAt: 1620000000000,
+      schemaVersion: CHAT_SCHEMA_VERSION,
+    }
+    mockAdapter.list.mockResolvedValue({
+      files: [`.smtcmp_json_db/chats/${fileName}`],
+      folders: [],
+    })
+    mockAdapter.exists.mockResolvedValue(true)
+    mockAdapter.read.mockResolvedValue(JSON.stringify(chat))
+    jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(chatManager.findById(id)).resolves.toBeNull()
+  })
+
+  it('accepts persisted editor state and one-indexed block metadata', async () => {
+    const id = 'ABCDEF12-3456-7890-abcd-ef1234567890'
+    const fileName = `v1_Chat_1620000000000_${id}.json`
+    const chat = {
+      id,
+      title: 'Chat',
+      messages: [
+        {
+          role: 'user',
+          id: 'message',
+          content: {
+            root: {
+              children: [
+                {
+                  children: [
+                    {
+                      detail: 0,
+                      format: 0,
+                      mode: 'normal',
+                      style: '',
+                      text: 'hello',
+                      type: 'text',
+                      version: 1,
+                    },
+                  ],
+                  direction: 'ltr',
+                  format: '',
+                  indent: 0,
+                  type: 'paragraph',
+                  version: 1,
+                  textFormat: 0,
+                  textStyle: '',
+                },
+              ],
+              direction: 'ltr',
+              format: '',
+              indent: 0,
+              type: 'root',
+              version: 1,
+            },
+          },
+          promptContent: 'hello',
+          mentionables: [
+            {
+              type: 'block',
+              content: 'line',
+              file: 'note.md',
+              startLine: 1,
+              endLine: 1,
+            },
+          ],
+          similaritySearchResults: [
+            {
+              id: 1,
+              path: 'note.md',
+              mtime: 1,
+              content: 'line',
+              model: 'model',
+              dimension: 3,
+              metadata: { startLine: 1, endLine: 1 },
+              similarity: 0.75,
+            },
+          ],
+        },
+      ],
+      createdAt: 1620000000000,
+      updatedAt: 1620000000000,
+      schemaVersion: CHAT_SCHEMA_VERSION,
+    }
+    mockAdapter.list.mockResolvedValue({
+      files: [`.smtcmp_json_db/chats/${fileName}`],
+      folders: [],
+    })
+    mockAdapter.exists.mockResolvedValue(true)
+    mockAdapter.read.mockResolvedValue(JSON.stringify(chat))
+
+    await expect(chatManager.findById(id)).resolves.toEqual(chat)
   })
 })

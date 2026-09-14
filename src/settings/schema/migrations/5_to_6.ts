@@ -54,23 +54,36 @@ export const migrateFrom5To6: SettingMigration['migrate'] = (data) => {
       reasoning_effort: 'medium',
     }
 
-    // override existing model with same id
+    // Replace only the known OpenAI routing. Preserve custom collisions.
     const existingModel = existingModelsMap.get(newModel.id)
-    if (existingModel) {
+    if (
+      existingModel &&
+      existingModel.providerType === newModel.providerType &&
+      existingModel.providerId === newModel.providerId
+    ) {
       // Remove the existing model from the array
       newData.chatModels = newData.chatModels.filter(
         (model) => model.id !== newModel.id,
       )
     }
 
-    // Find the index of the model with id 'o1'
-    const o1Index = (newData.chatModels as unknown[]).findIndex(
-      (model: unknown) => {
-        return (model as { id: string }).id === 'o1'
-      },
-    )
-    const insertIndex = o1Index !== -1 ? o1Index + 1 : 0
-    ;(newData.chatModels as unknown[]).splice(insertIndex, 0, newModel)
+    if (
+      !existingModel ||
+      (existingModel.providerType === newModel.providerType &&
+        existingModel.providerId === newModel.providerId)
+    ) {
+      // Find the index of the model with id 'o1'
+      const o1Index = (newData.chatModels as unknown[]).findIndex(
+        (model: unknown) => {
+          return (model as { id: string }).id === 'o1'
+        },
+      )
+      const insertIndex = o1Index !== -1 ? o1Index + 1 : 0
+      ;(newData.chatModels as unknown[]).splice(insertIndex, 0, {
+        ...existingModel,
+        ...newModel,
+      })
+    }
   }
 
   return newData

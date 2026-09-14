@@ -41,7 +41,7 @@ describe('settings 2_to_3 migration', () => {
     expect(result.providers).toHaveLength(4) // 1 existing + 3 new
   })
 
-  it('should override provider type while preserving other settings when ID matches', () => {
+  it('preserves a custom provider when its ID matches a new default', () => {
     const oldSettings = {
       version: 2,
       providers: [
@@ -57,7 +57,7 @@ describe('settings 2_to_3 migration', () => {
     const result = migrateFrom2To3(oldSettings)
     expect(result.version).toBe(3)
     expect(result.providers).toContainEqual({
-      type: 'lm-studio', // Type is overridden
+      type: 'openai-compatible',
       id: 'lm-studio',
       baseUrl: 'http://localhost:1234', // Other settings preserved
       apiKey: 'test-key',
@@ -113,7 +113,7 @@ describe('settings 2_to_3 migration', () => {
     ])
   })
 
-  it('should override existing chat models with same ID', () => {
+  it('preserves a custom chat model with the same ID', () => {
     const oldSettings = {
       version: 2,
       providers: [],
@@ -128,8 +128,11 @@ describe('settings 2_to_3 migration', () => {
     }
 
     const result = migrateFrom2To3(oldSettings)
-    expect(result.chatModels).toContainEqual(
-      NEW_DEFAULT_CHAT_MODELS.find((m) => m.id === 'deepseek-chat'),
-    )
+    expect(result.chatModels).toContainEqual({
+      providerType: 'openai',
+      providerId: 'custom',
+      id: 'deepseek-chat',
+      model: 'custom-model',
+    })
   })
 })

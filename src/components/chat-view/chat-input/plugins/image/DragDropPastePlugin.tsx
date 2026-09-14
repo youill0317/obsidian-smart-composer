@@ -3,13 +3,10 @@ import { DRAG_DROP_PASTE } from '@lexical/rich-text'
 import { COMMAND_PRIORITY_LOW } from 'lexical'
 import { useEffect } from 'react'
 
-import { MentionableImage } from '../../../../../types/mentionable'
-import { fileToMentionableImage } from '../../../../../utils/llm/image'
-
 export default function DragDropPaste({
-  onCreateImageMentionables,
+  onUploadImages,
 }: {
-  onCreateImageMentionables?: (mentionables: MentionableImage[]) => void
+  onUploadImages?: (files: File[]) => void
 }): null {
   const [editor] = useLexicalComposerContext()
 
@@ -17,18 +14,13 @@ export default function DragDropPaste({
     return editor.registerCommand(
       DRAG_DROP_PASTE, // dispatched in RichTextPlugin
       (files) => {
-        ;(async () => {
-          const images = files.filter((file) => file.type.startsWith('image/'))
-          const mentionableImages = await Promise.all(
-            images.map(async (image) => await fileToMentionableImage(image)),
-          )
-          onCreateImageMentionables?.(mentionableImages)
-        })()
+        const images = files.filter((file) => file.type.startsWith('image/'))
+        onUploadImages?.(images)
         return true
       },
       COMMAND_PRIORITY_LOW,
     )
-  }, [editor, onCreateImageMentionables])
+  }, [editor, onUploadImages])
 
   return null
 }

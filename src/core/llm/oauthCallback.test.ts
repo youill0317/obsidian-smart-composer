@@ -13,7 +13,7 @@ describe.each([
   ['OpenAI', startCodexCallbackServer],
   ['Gemini', startGeminiCallbackServer],
 ] as const)('%s OAuth callback', (_name, start) => {
-  it.each(['success', 'invalid state', 'timeout'])(
+  it.each(['success', 'invalid state', 'missing state', 'timeout'])(
     'settles %s without waiting for an unfinished HTTP connection',
     async (outcome) => {
       const createServer = jest.spyOn(http, 'createServer')
@@ -38,24 +38,35 @@ describe.each([
         await once(held, 'connect')
         held.write('GET /unfinished HTTP/1.1\r\nHost: localhost\r\n')
         if (outcome !== 'timeout') {
-          const state = outcome === 'success' ? 'expected-state' : 'wrong'
-          await new Promise<void>((resolve, reject) => {
-            http
-              .get(
-                {
-                  host: '127.0.0.1',
-                  port,
-                  path: `/callback?state=${state}&code=fake-code`,
-                  agent: false,
-                },
-                (response) => {
-                  response.resume()
-                  response.on('end', resolve)
-                  response.on('error', reject)
-                },
-              )
-              .on('error', reject)
-          })
+          const send = (query: string) =>
+            new Promise<number | undefined>((resolve, reject) => {
+              http
+                .get(
+                  {
+                    host: '127.0.0.1',
+                    port,
+                    path: `/callback?${query}`,
+                    agent: false,
+                  },
+                  (response) => {
+                    response.resume()
+                    response.on('end', () => resolve(response.statusCode))
+                    response.on('error', reject)
+                  },
+                )
+                .on('error', reject)
+            })
+          if (outcome !== 'success') {
+            expect(
+              await send(
+                outcome === 'invalid state'
+                  ? 'state=wrong&code=fake-code'
+                  : 'code=fake-code',
+              ),
+            ).toBe(400)
+            expect(server.listening).toBe(true)
+          }
+          expect(await send('state=expected-state&code=fake-code')).toBe(200)
         }
         const result = await Promise.race([
           callback,
@@ -64,11 +75,9 @@ describe.each([
           }),
         ])
         expect(result).toBe(
-          outcome === 'success'
-            ? 'fake-code'
-            : outcome === 'invalid state'
-              ? 'Invalid state parameter'
-              : 'OAuth callback timeout - authorization took too long',
+          outcome === 'timeout'
+            ? 'OAuth callback timeout - authorization took too long'
+            : 'fake-code',
         )
       } finally {
         clearTimeout(deadline)

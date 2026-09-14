@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom'
 
 import { Template } from '../../../../../database/json/template/types'
 import { useTemplateManager } from '../../../../../hooks/useJsonManagers'
+import { sanitizeSerializedNodes } from '../../../../../utils/chat/serialized-editor-state'
 import { MenuOption } from '../shared/LexicalMenu'
 import {
   LexicalTypeaheadMenuPlugin,
@@ -89,8 +90,15 @@ export default function TemplatePlugin() {
       nodeToRemove: TextNode | null,
       closeMenu: () => void,
     ) => {
+      const sanitizedNodes = sanitizeSerializedNodes(
+        selectedOption.template.content.nodes,
+      )
+      if (!sanitizedNodes || sanitizedNodes.length === 0) {
+        closeMenu()
+        return
+      }
       editor.update(() => {
-        const parsedNodes = selectedOption.template.content.nodes.map((node) =>
+        const parsedNodes = sanitizedNodes.map((node) =>
           $parseSerializedNode(node),
         )
         if (nodeToRemove) {

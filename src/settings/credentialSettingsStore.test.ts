@@ -80,19 +80,20 @@ describe('Keychain credential settings', () => {
     },
   )
 
-  it('keeps legacy storage when the API is unavailable and warns once per provider', async () => {
+  it('uses session-only credentials when the API is unavailable and warns once', async () => {
     const f = fixture([api], false),
       store = f.createStore()
     await store.load(f.disk())
     await store.update((s) => ({ ...s, systemPrompt: 'changed' }))
-    expect(JSON.stringify(f.disk())).toContain(api.apiKey)
-    expect(store.getStatus(api.id).label).toBe('Plaintext')
+    expect(JSON.stringify(f.disk())).not.toContain(api.apiKey)
+    expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
+    expect(store.getStatus(api.id).label).toBe('Session only')
     expect(f.notice).toHaveBeenCalledTimes(1)
     expect(f.storage.setSecret).not.toHaveBeenCalled()
   })
 
   it.each(['write', 'read', 'mismatch'] as const)(
-    'falls back after %s failure without losing credentials',
+    'uses session memory after %s failure without writing plaintext',
     async (failure) => {
       const f = fixture([api]),
         store = f.createStore()
@@ -106,9 +107,9 @@ describe('Keychain credential settings', () => {
         })
       if (failure === 'mismatch') f.storage.getSecret.mockReturnValue('wrong')
       await store.load(f.disk())
-      expect(JSON.stringify(f.disk())).toContain(api.apiKey)
+      expect(JSON.stringify(f.disk())).not.toContain(api.apiKey)
       expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
-      expect(store.getStatus(api.id).label).toBe('Plaintext')
+      expect(store.getStatus(api.id).label).toBe('Session only')
       expect(JSON.stringify(f.notice.mock.calls)).not.toContain(
         'sensitive upstream detail',
       )
@@ -122,7 +123,7 @@ describe('Keychain credential settings', () => {
       throw new Error()
     })
     await store.load(f.disk())
-    expect(store.getStatus(api.id).label).toBe('Plaintext')
+    expect(store.getStatus(api.id).label).toBe('Session only')
     expect(store.getStatus('second').label).toBe('Keychain')
     await store.update((s) => ({ ...s, systemPrompt: 'changed' }))
     expect(store.getStatus(api.id).label).toBe('Keychain')

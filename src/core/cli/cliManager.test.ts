@@ -105,6 +105,7 @@ it('routes CLI even when MCP initialization fails', async () => {
   const response = await tools.prepareCall(
     { id: 'call', name: CLI_TOOL_NAME, arguments: '{}' },
     'chat',
+    new Set([CLI_TOOL_NAME]),
   )
   expect(response.status).toBe(Status.PendingApproval)
   const mcp = {
@@ -114,8 +115,39 @@ it('routes CLI even when MCP initialization fails', async () => {
   }
   const mixed = new ToolManager(cli, async () => mcp as unknown as McpManager)
   expect(await mixed.listAvailableTools()).toHaveLength(2)
+  await mixed.prepareCall(
+    { id: 'mcp', name: 'server__tool', arguments: '{}' },
+    'chat',
+    new Set(['server__tool']),
+  )
   await mixed.callTool({ name: 'server__tool', id: 'mcp', args: '{}' })
   expect(mcp.callTool).toHaveBeenCalledTimes(1)
+})
+
+it('rejects unadvertised and no-longer-available tool calls', async () => {
+  const cli = new CliManager({} as App, () =>
+    smartComposerSettingsSchema.parse({}),
+  )
+  const mcp = {
+    listAvailableTools: jest.fn().mockResolvedValue([{ name: 'server__tool' }]),
+    callTool: jest.fn().mockResolvedValue({ status: Status.Success }),
+    isToolExecutionAllowed: jest.fn().mockReturnValue(true),
+  }
+  const tools = new ToolManager(cli, async () => mcp as unknown as McpManager)
+
+  expect(
+    (await tools.callTool({ name: 'server__tool', id: 'stale' })).status,
+  ).toBe(Status.Error)
+  await tools.prepareCall(
+    { id: 'disabled', name: 'server__tool' },
+    'chat',
+    new Set(['server__tool']),
+  )
+  mcp.listAvailableTools.mockResolvedValue([])
+  expect(
+    (await tools.callTool({ name: 'server__tool', id: 'disabled' })).status,
+  ).toBe(Status.Error)
+  expect(mcp.callTool).not.toHaveBeenCalled()
 })
 
 it('validates real execution previews before asking for approval', async () => {
@@ -175,6 +207,7 @@ it('validates real execution previews before asking for approval', async () => {
     }).prepareCall(
       { id: 'invalid', name: CLI_TOOL_NAME, arguments: '{' },
       'chat',
+      new Set([CLI_TOOL_NAME]),
     )
     expect(invalid.status).toBe(Status.Error)
     settings.cli.connections[0].enabled = false
@@ -229,8 +262,16 @@ it('honors cancellation before and during MCP initialization', async () => {
   const initialization = new Promise<McpManager>((resolve) => {
     ready = resolve
   })
-  const tools = new ToolManager(cli, () => initialization)
+  let getMcpCalls = 0
+  const tools = new ToolManager(cli, () =>
+    getMcpCalls++ === 0 ? Promise.resolve(mcp) : initialization,
+  )
   const pendingController = new AbortController()
+  await tools.prepareCall(
+    { id: 'pending', name: 'server__write' },
+    'chat',
+    new Set(['server__write']),
+  )
   const pending = tools.callTool({
     name: 'server__write',
     id: 'pending',

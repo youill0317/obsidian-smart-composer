@@ -49,7 +49,7 @@ describe('settings 4_to_5 migration', () => {
     expect(result.chatModelId).toBe('claude-3.7-sonnet')
   })
 
-  it('should replace existing claude-3.7-sonnet-thinking with new configuration', () => {
+  it('preserves a colliding custom claude-3.7-sonnet-thinking', () => {
     const oldSettings = {
       version: 4,
       chatModels: [
@@ -72,12 +72,13 @@ describe('settings 4_to_5 migration', () => {
     expect(result.chatModels).toEqual([
       {
         providerType: 'anthropic',
-        providerId: 'anthropic',
+        providerId: 'custom-provider',
         id: 'claude-3.7-sonnet-thinking',
-        model: 'claude-3-7-sonnet-latest',
+        model: 'old-model-name',
         thinking: {
-          budget_tokens: 8192,
+          budget_tokens: 1000,
         },
+        enable: false,
       },
     ])
     expect(result.chatModelId).toBe('claude-3.7-sonnet-thinking')

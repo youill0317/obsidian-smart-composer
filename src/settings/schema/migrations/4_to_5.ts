@@ -20,16 +20,25 @@ export const migrateFrom4To5: SettingMigration['migrate'] = (data) => {
       },
     }
 
-    // override existing model with same id
+    // Replace only the known Anthropic routing. Preserve custom collisions.
     const existingModel = existingModelsMap.get(newModel.id)
-    if (existingModel) {
+    if (
+      existingModel &&
+      existingModel.providerType === newModel.providerType &&
+      existingModel.providerId === newModel.providerId
+    ) {
       // Remove the existing model from the array
       newData.chatModels = newData.chatModels.filter(
         (model) => model.id !== newModel.id,
       )
+      ;(newData.chatModels as unknown[]).splice(1, 0, {
+        ...existingModel,
+        ...newModel,
+      })
+    } else if (!existingModel) {
+      // Add the new model at index 1 of the array
+      ;(newData.chatModels as unknown[]).splice(1, 0, newModel)
     }
-    // Add the new model at index 1 of the array
-    ;(newData.chatModels as unknown[]).splice(1, 0, newModel)
   }
   return newData
 }

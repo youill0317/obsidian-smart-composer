@@ -605,8 +605,8 @@ export const migrateFrom1To2: SettingMigration['migrate'] = (
     'gemini/gemini-1.5-flash': 'gemini-1.5-flash',
 
     // Groq models
-    'groq/llama-3.1-70b-versatile': 'gpt-4o', // fallback to gpt-4o because groq/llama-3.1-70b is not in the default models
-    'groq/llama-3.1-8b-instant': 'gpt-4o-mini', // fallback to gpt-4o-mini because groq/llama-3.1-8b is not in the default models
+    'groq/llama-3.1-70b-versatile': 'groq/llama-3.1-70b',
+    'groq/llama-3.1-8b-instant': 'groq/llama-3.1-8b',
   }
 
   let chatModelId =
@@ -615,6 +615,24 @@ export const migrateFrom1To2: SettingMigration['migrate'] = (
     MODEL_ID_MAP[data.applyModelId] ??
     V2_DEFAULT_CHAT_MODELS.find((v) => v.id === 'gpt-4o-mini')?.id ??
     V2_DEFAULT_CHAT_MODELS[0].id
+
+  // This pre-3.1 Groq model was a valid legacy Apply choice. Keep it on Groq
+  // instead of selecting an unrelated cloud-provider fallback.
+  if (
+    data.chatModelId === 'groq/llama3-8b-8192' ||
+    data.applyModelId === 'groq/llama3-8b-8192'
+  ) {
+    chatModels.push({
+      providerType: 'groq',
+      providerId: V2_PROVIDER_TYPES_INFO.groq.defaultProviderId,
+      id: 'groq/llama3-8b-8192',
+      model: 'llama3-8b-8192',
+    })
+    if (data.chatModelId === 'groq/llama3-8b-8192')
+      chatModelId = 'groq/llama3-8b-8192'
+    if (data.applyModelId === 'groq/llama3-8b-8192')
+      applyModelId = 'groq/llama3-8b-8192'
+  }
 
   /**
    * handle Ollama migration
