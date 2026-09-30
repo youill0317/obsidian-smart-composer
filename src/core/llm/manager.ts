@@ -55,11 +55,16 @@ export function getProviderClient({
           const latest = current.providers.find(
             (item) => item.id === targetProviderId,
           )
+          const latestOauth = JSON.stringify(
+            latest && 'oauth' in latest ? latest.oauth : undefined,
+          )
+          // Adopting tokens another client already saved is always safe.
+          const isSync =
+            'oauth' in update && JSON.stringify(update.oauth) === latestOauth
           if (
             !latest ||
             latest.type !== provider.type ||
-            JSON.stringify('oauth' in latest ? latest.oauth : undefined) !==
-              expectedOauth
+            (latestOauth !== expectedOauth && !isSync)
           ) {
             throw new Error(
               'Credentials changed while the request was running. Please retry.',

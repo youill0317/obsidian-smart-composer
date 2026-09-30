@@ -28,7 +28,12 @@ describe('Migration from v17 to v18', () => {
     expect(CHAT_MODELS_RETIRED_IN_V18).toHaveLength(18)
     expect(CHAT_MODELS_ADDED_IN_V18).toHaveLength(9)
     expect(result.chatModels).toEqual(CHAT_MODELS_ADDED_IN_V18)
-    expect(result.chatModels).toEqual(DEFAULT_CHAT_MODELS)
+    // gpt-5.3-codex-spark was retired later, in v21.
+    expect(
+      (result.chatModels as { id: string }[]).filter(
+        (model) => model.id !== 'gpt-5.3-codex-spark (plan)',
+      ),
+    ).toEqual(DEFAULT_CHAT_MODELS)
     expect(result.chatModelId).toBe('claude-opus-5')
     expect(result.applyModelId).toBe('gpt-6-astra')
   })

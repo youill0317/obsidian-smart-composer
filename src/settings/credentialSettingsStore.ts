@@ -38,6 +38,25 @@ function ownsSecret(id: string) {
   return /^smart-composer-[0-9a-f-]{36}$/.test(id)
 }
 
+// Only the openai-plan references removed by the v20 -> v21 migration.
+function legacyReferences(data: unknown): string[] {
+  const { providers, version } =
+    (data as { providers?: unknown; version?: unknown } | null) ?? {}
+  if (!Array.isArray(providers) || typeof version !== 'number' || version >= 21)
+    return []
+  return providers
+    .filter(
+      (provider) =>
+        (provider as { type?: unknown } | null)?.type === 'openai-plan',
+    )
+    .map(
+      (provider) =>
+        (provider as { credentialsSecretId?: unknown } | null)
+          ?.credentialsSecretId,
+    )
+    .filter((id): id is string => typeof id === 'string' && ownsSecret(id))
+}
+
 /**
  * Runtime settings contain resolved credentials; only persist() may serialize
  * them. The public SecretStorage API cannot acknowledge durable disk writes.
@@ -56,6 +75,10 @@ export class CredentialSettingsStore {
     private onSaved: (settings: SmartComposerSettings) => void = () => {},
   ) {}
 
+  get hasKeychain() {
+    return !!this.storage
+  }
+
   getStatus(providerId: string): CredentialStatus {
     return (
       this.statuses.get(providerId) ?? {
@@ -67,7 +90,12 @@ export class CredentialSettingsStore {
 
   async load(data: unknown) {
     const parsed = parseSmartComposerSettings(data)
-    this.knownRefs = this.references(parsed)
+    // Migrations may drop references; keep them known so their secrets are
+    // cleared after the migrated settings are saved.
+    this.knownRefs = new Set([
+      ...this.references(parsed),
+      ...legacyReferences(data),
+    ])
     this.settings = {
       ...parsed,
       providers: parsed.providers.map((provider) => {
@@ -133,7 +161,8 @@ export class CredentialSettingsStore {
   private async persist(next: SmartComposerSettings, migrating = false) {
     const statuses = new Map<string, CredentialStatus>()
     let migrated = false
-    const providers = next.providers.map((provider): LLMProvider => {
+    const rejected = new Set<number>()
+    const providers = next.providers.map((provider, index): LLMProvider => {
       if (!hasCredentials(provider)) {
         statuses.set(
           provider.id,
@@ -176,6 +205,23 @@ export class CredentialSettingsStore {
 
       const fallback = { ...provider }
       delete fallback.credentialsSecretId
+      if (fallback.type === 'openai-plan') {
+        // Sign in with ChatGPT tokens must stay in protected storage.
+        delete fallback.oauth
+        rejected.add(index)
+        statuses.set(provider.id, {
+          label: 'Needs attention',
+          detail:
+            reason +
+            ' ChatGPT sign-in requires Obsidian Keychain and was not saved.',
+        })
+        this.warnOnce(
+          provider.id,
+          'Smart Composer: ChatGPT sign-in was not saved because Obsidian Keychain is unavailable. ' +
+            reason,
+        )
+        return fallback
+      }
       statuses.set(provider.id, {
         label: 'Plaintext',
         detail:
@@ -228,10 +274,12 @@ export class CredentialSettingsStore {
       ...next,
       providers: providers.map(
         (stored, index) =>
-          ({
-            ...stored,
-            ...credentials(next.providers[index]),
-          }) as LLMProvider,
+          (rejected.has(index)
+            ? stored
+            : {
+                ...stored,
+                ...credentials(next.providers[index]),
+              }) as LLMProvider,
       ),
     }
     this.statuses = statuses

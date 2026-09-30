@@ -1,8 +1,13 @@
 import { Check, CircleMinus } from 'lucide-react'
-import { App } from 'obsidian'
+import { App, Notice } from 'obsidian'
 
-import { PROVIDER_TYPES_INFO } from '../../../constants'
+import { CODEX_USAGE_URL, PROVIDER_TYPES_INFO } from '../../../constants'
 import { useSettings } from '../../../contexts/settings-context'
+import {
+  hasCodexPlanUsageScope,
+  revokeCodexRefreshToken,
+} from '../../../core/llm/codexAuth'
+import { waitForCodexRefresh } from '../../../core/llm/openaiCodexProvider'
 import SmartComposerPlugin from '../../../main'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
@@ -45,6 +50,9 @@ export function PlanConnectionsSection({
   const isClaudeConnected = !!claudePlanProvider?.oauth?.accessToken
   const isOpenAIConnected = !!openAIPlanProvider?.oauth?.accessToken
   const isGeminiConnected = !!geminiPlanProvider?.oauth?.accessToken
+  const isOpenAIPlanUsageAllowed = hasCodexPlanUsageScope(
+    openAIPlanProvider?.oauth?.scopes,
+  )
 
   const disconnect = (
     providerType: 'anthropic-plan' | 'openai-plan' | 'gemini-plan',
@@ -66,6 +74,9 @@ export function PlanConnectionsSection({
             : 'Disconnect Gemini from Smart Composer?',
       ctaText: 'Disconnect',
       onConfirm: async () => {
+        if (providerType === 'openai-plan') {
+          await revokeOpenAIPlanSession()
+        }
         await setSettings((current) => ({
           ...current,
           providers: current.providers.map((p) => {
@@ -74,11 +85,34 @@ export function PlanConnectionsSection({
               ...p,
               oauth: undefined,
               credentialsSecretId: undefined,
+              // ponytail: single-account UI, so drop the ChatGPT registration
+              // to allow a different account next time. Add an account picker
+              // to reuse registrations as the SIWC docs recommend.
+              ...(p.type === 'openai-plan' && { registration: undefined }),
             }
           }),
         }))
       },
     }).open()
+  }
+
+  // Ends the ChatGPT session remotely. Local tokens are cleared regardless.
+  const revokeOpenAIPlanSession = async () => {
+    await waitForCodexRefresh(OPENAI_PLAN_PROVIDER_ID)
+    const provider = plugin.settings.providers.find(
+      (p): p is Extract<LLMProvider, { type: 'openai-plan' }> =>
+        p.id === OPENAI_PLAN_PROVIDER_ID && p.type === 'openai-plan',
+    )
+    const refreshToken = provider?.oauth?.refreshToken
+    const clientId = provider?.registration?.clientId
+    if (!refreshToken || !clientId) return
+    try {
+      await revokeCodexRefreshToken(refreshToken, clientId)
+    } catch {
+      new Notice(
+        'Could not confirm ChatGPT sign-out. You can disconnect Smart Composer in ChatGPT settings.',
+      )
+    }
   }
 
   return (
@@ -99,9 +133,9 @@ export function PlanConnectionsSection({
           for full details and use at your own risk.
         </div>
         Use a subscription instead of API-key billing. Connected subscriptions
-        consume your plan&apos;s included usage (Codex for OpenAI, Claude Code
-        for Anthropic, Gemini Code Assist for Gemini). Subscriptions aren&apos;t
-        supported on mobile environments.
+        consume your plan&apos;s included usage (ChatGPT plan for OpenAI, Claude
+        Code for Anthropic, Gemini Code Assist for Gemini). Subscriptions
+        aren&apos;t supported on mobile environments.
         <br />
       </div>
 
@@ -150,15 +184,16 @@ export function PlanConnectionsSection({
           />
 
           <div className="smtcmp-plan-connection-card-desc">
-            Uses your Codex usage from your ChatGPT plan.
+            Uses your ChatGPT plan through Sign in with ChatGPT.
             <br />
-            <a
-              href="https://chatgpt.com/codex/settings/usage"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Check Codex usage and limits
+            <a href={CODEX_USAGE_URL} target="_blank" rel="noopener noreferrer">
+              Check ChatGPT usage and limits
             </a>
+            {isOpenAIConnected && !isOpenAIPlanUsageAllowed && (
+              <div className="smtcmp-plan-connect-error">
+                ChatGPT plan usage is not allowed for Smart Composer.
+              </div>
+            )}
           </div>
 
           <div className="smtcmp-plan-connection-card-actions">
@@ -170,7 +205,19 @@ export function PlanConnectionsSection({
                 Connect
               </button>
             )}
-            {(isOpenAIConnected || openAIPlanProvider?.credentialsSecretId) && (
+            {isOpenAIConnected && !isOpenAIPlanUsageAllowed && (
+              <button
+                className="mod-cta"
+                onClick={() =>
+                  new ConnectOpenAIPlanModal(app, plugin, true).open()
+                }
+              >
+                Allow plan usage
+              </button>
+            )}
+            {(isOpenAIConnected ||
+              openAIPlanProvider?.credentialsSecretId ||
+              openAIPlanProvider?.registration) && (
               <button onClick={() => disconnect('openai-plan')}>
                 Disconnect
               </button>
