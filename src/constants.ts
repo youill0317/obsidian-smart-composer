@@ -56,14 +56,14 @@ export const GEMINI_CODE_ASSIST_HEADERS = {
 } as const
 
 // Default model ids
-export const DEFAULT_CHAT_MODEL_ID = 'claude-opus-5'
+export const DEFAULT_CHAT_MODEL_ID = 'claude-opus-5-5'
 // Keep the API-backed apply default. Plan models require a separate OAuth
 // connection and must never be selected implicitly.
-export const DEFAULT_APPLY_MODEL_ID = 'gpt-6-astra'
+export const DEFAULT_APPLY_MODEL_ID = 'gpt-6-luna'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5', 'gpt-6-astra']
-export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-6-astra']
+export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5-5', 'gpt-6.1-sol']
+export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-6-luna']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
   'openai/text-embedding-3-small',
@@ -336,21 +336,33 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'openai-plan',
     providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-6-astra (plan)',
-    model: 'gpt-6-astra',
+    id: 'gpt-6.1-sol (plan)',
+    model: 'gpt-6.1-sol',
   },
   {
     providerType: 'openai',
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-6-astra',
-    model: 'gpt-6-astra',
+    id: 'gpt-6.1-sol',
+    model: 'gpt-6.1-sol',
     reasoning: { enabled: true, reasoning_effort: 'medium' },
+  },
+  {
+    providerType: 'openai-plan',
+    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
+    id: 'gpt-6-luna (plan)',
+    model: 'gpt-6-luna',
+  },
+  {
+    providerType: 'openai',
+    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
+    id: 'gpt-6-luna',
+    model: 'gpt-6-luna',
   },
   {
     providerType: 'anthropic-plan',
     providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
-    id: 'claude-opus-5 (plan)',
-    model: 'claude-opus-5',
+    id: 'claude-opus-5-5 (plan)',
+    model: 'claude-opus-5-5',
   },
   {
     providerType: 'gemini-plan',
@@ -361,8 +373,8 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'anthropic',
     providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,
-    id: 'claude-opus-5',
-    model: 'claude-opus-5',
+    id: 'claude-opus-5-5',
+    model: 'claude-opus-5-5',
   },
   {
     providerType: 'gemini',
@@ -379,8 +391,8 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'xai',
     providerId: PROVIDER_TYPES_INFO.xai.defaultProviderId,
-    id: 'grok-4.6',
-    model: 'grok-4.6',
+    id: 'grok-4.7',
+    model: 'grok-4.7',
   },
 ]
 
@@ -428,9 +440,9 @@ export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
   {
     providerType: 'gemini',
     providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini/text-embedding-004',
-    model: 'text-embedding-004',
-    dimension: 768,
+    id: 'gemini/gemini-embedding-2',
+    model: 'gemini-embedding-2',
+    dimension: 3072,
   },
   {
     providerType: 'ollama',
@@ -468,6 +480,8 @@ export type LongContextPricingRule = {
 }
 
 export const OPENAI_PRICES: Record<string, ModelPricing> = {
+  'gpt-6.1-sol': { input: 2, output: 10 },
+  'gpt-6-luna': { input: 0.1, output: 0.5 },
   'gpt-6-astra': { input: 10, output: 50 },
   'gpt-5.6-sol': { input: 4, output: 20 },
   'gpt-5.6-luna': { input: 0.2, output: 1.2 },
@@ -489,6 +503,7 @@ export const OPENAI_PRICES: Record<string, ModelPricing> = {
 }
 
 export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
+  'claude-opus-5-5': { input: 4, output: 20 },
   'claude-opus-5': { input: 5, output: 25 },
   'claude-opus-4-5': { input: 5, output: 25 },
   'claude-opus-4-1': { input: 15, output: 75 },
@@ -508,6 +523,7 @@ export const GEMINI_PRICES: Record<string, ModelPricing> = {
 }
 
 export const XAI_PRICES: Record<string, ModelPricing> = {
+  'grok-4.7': { input: 2, output: 6 },
   'grok-4.6': { input: 2, output: 6 },
   'grok-4-1-fast': { input: 0.2, output: 0.5 },
   'grok-4-1-fast-non-reasoning': { input: 0.2, output: 0.5 },
@@ -516,15 +532,22 @@ export const XAI_PRICES: Record<string, ModelPricing> = {
 export const DEEPSEEK_PRICES: Record<string, ModelPricing> = {
   // Peak, cache-miss pricing. Actual cost can be lower off-peak or on cache hit.
   'deepseek-v4-pro': { input: 1.32, output: 3.96 },
-  // Model version: DeepSeek-V3.2
-  'deepseek-chat': { input: 0.28, output: 0.42 },
-  'deepseek-reasoner': { input: 0.28, output: 0.42 },
 }
 
 export const LONG_CONTEXT_PRICING_RULES: Record<
   string,
   LongContextPricingRule
 > = {
+  'openai/gpt-6.1-sol': {
+    thresholdPromptTokens: 272_000,
+    thresholdInclusive: false,
+    pricing: { input: 4, output: 15 },
+  },
+  'openai/gpt-6-luna': {
+    thresholdPromptTokens: 272_000,
+    thresholdInclusive: false,
+    pricing: { input: 0.2, output: 0.75 },
+  },
   'openai/gpt-6-astra': {
     thresholdPromptTokens: 272_000,
     thresholdInclusive: false,
@@ -539,6 +562,11 @@ export const LONG_CONTEXT_PRICING_RULES: Record<
     thresholdPromptTokens: 200_000,
     thresholdInclusive: false,
     pricing: { input: 4, output: 18 },
+  },
+  'xai/grok-4.7': {
+    thresholdPromptTokens: 200_000,
+    thresholdInclusive: true,
+    pricing: { input: 4, output: 12 },
   },
   'xai/grok-4.6': {
     thresholdPromptTokens: 200_000,

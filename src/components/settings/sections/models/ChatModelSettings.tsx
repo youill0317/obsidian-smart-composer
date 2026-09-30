@@ -2,7 +2,7 @@ import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
 import {
-  ASTRA_REASONING_EFFORTS,
+  SOL_REASONING_EFFORTS,
   normalizeModelCompatibility,
 } from '../../../../core/llm/modelCompatibility'
 import SmartComposerPlugin from '../../../../main'
@@ -59,12 +59,14 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
       const typedModel = normalizeModelCompatibility(model) as ChatModel & {
         providerType: 'openai'
       }
-      const isAstra = model.model === 'gpt-6-astra'
-      const efforts: readonly string[] = isAstra
-        ? ASTRA_REASONING_EFFORTS
+      const requiresReasoning = ['gpt-6-astra', 'gpt-6.1-sol'].includes(
+        model.model,
+      )
+      const efforts: readonly string[] = requiresReasoning
+        ? SOL_REASONING_EFFORTS
         : ['low', 'medium', 'high']
       const [reasoningEnabled, setReasoningEnabled] = useState<boolean>(
-        isAstra || (typedModel.reasoning?.enabled ?? false),
+        requiresReasoning || (typedModel.reasoning?.enabled ?? false),
       )
       const [reasoningEffort, setReasoningEffort] = useState<string>(
         typedModel.reasoning?.reasoning_effort ?? 'medium',
@@ -103,7 +105,7 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          {!isAstra && (
+          {!requiresReasoning && (
             <ObsidianSetting
               name="Reasoning"
               desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
@@ -151,7 +153,9 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
       const typedModel = normalizeModelCompatibility(model) as ChatModel & {
         providerType: 'openai-plan'
       }
-      const isAstra = model.model === 'gpt-6-astra'
+      const requiresReasoning = ['gpt-6-astra', 'gpt-6.1-sol'].includes(
+        model.model,
+      )
       const [reasoningEffort, setReasoningEffort] = useState<string>(
         typedModel.reasoning?.reasoning_effort ?? '',
       )
@@ -200,12 +204,12 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               value={reasoningEffort}
               options={{
                 '': 'Not set (OpenAI default)',
-                ...(!isAstra && { none: 'none', minimal: 'minimal' }),
+                ...(!requiresReasoning && { none: 'none', minimal: 'minimal' }),
                 low: 'low',
                 medium: 'medium',
                 high: 'high',
                 xhigh: 'xhigh',
-                ...(isAstra && { max: 'max' }),
+                ...(requiresReasoning && { max: 'max' }),
               }}
               onChange={(value: string) => setReasoningEffort(value)}
             />

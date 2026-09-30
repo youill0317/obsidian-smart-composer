@@ -1,3 +1,4 @@
+import { DEFAULT_EMBEDDING_MODELS } from '../../constants'
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
 import { getProviderClient } from '../llm/manager'
 
@@ -41,6 +42,26 @@ describe('getEmbeddingModelClient', () => {
       dimensions: 3,
       purpose: 'query',
     })
+  })
+
+  it('uses the Gemini embedding default of 3072 without requesting a dimension override', async () => {
+    const values = Array(3072).fill(0.1)
+    const getEmbedding = jest.fn().mockResolvedValue(values)
+    mockedGetProviderClient.mockReturnValue({ getEmbedding } as never)
+    const client = getEmbeddingModelClient({
+      settings: { ...settings, embeddingModels: [...DEFAULT_EMBEDDING_MODELS] },
+      embeddingModelId: 'gemini/gemini-embedding-2',
+    })
+    expect(client.dimension).toBe(3072)
+    await expect(client.getEmbedding('document')).resolves.toEqual(values)
+    expect(getEmbedding).toHaveBeenCalledWith(
+      'gemini-embedding-2',
+      'document',
+      {
+        dimensions: undefined,
+        purpose: undefined,
+      },
+    )
   })
 
   it('rejects an embedding whose dimension does not match settings', async () => {
