@@ -72,7 +72,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
-      if (model.model === 'gpt-6-astra') {
+      if (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(model.model)) {
         return await this.responsesAdapter.generateResponse(
           {
             ...request,
@@ -145,7 +145,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
-      if (model.model === 'gpt-6-astra') {
+      if (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(model.model)) {
         return await this.responsesAdapter.streamResponse(
           {
             ...request,

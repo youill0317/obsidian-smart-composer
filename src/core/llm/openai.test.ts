@@ -16,8 +16,8 @@ jest.mock('obsidian', () => ({ Platform: { isDesktop: false } }), {
 const model: ChatModel = {
   providerType: 'openai',
   providerId: 'openai',
-  id: 'gpt-6-astra',
-  model: 'gpt-6-astra',
+  id: 'gpt-6.1-sol',
+  model: 'gpt-6.1-sol',
   reasoning: { enabled: true, reasoning_effort: 'high' },
 }
 const request: LLMRequestNonStreaming = {
@@ -69,7 +69,7 @@ function responseStream() {
   )
 }
 
-describe('OpenAI Astra Responses transport', () => {
+describe('OpenAI Sol Responses transport', () => {
   afterEach(() => jest.restoreAllMocks())
 
   it('surfaces server failures after an HTTP 200 response in both modes', async () => {
@@ -216,6 +216,33 @@ describe('OpenAI Astra Responses transport', () => {
       authenticated.generateResponse(model, request),
     ).rejects.toBeInstanceOf(LLMAPIKeyInvalidException)
   })
+
+  it.each(['gpt-6-luna', 'gpt-6-astra'])(
+    'uses Responses in both modes for %s',
+    async (name) => {
+      const fetchMock = jest
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(async () => responseStream())
+      const provider = new OpenAIAuthenticatedProvider({
+        type: 'openai',
+        id: 'openai',
+        apiKey: 'test-key',
+      })
+      const selected = { ...model, id: name, model: name, reasoning: undefined }
+      await provider.generateResponse(selected, { ...request, model: name })
+      const stream = await provider.streamResponse(selected, {
+        ...request,
+        model: name,
+        stream: true,
+      })
+      for await (const chunk of stream) expect(chunk.model).toBeDefined()
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      for (const [url, init] of fetchMock.mock.calls) {
+        expect(url).toBe('https://api.openai.com/v1/responses')
+        expect(JSON.parse(init?.body as string).model).toBe(name)
+      }
+    },
+  )
 
   it('keeps other OpenAI models on the existing adapter', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch')

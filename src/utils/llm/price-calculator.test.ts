@@ -11,10 +11,14 @@ const usage = {
 describe('calculateLLMCost', () => {
   it.each([
     ['openai', 'gpt-6-astra', 6],
+    ['openai', 'gpt-6.1-sol', 1.2],
+    ['openai', 'gpt-6-luna', 0.06],
+    ['deepseek', 'deepseek-chat', null],
+    ['deepseek', 'deepseek-reasoner', null],
     ['gemini', 'gemini-3.8-flash', 0.45],
     ['openai', 'gpt-5.6-sol', 2.4],
-    ['anthropic', 'claude-opus-5', 3],
-    ['xai', 'grok-4.6', 0.8],
+    ['anthropic', 'claude-opus-5-5', 2.4],
+    ['xai', 'grok-4.7', 0.8],
     ['deepseek', 'deepseek-v4-pro', 0.528],
   ] as const)('should price %s/%s', (providerType, model, expected) => {
     expect(
@@ -38,12 +42,19 @@ describe('calculateLLMCost', () => {
     ['openai', 'gpt-5.6-sol', 271_999, 3.087996],
     ['openai', 'gpt-5.6-sol', 272_000, 3.088],
     ['openai', 'gpt-5.6-sol', 272_001, 5.176008],
+    ['openai', 'gpt-6.1-sol', 271_999, 1.543998],
+    ['openai', 'gpt-6.1-sol', 272_000, 1.544],
+    ['openai', 'gpt-6.1-sol', 272_001, 2.588004],
+    ['openai', 'gpt-6-luna', 271_999, 0.0771999],
+    ['openai', 'gpt-6-luna', 272_000, 0.0772],
+    ['openai', 'gpt-6-luna', 272_001, 0.1294002],
+    ['anthropic', 'claude-opus-5-5', 272_001, 3.088004],
     ['openai', 'gpt-6-astra', 271_999, 7.71999],
     ['openai', 'gpt-6-astra', 272_000, 7.72],
     ['openai', 'gpt-6-astra', 272_001, 12.94002],
-    ['xai', 'grok-4.6', 199_999, 0.999998],
-    ['xai', 'grok-4.6', 200_000, 2],
-    ['xai', 'grok-4.6', 200_001, 2.000004],
+    ['xai', 'grok-4.7', 199_999, 0.999998],
+    ['xai', 'grok-4.7', 200_000, 2],
+    ['xai', 'grok-4.7', 200_001, 2.000004],
   ] as const)(
     'prices the %s/%s boundary at %s prompt tokens',
     (providerType, modelName, promptTokens, expected) => {
@@ -63,7 +74,7 @@ describe('calculateLLMCost', () => {
             total_tokens: promptTokens + 100_000,
           },
         }),
-      ).toBeCloseTo(expected)
+      ).toBeCloseTo(expected, 8)
     },
   )
 })

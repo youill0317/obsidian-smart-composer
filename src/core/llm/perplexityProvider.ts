@@ -9,7 +9,6 @@ import {
   LLMResponseStreaming,
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
-import { formatMessages } from '../../utils/llm/request'
 
 import { BaseLLMProvider } from './base'
 import { LLMAPIKeyNotSetException } from './exception'
@@ -25,11 +24,14 @@ export class PerplexityProvider extends BaseLLMProvider<
   constructor(provider: Extract<LLMProvider, { type: 'perplexity' }>) {
     super(provider)
     this.adapter = new PerplexityMessageAdapter()
+    const baseURL = (
+      provider.baseUrl ? provider.baseUrl : 'https://api.perplexity.ai/v1'
+    ).replace(/\/+$/, '')
     this.client = new NoStainlessOpenAI({
       apiKey: provider.apiKey ?? '',
-      baseURL: provider.baseUrl
-        ? provider.baseUrl.replace(/\/+$/, '')
-        : 'https://api.perplexity.ai',
+      // Upgrade the legacy official root; custom proxy base paths stay intact.
+      baseURL:
+        baseURL === 'https://api.perplexity.ai' ? `${baseURL}/v1` : baseURL,
       dangerouslyAllowBrowser: true,
     })
   }
@@ -50,7 +52,6 @@ export class PerplexityProvider extends BaseLLMProvider<
 
     const formattedRequest = {
       ...request,
-      messages: formatMessages(request.messages),
       web_search_options:
         model.web_search_options as LLMRequestNonStreaming['web_search_options'],
     }
@@ -74,7 +75,6 @@ export class PerplexityProvider extends BaseLLMProvider<
 
     const formattedRequest = {
       ...request,
-      messages: formatMessages(request.messages),
       web_search_options:
         model.web_search_options as LLMRequestStreaming['web_search_options'],
     }

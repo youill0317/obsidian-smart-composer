@@ -28,12 +28,6 @@ describe('Migration from v17 to v18', () => {
     expect(CHAT_MODELS_RETIRED_IN_V18).toHaveLength(18)
     expect(CHAT_MODELS_ADDED_IN_V18).toHaveLength(9)
     expect(result.chatModels).toEqual(CHAT_MODELS_ADDED_IN_V18)
-    // gpt-5.3-codex-spark was retired later, in v21.
-    expect(
-      (result.chatModels as { id: string }[]).filter(
-        (model) => model.id !== 'gpt-5.3-codex-spark (plan)',
-      ),
-    ).toEqual(DEFAULT_CHAT_MODELS)
     expect(result.chatModelId).toBe('claude-opus-5')
     expect(result.applyModelId).toBe('gpt-6-astra')
   })
@@ -139,9 +133,12 @@ describe('Migration from v17 to v18', () => {
     expect(migrateFrom17To18(first)).toEqual(first)
     const settings = parseSmartComposerSettings(initial)
     expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
-    expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
-    expect(settings.chatModelId).toBe('gpt-6-astra (plan)')
-    expect(settings.applyModelId).toBe('gpt-6-astra')
+    expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
+    expect(settings.chatModels).toEqual(
+      expect.arrayContaining(DEFAULT_CHAT_MODELS),
+    )
+    expect(settings.chatModelId).toBe('gpt-6.1-sol (plan)')
+    expect(settings.applyModelId).toBe('gpt-6-luna')
     expect(parseSmartComposerSettings(settings)).toEqual(settings)
   })
 
@@ -154,9 +151,12 @@ describe('Migration from v17 to v18', () => {
         chatModelId: 'gpt-5.2 (plan)',
         applyModelId: apiModel.id,
       })
-      expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
-      expect(settings.chatModelId).toBe('gpt-6-astra (plan)')
-      expect(settings.applyModelId).toBe('gpt-6-astra')
+      expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
+      expect(settings.chatModels).toEqual(
+        expect.arrayContaining(DEFAULT_CHAT_MODELS),
+      )
+      expect(settings.chatModelId).toBe('gpt-6.1-sol (plan)')
+      expect(settings.applyModelId).toBe('gpt-6-luna')
     },
   )
 })

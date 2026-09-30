@@ -14,7 +14,7 @@ jest.mock('./codexAuth', () => ({
 }))
 
 const request: LLMRequestNonStreaming = {
-  model: 'gpt-6-astra',
+  model: 'gpt-6.1-sol',
   messages: [
     { role: 'user', content: 'Read note' },
     {
@@ -42,7 +42,7 @@ function sse(events: unknown[]) {
 
 const created = {
   type: 'response.created',
-  response: { id: 'r', created_at: 1, model: 'gpt-6-astra', output: [] },
+  response: { id: 'r', created_at: 1, model: 'gpt-6.1-sol', output: [] },
 }
 
 describe('Sign in with ChatGPT authorize URL', () => {

@@ -56,14 +56,14 @@ describe('normalizeModelCompatibility', () => {
     },
   )
   it.each(['openai', 'openai-plan'] as const)(
-    'maps unsupported Astra efforts without changing saved %s settings',
+    'maps unsupported Sol efforts without changing saved %s settings',
     (providerType) => {
       for (const effort of ['none', 'minimal']) {
         const model = {
           providerType,
           providerId: providerType,
-          id: 'custom-astra',
-          model: 'gpt-6-astra',
+          id: 'custom-sol',
+          model: 'gpt-6.1-sol',
           reasoning: { enabled: true, reasoning_effort: effort },
         } as ChatModel
         expect(normalizeModelCompatibility(model)).toHaveProperty(
@@ -77,13 +77,13 @@ describe('normalizeModelCompatibility', () => {
     },
   )
   it.each(['anthropic', 'anthropic-plan'] as const)(
-    'removes legacy thinking budgets from Opus 5 on %s',
+    'removes legacy thinking budgets from Opus 5.5 on %s',
     (providerType) => {
       const model = {
         providerType,
         providerId: providerType,
-        id: `claude-opus-5-${providerType}`,
-        model: 'claude-opus-5',
+        id: `claude-opus-5-5-${providerType}`,
+        model: 'claude-opus-5-5',
         thinking: { enabled: true, budget_tokens: 8192 },
       } as ChatModel
       const normalized = normalizeModelCompatibility(model)
