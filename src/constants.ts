@@ -7,13 +7,17 @@ export const APPLY_VIEW_TYPE = 'smtcmp-apply-view'
 
 export const PGLITE_DB_PATH = '.smtcmp_vector_db.tar.gz'
 
-export const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
+// Sign in with ChatGPT (ChatGPT plan usage for open-source apps).
+// https://developers.openai.com/siwc/token-sharing-open-source
+export const CODEX_DYNAMIC_CLIENT_ID = 'dynamic_agent_client'
+export const CODEX_AGENT_NAME = 'Smart Composer'
 export const CODEX_ISSUER = 'https://auth.openai.com'
-export const CODEX_REDIRECT_PORT = 1455 // Other ports are blocked by OpenAI
-export const CODEX_REDIRECT_URI = `http://localhost:${CODEX_REDIRECT_PORT}/auth/callback`
-export const CODEX_AUTH_CLAIMS_URL = 'https://api.openai.com/auth'
-export const CODEX_RESPONSES_ENDPOINT =
-  'https://chatgpt.com/backend-api/codex/responses'
+export const CODEX_REDIRECT_PORT = 1455
+export const CODEX_REDIRECT_URI = `http://127.0.0.1:${CODEX_REDIRECT_PORT}/auth/callback`
+export const CODEX_RESOURCE = 'https://api.openai.com/v1'
+export const CODEX_PLAN_USAGE_SCOPE = 'chatgpt.tokens.use.direct'
+export const CODEX_RESPONSES_ENDPOINT = `${CODEX_RESOURCE}/responses`
+export const CODEX_USAGE_URL = 'https://chatgpt.com/settings/usage'
 
 export const CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 export const CLAUDE_CODE_AUTHORIZE_BASE_URL = 'https://claude.ai'
@@ -59,10 +63,7 @@ export const DEFAULT_APPLY_MODEL_ID = 'gpt-6-astra'
 
 // Recommended model ids
 export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5', 'gpt-6-astra']
-export const RECOMMENDED_MODELS_FOR_APPLY = [
-  'gpt-5.3-codex-spark (plan)',
-  'gpt-6-astra',
-]
+export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-6-astra']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
   'openai/text-embedding-3-small',
@@ -350,12 +351,6 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
     providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
     id: 'claude-opus-5 (plan)',
     model: 'claude-opus-5',
-  },
-  {
-    providerType: 'openai-plan',
-    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-5.3-codex-spark (plan)',
-    model: 'gpt-5.3-codex-spark',
   },
   {
     providerType: 'gemini-plan',

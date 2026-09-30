@@ -11,6 +11,33 @@ import { Platform } from 'obsidian'
 
 export type StreamSource = ReadableStream<Uint8Array> | NodeJS.ReadableStream
 
+/**
+ * Keeps the status, body and parsed error fields of a failed request. The
+ * message format is unchanged for existing callers.
+ */
+export class HttpRequestError extends Error {
+  code?: string
+  param?: string
+
+  constructor(
+    public status: number,
+    public body = '',
+    public requestId?: string,
+  ) {
+    super(`Request failed: ${status}${body ? ` ${body}` : ''}`)
+    this.name = 'HttpRequestError'
+    try {
+      const parsed = JSON.parse(body) as {
+        error?: { code?: string; param?: string }
+      }
+      this.code = parsed.error?.code ?? undefined
+      this.param = parsed.error?.param ?? undefined
+    } catch {
+      // Non-JSON body, such as {"detail": ...} text or HTML.
+    }
+  }
+}
+
 type PostOptions = {
   headers?: Record<string, string>
   signal?: AbortSignal
@@ -116,7 +143,11 @@ export async function postStream(
     })
 
     if (!response.ok || !response.body) {
-      throw new Error(`Request failed: ${response.status}`)
+      throw new HttpRequestError(
+        response.status,
+        await response.text().catch(() => ''),
+        response.headers.get('x-request-id') ?? undefined,
+      )
     }
 
     return response.body
@@ -126,7 +157,12 @@ export async function postStream(
   const status = response.statusCode ?? 0
   if (status < 200 || status >= 300) {
     const responseBody = await readStreamToString(response)
-    throw new Error(`Request failed: ${status} ${responseBody}`)
+    const requestId = response.headers['x-request-id']
+    throw new HttpRequestError(
+      status,
+      responseBody,
+      typeof requestId === 'string' ? requestId : undefined,
+    )
   }
 
   return response

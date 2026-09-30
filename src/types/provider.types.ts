@@ -36,7 +36,17 @@ export const llmProviderSchema = z.discriminatedUnion('type', [
         accessToken: z.string(),
         refreshToken: z.string(),
         expiresAt: z.number(),
-        accountId: z.string().optional(),
+        idToken: z.string(),
+        scopes: z.array(z.string()),
+      })
+      .optional(),
+    // Sign in with ChatGPT client registration. Unlike oauth, it is kept on
+    // disconnect so reconnecting reuses the issued client id.
+    registration: z
+      .object({
+        clientId: z.string(),
+        subject: z.string(),
+        email: z.string().optional(),
       })
       .optional(),
   }),

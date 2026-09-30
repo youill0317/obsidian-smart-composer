@@ -22,7 +22,7 @@ describe.each([
         redirectUri: 'http://127.0.0.1:0/callback',
         timeoutMs: outcome === 'timeout' ? 100 : 5000,
       }).then(
-        (code) => code,
+        (result) => (typeof result === 'string' ? result : result.code),
         (error: Error) => error.message,
       )
       // start() first awaits cleanup of the previous callback server.

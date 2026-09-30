@@ -3,10 +3,12 @@ import type { Server } from 'http'
 import { Platform } from 'obsidian'
 
 import {
-  CODEX_AUTH_CLAIMS_URL,
-  CODEX_CLIENT_ID,
+  CODEX_AGENT_NAME,
+  CODEX_DYNAMIC_CLIENT_ID,
   CODEX_ISSUER,
+  CODEX_PLAN_USAGE_SCOPE,
   CODEX_REDIRECT_URI,
+  CODEX_RESOURCE,
 } from '../../constants'
 
 type CodexPkceCodes = {
@@ -14,20 +16,26 @@ type CodexPkceCodes = {
   challenge: string
 }
 
-type CodexTokenResponse = {
+export type CodexTokenResponse = {
   id_token: string
   access_token: string
   refresh_token: string
   expires_in?: number
+  scope?: string
+}
+
+export type CodexCallbackResult = {
+  code: string
+  clientId?: string
 }
 
 type CodexIdTokenClaims = {
-  chatgpt_account_id?: string
-  organizations?: { id: string }[]
+  iss?: string
+  aud?: string | string[]
+  sub?: string
+  exp?: number
+  nonce?: string
   email?: string
-  [CODEX_AUTH_CLAIMS_URL]?: {
-    chatgpt_account_id?: string
-  }
 }
 
 type CodexCallbackConfig = {
@@ -37,29 +45,80 @@ type CodexCallbackConfig = {
   origin: string
 }
 
+type OpenIdConfiguration = {
+  jwks_uri: string
+  revocation_endpoint?: string
+}
+
+type Jwk = JsonWebKey & { kid?: string; alg?: string }
+
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
 
 let codexCallbackServer: Server | undefined
+let openIdConfiguration: Promise<OpenIdConfiguration> | undefined
+
+export class CodexOAuthError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message)
+    this.name = 'CodexOAuthError'
+  }
+}
+
+// Refresh errors that mean the stored token set can never be used again.
+const TERMINAL_REFRESH_ERRORS = new Set([
+  'invalid_grant',
+  'invalid_refresh_token',
+  'token_expired',
+  'refresh_token_expired',
+  'refresh_token_invalidated',
+  'refresh_token_reused',
+])
+
+export function isTerminalCodexRefreshError(error: unknown): boolean {
+  return (
+    error instanceof CodexOAuthError &&
+    !!error.code &&
+    TERMINAL_REFRESH_ERRORS.has(error.code)
+  )
+}
+
+export function hasCodexPlanUsageScope(scopes: string[] | undefined) {
+  return !!scopes?.includes(CODEX_PLAN_USAGE_SCOPE)
+}
 
 export function buildCodexAuthorizeUrl(params: {
   redirectUri?: string
   pkce: CodexPkceCodes
   state: string
+  nonce: string
+  hostId: string
+  // Issued client id for reauthorization; omit for first-time registration.
+  clientId?: string
+  idTokenHint?: string
+  loginHint?: string
+  forceConsent?: boolean
 }): string {
-  const redirectUri = params.redirectUri ?? CODEX_REDIRECT_URI
   const query = new URLSearchParams({
     response_type: 'code',
-    client_id: CODEX_CLIENT_ID,
-    redirect_uri: redirectUri,
-    scope: 'openid profile email offline_access',
+    client_id: params.clientId ?? CODEX_DYNAMIC_CLIENT_ID,
+    redirect_uri: params.redirectUri ?? CODEX_REDIRECT_URI,
+    scope: `openid profile email offline_access resource.invoke ${CODEX_PLAN_USAGE_SCOPE}`,
+    resource: CODEX_RESOURCE,
+    state: params.state,
+    nonce: params.nonce,
     code_challenge: params.pkce.challenge,
     code_challenge_method: 'S256',
-    id_token_add_organizations: 'true',
-    codex_cli_simplified_flow: 'true',
-    state: params.state,
-    originator: 'obsidian-smart-composer',
+    ext_agent_host_id: params.hostId,
   })
-  return `${CODEX_ISSUER}/oauth/authorize?${query.toString()}`
+  if (!params.clientId) query.set('agent_name_hint', CODEX_AGENT_NAME)
+  if (params.idTokenHint) query.set('id_token_hint', params.idTokenHint)
+  if (params.loginHint) query.set('login_hint', params.loginHint)
+  if (params.forceConsent) query.set('prompt', 'consent')
+  return `${CODEX_ISSUER}/api/accounts/authorize?${query.toString()}`
 }
 
 export function generateCodexState(): string {
@@ -75,33 +134,162 @@ export async function generateCodexPkce(): Promise<CodexPkceCodes> {
   return { verifier, challenge }
 }
 
+async function postTokenEndpoint(
+  body: Record<string, string>,
+): Promise<CodexTokenResponse> {
+  const response = await fetch(`${CODEX_ISSUER}/api/accounts/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ...body, resource: CODEX_RESOURCE }).toString(),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    let code: string | undefined
+    try {
+      const parsed = JSON.parse(text) as {
+        error?: string | { code?: string }
+      }
+      code =
+        typeof parsed.error === 'string' ? parsed.error : parsed.error?.code
+    } catch {
+      // Non-JSON error body.
+    }
+    throw new CodexOAuthError(
+      `ChatGPT token request failed: ${response.status}${code ? ` ${code}` : ''}`,
+      response.status,
+      code,
+    )
+  }
+  return (await response.json()) as CodexTokenResponse
+}
+
 export async function exchangeCodexCodeForTokens(params: {
   code: string
   redirectUri?: string
   pkceVerifier: string
+  clientId: string
 }): Promise<CodexTokenResponse> {
-  const response = await fetch(`${CODEX_ISSUER}/oauth/token`, {
+  return postTokenEndpoint({
+    grant_type: 'authorization_code',
+    code: params.code,
+    redirect_uri: params.redirectUri ?? CODEX_REDIRECT_URI,
+    client_id: params.clientId,
+    code_verifier: params.pkceVerifier,
+  })
+}
+
+export async function refreshCodexAccessToken(
+  refreshToken: string,
+  clientId: string,
+): Promise<CodexTokenResponse> {
+  return postTokenEndpoint({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: clientId,
+  })
+}
+
+function getOpenIdConfiguration(): Promise<OpenIdConfiguration> {
+  openIdConfiguration ??= fetch(
+    `${CODEX_ISSUER}/.well-known/openid-configuration`,
+  ).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(`OpenID configuration request failed: ${response.status}`)
+    }
+    return (await response.json()) as OpenIdConfiguration
+  })
+  openIdConfiguration.catch(() => {
+    openIdConfiguration = undefined
+  })
+  return openIdConfiguration
+}
+
+/**
+ * Verifies the ID token signature against OpenAI's JWKS and checks the
+ * issuer, audience, expiry and nonce. Returns the verified identity.
+ */
+export async function verifyCodexIdToken(
+  idToken: string,
+  expected: { clientId: string; nonce: string },
+): Promise<{ subject: string; email?: string }> {
+  const parts = idToken.split('.')
+  if (parts.length !== 3) throw new Error('Malformed ID token')
+  const header = JSON.parse(decodeBase64Url(parts[0])) as {
+    alg?: string
+    kid?: string
+  }
+  const claims = JSON.parse(decodeBase64Url(parts[1])) as CodexIdTokenClaims
+
+  const { jwks_uri } = await getOpenIdConfiguration()
+  const jwksResponse = await fetch(jwks_uri)
+  if (!jwksResponse.ok) {
+    throw new Error(`JWKS request failed: ${jwksResponse.status}`)
+  }
+  const { keys } = (await jwksResponse.json()) as { keys: Jwk[] }
+  const jwk = keys.find((key) => key.kid === header.kid)
+  if (!jwk) throw new Error('ID token signing key not found')
+
+  const alg = header.alg
+  if (alg !== 'RS256' && alg !== 'ES256') {
+    throw new Error(`Unsupported ID token algorithm: ${String(alg)}`)
+  }
+  const importParams =
+    alg === 'RS256'
+      ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }
+      : { name: 'ECDSA', namedCurve: 'P-256' }
+  const verifyParams =
+    alg === 'RS256'
+      ? { name: 'RSASSA-PKCS1-v1_5' }
+      : { name: 'ECDSA', hash: 'SHA-256' }
+  const key = await crypto.subtle.importKey('jwk', jwk, importParams, false, [
+    'verify',
+  ])
+  const valid = await crypto.subtle.verify(
+    verifyParams,
+    key,
+    base64UrlToBytes(parts[2]),
+    new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+  )
+  if (!valid) throw new Error('Invalid ID token signature')
+
+  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
+  if (claims.iss !== CODEX_ISSUER) throw new Error('Invalid ID token issuer')
+  if (!audiences.includes(expected.clientId)) {
+    throw new Error('Invalid ID token audience')
+  }
+  if (!claims.exp || claims.exp * 1000 <= Date.now()) {
+    throw new Error('ID token expired')
+  }
+  if (claims.nonce !== expected.nonce) throw new Error('Invalid ID token nonce')
+  if (!claims.sub) throw new Error('ID token has no subject')
+  return { subject: claims.sub, email: claims.email }
+}
+
+export async function revokeCodexRefreshToken(
+  refreshToken: string,
+  clientId: string,
+): Promise<void> {
+  const { revocation_endpoint } = await getOpenIdConfiguration()
+  if (!revocation_endpoint) throw new Error('No revocation endpoint')
+  const response = await fetch(revocation_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: params.code,
-      redirect_uri: params.redirectUri ?? CODEX_REDIRECT_URI,
-      client_id: CODEX_CLIENT_ID,
-      code_verifier: params.pkceVerifier,
+      token: refreshToken,
+      token_type_hint: 'refresh_token',
+      client_id: clientId,
     }).toString(),
   })
   if (!response.ok) {
-    throw new Error(`Codex token exchange failed: ${response.status}`)
+    throw new Error(`Token revocation failed: ${response.status}`)
   }
-  return (await response.json()) as CodexTokenResponse
 }
 
 export async function startCodexCallbackServer(params: {
   state: string
   redirectUri?: string
   timeoutMs?: number
-}): Promise<string> {
+}): Promise<CodexCallbackResult> {
   if (!Platform.isDesktop) {
     throw new Error('Codex callback server is not supported on mobile')
   }
@@ -170,10 +358,13 @@ export async function startCodexCallbackServer(params: {
       res.end(
         '<!doctype html><html><head><title>Authorization Successful</title></head><body><p>You can close this window.</p><script>setTimeout(() => window.close(), 2000)</script></body></html>',
       )
-      finalize(undefined, code)
+      finalize(undefined, {
+        code,
+        clientId: requestUrl.searchParams.get('client_id') ?? undefined,
+      })
     })
 
-    const finalize = (error?: Error, code?: string) => {
+    const finalize = (error?: Error, result?: CodexCallbackResult) => {
       if (finalized) return
       finalized = true
       clearTimeout(timeout)
@@ -182,8 +373,8 @@ export async function startCodexCallbackServer(params: {
       server.close()
       if (error) {
         reject(error)
-      } else if (code) {
-        resolve(code)
+      } else if (result) {
+        resolve(result)
       } else {
         reject(new Error('OAuth callback failed'))
       }
@@ -209,62 +400,6 @@ export async function stopCodexCallbackServer(): Promise<void> {
     codexCallbackServer?.close(() => resolve())
   })
   codexCallbackServer = undefined
-}
-
-export async function refreshCodexAccessToken(
-  refreshToken: string,
-): Promise<CodexTokenResponse> {
-  const response = await fetch(`${CODEX_ISSUER}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: CODEX_CLIENT_ID,
-    }).toString(),
-  })
-  if (!response.ok) {
-    throw new Error(`Codex token refresh failed: ${response.status}`)
-  }
-  return (await response.json()) as CodexTokenResponse
-}
-
-export function parseCodexJwtClaims(
-  token: string,
-): CodexIdTokenClaims | undefined {
-  const parts = token.split('.')
-  if (parts.length !== 3) return undefined
-  try {
-    const payload = decodeBase64Url(parts[1])
-    return JSON.parse(payload) as CodexIdTokenClaims
-  } catch {
-    return undefined
-  }
-}
-
-export function extractCodexAccountId(
-  tokens: CodexTokenResponse,
-): string | undefined {
-  if (tokens.id_token) {
-    const claims = parseCodexJwtClaims(tokens.id_token)
-    const accountId = claims && extractAccountIdFromClaims(claims)
-    if (accountId) return accountId
-  }
-  if (tokens.access_token) {
-    const claims = parseCodexJwtClaims(tokens.access_token)
-    return claims ? extractAccountIdFromClaims(claims) : undefined
-  }
-  return undefined
-}
-
-function extractAccountIdFromClaims(
-  claims: CodexIdTokenClaims,
-): string | undefined {
-  return (
-    claims.chatgpt_account_id ??
-    claims[CODEX_AUTH_CLAIMS_URL]?.chatgpt_account_id ??
-    claims.organizations?.[0]?.id
-  )
 }
 
 function generateRandomString(length: number): string {
@@ -306,4 +441,8 @@ function decodeBase64Url(value: string): string {
     '=',
   )
   return atob(padded)
+}
+
+function base64UrlToBytes(value: string): Uint8Array {
+  return Uint8Array.from(decodeBase64Url(value), (char) => char.charCodeAt(0))
 }

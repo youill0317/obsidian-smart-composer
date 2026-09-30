@@ -32,17 +32,47 @@ type CodexAdapterConfig = {
   endpoint?: string
   fetchFn?: typeof fetch
   includeMaxOutputTokens?: boolean
+  // Wrap function tools in a namespace (required by ChatGPT plan usage).
+  toolNamespace?: string
+}
+
+/** A Responses stream that failed, was interrupted, or reported an error. */
+export class ResponseStreamError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public param?: string,
+  ) {
+    super(message)
+    this.name = 'ResponseStreamError'
+  }
+}
+
+function toStreamError(
+  error:
+    | { code?: string | null; message?: string; param?: string | null }
+    | null
+    | undefined,
+  fallback: string,
+) {
+  return new ResponseStreamError(
+    error?.message ?? fallback,
+    error?.code ?? undefined,
+    error?.param ?? undefined,
+  )
 }
 
 export class CodexMessageAdapter {
   private endpoint: string
   private fetchFn?: typeof fetch
   private includeMaxOutputTokens: boolean
+  private toolNamespace?: string
 
   constructor(config: CodexAdapterConfig = {}) {
     this.endpoint = config.endpoint ?? CODEX_RESPONSES_ENDPOINT
     this.fetchFn = config.fetchFn
     this.includeMaxOutputTokens = config.includeMaxOutputTokens ?? false
+    this.toolNamespace = config.toolNamespace
   }
 
   async generateResponse(
@@ -60,6 +90,7 @@ export class CodexMessageAdapter {
 
     let summaryText = ''
     let responsePayload: Response | undefined
+    let sawTerminal = false
     for await (const chunk of parseJsonSseStream<ResponseStreamEvent>(stream)) {
       if (chunk.type === 'response.created') {
         responsePayload = chunk.response
@@ -67,11 +98,18 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'error') {
-        throw new Error(chunk.message)
+        throw toStreamError(chunk, 'Response stream error')
       }
 
       if (chunk.type === 'response.failed') {
-        throw new Error(chunk.response.error?.message ?? 'Response failed')
+        throw toStreamError(chunk.response.error, 'Response failed')
+      }
+
+      if (
+        chunk.type === 'response.completed' ||
+        chunk.type === 'response.incomplete'
+      ) {
+        sawTerminal = true
       }
 
       if (!responsePayload) {
@@ -97,6 +135,9 @@ export class CodexMessageAdapter {
 
     if (!responsePayload) {
       throw new Error('Stream ended without receiving a response payload')
+    }
+    if (!sawTerminal) {
+      throw new ResponseStreamError('Response stream ended before completion')
     }
 
     const content = extractResponseText(responsePayload)
@@ -154,6 +195,7 @@ export class CodexMessageAdapter {
       { id?: string; name?: string }
     >()
     const toolCallHasDelta = new Set<number>()
+    let sawTerminal = false
 
     const getChunkId = (itemId?: string) =>
       responseId.length > 0 ? responseId : (itemId ?? 'codex-response')
@@ -351,6 +393,7 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'response.completed') {
+        sawTerminal = true
         yield {
           id: getChunkId(),
           created,
@@ -369,6 +412,7 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'response.incomplete') {
+        sawTerminal = true
         yield {
           id: getChunkId(),
           created,
@@ -387,11 +431,14 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'error') {
-        throw new Error(chunk.message)
+        throw toStreamError(chunk, 'Response stream error')
       }
       if (chunk.type === 'response.failed') {
-        throw new Error(chunk.response.error?.message ?? 'Response failed')
+        throw toStreamError(chunk.response.error, 'Response failed')
       }
+    }
+    if (!sawTerminal) {
+      throw new ResponseStreamError('Response stream ended before completion')
     }
   }
 
@@ -402,18 +449,31 @@ export class CodexMessageAdapter {
     request: LLMRequest
     stream: boolean
   }): ResponseCreateParamsBase {
-    const { input, instructions } = buildResponsesInput(request.messages)
-    const tools = request.tools
-      ? request.tools.map(
-          (tool): FunctionTool => ({
-            type: 'function',
-            name: tool.function.name,
-            description: tool.function.description ?? null,
-            parameters: tool.function.parameters,
-            strict: false,
-          }),
-        )
-      : undefined
+    const { input, instructions } = buildResponsesInput(
+      request.messages,
+      this.toolNamespace,
+    )
+    const functionTools = request.tools?.map(
+      (tool): FunctionTool => ({
+        type: 'function',
+        name: tool.function.name,
+        description: tool.function.description ?? null,
+        parameters: tool.function.parameters,
+        strict: false,
+      }),
+    )
+    // The installed SDK types predate namespace tools.
+    const tools =
+      functionTools && this.toolNamespace
+        ? ([
+            {
+              type: 'namespace',
+              name: this.toolNamespace,
+              description: 'Smart Composer tools for the Obsidian vault.',
+              tools: functionTools,
+            },
+          ] as unknown as FunctionTool[])
+        : functionTools
     const reasoning =
       request.reasoning_effort || request.reasoning_summary
         ? {
@@ -445,7 +505,10 @@ export class CodexMessageAdapter {
   }
 }
 
-function buildResponsesInput(messages: RequestMessage[]): {
+function buildResponsesInput(
+  messages: RequestMessage[],
+  toolNamespace?: string,
+): {
   input: ResponseInput
   instructions?: string
 } {
@@ -482,7 +545,8 @@ function buildResponsesInput(messages: RequestMessage[]): {
             call_id: toolCall.id,
             name: toolCall.name,
             arguments: toolCall.arguments ?? '{}',
-          })
+            ...(toolNamespace && { namespace: toolNamespace }),
+          } as ResponseInputItem)
         }
       }
       continue

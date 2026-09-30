@@ -55,7 +55,7 @@ async function setup(type: PlanType) {
 }
 
 describe('OAuth credential updates', () => {
-  it.each(['openai-plan', 'anthropic-plan', 'gemini-plan'] as const)(
+  it.each(['anthropic-plan', 'gemini-plan'] as const)(
     '%s updates Keychain through the shared settings path without mutating a snapshot',
     async (type) => {
       const { client, store, values, disk } = await setup(type)
@@ -83,7 +83,7 @@ describe('OAuth credential updates', () => {
   it.each(['disconnect', 'reconnect', 'delete', 'reset'] as const)(
     'rejects a late token update after %s',
     async (action) => {
-      const { client, store, disk } = await setup('openai-plan')
+      const { client, store, disk } = await setup('anthropic-plan')
       await store.update((s) => ({
         ...s,
         providers:
@@ -92,7 +92,7 @@ describe('OAuth credential updates', () => {
             : [
                 {
                   id: 'plan',
-                  type: 'openai-plan',
+                  type: 'anthropic-plan',
                   ...(action === 'reconnect'
                     ? { oauth: { ...oauth, refreshToken: 'new-login' } }
                     : {}),
@@ -106,4 +106,21 @@ describe('OAuth credential updates', () => {
       expect(JSON.stringify(disk())).toBe(saved)
     },
   )
+
+  it('lets a stale client adopt tokens another client saved, then refresh', async () => {
+    const { client: saver, store } = await setup('anthropic-plan')
+    const stale = getProviderClient({
+      providerId: 'plan',
+      settings: store.settings,
+      setSettings: (update) => store.update(update),
+    }) as unknown as Client
+    const shared = { ...oauth, refreshToken: 'shared' }
+    await saver.onUpdate('plan', { oauth: shared })
+    await expect(
+      stale.onUpdate('plan', { oauth: { ...oauth, refreshToken: 'other' } }),
+    ).rejects.toThrow('Credentials changed')
+    await stale.onUpdate('plan', { oauth: shared })
+    await stale.onUpdate('plan', { oauth: { ...shared, refreshToken: 'next' } })
+    expect(JSON.stringify(store.settings)).toContain('next')
+  })
 })

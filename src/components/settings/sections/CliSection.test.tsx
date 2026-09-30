@@ -47,7 +47,7 @@ it('preserves rotated credentials and consecutive CLI edits from an older render
     providers: [
       {
         id: 'plan',
-        type: 'openai-plan',
+        type: 'anthropic-plan',
         oauth: {
           accessToken: 'test-access',
           refreshToken: 'test-old',
@@ -89,7 +89,7 @@ it('preserves rotated credentials and consecutive CLI edits from an older render
   const refresh = store.update((current) => ({
     ...current,
     providers: current.providers.map((provider) =>
-      provider.type === 'openai-plan' && provider.oauth
+      provider.type === 'anthropic-plan' && provider.oauth
         ? {
             ...provider,
             oauth: { ...provider.oauth, refreshToken: 'test-new' },
@@ -104,9 +104,9 @@ it('preserves rotated credentials and consecutive CLI edits from an older render
   release()
   await Promise.all([refresh, ...updates])
   const provider = store.settings.providers[0]
-  expect(provider.type === 'openai-plan' && provider.oauth?.refreshToken).toBe(
-    'test-new',
-  )
+  expect(
+    provider.type === 'anthropic-plan' && provider.oauth?.refreshToken,
+  ).toBe('test-new')
   expect(
     store.settings.cli.connections.map((connection) => connection.enabled),
   ).toEqual([true, true])

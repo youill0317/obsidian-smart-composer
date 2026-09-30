@@ -44,7 +44,7 @@ function fixture(providers: LLMProvider[], available = true) {
 }
 
 describe('Keychain credential settings', () => {
-  it.each(['anthropic-plan', 'openai-plan', 'gemini-plan'] as const)(
+  it.each(['anthropic-plan', 'gemini-plan'] as const)(
     'migrates and reloads API and %s credentials without plaintext copies',
     async (type) => {
       const auth = {
@@ -204,7 +204,7 @@ describe('Keychain credential settings', () => {
   })
 
   it('serializes functional changes without losing a rotated token or general settings', async () => {
-    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
       store = f.createStore()
     await store.load(f.disk())
     await Promise.all([
@@ -212,7 +212,7 @@ describe('Keychain credential settings', () => {
       store.update((s) => ({
         ...s,
         providers: s.providers.map((p) =>
-          p.type === 'openai-plan'
+          p.type === 'anthropic-plan'
             ? { ...p, oauth: { ...oauth, refreshToken: 'rotated-secret' } }
             : p,
         ),
@@ -226,7 +226,7 @@ describe('Keychain credential settings', () => {
   })
 
   it('retains rotated credentials for retry after the settings file write fails', async () => {
-    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
       store = f.createStore()
     await store.load(f.disk())
     f.save.mockRejectedValueOnce(new Error('disk full'))
@@ -234,7 +234,7 @@ describe('Keychain credential settings', () => {
       store.update((s) => ({
         ...s,
         providers: s.providers.map((p) =>
-          p.type === 'openai-plan'
+          p.type === 'anthropic-plan'
             ? {
                 ...p,
                 oauth: { ...oauth, refreshToken: 'rotated-after-failure' },
@@ -251,7 +251,7 @@ describe('Keychain credential settings', () => {
   })
 
   it('clears explicitly disconnected credentials without touching other secrets', async () => {
-    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
       store = f.createStore()
     f.secrets.set('another-plugin', 'untouched')
     await store.load(f.disk())
@@ -259,7 +259,7 @@ describe('Keychain credential settings', () => {
     if (!id) throw new Error('Missing test credential reference')
     await store.update((s) => ({
       ...s,
-      providers: [{ id: 'plan', type: 'openai-plan' }],
+      providers: [{ id: 'plan', type: 'anthropic-plan' }],
     }))
     expect(f.secrets.get(id)).toBe('')
     expect(f.secrets.get('another-plugin')).toBe('untouched')
@@ -267,6 +267,62 @@ describe('Keychain credential settings', () => {
     await reloaded.load(f.disk())
     expect(reloaded.getStatus('plan').label).toBe('Not configured')
     expect(JSON.stringify(reloaded.settings)).not.toContain(oauth.refreshToken)
+  })
+
+  it('clears legacy ChatGPT plan secrets after migration drops them', async () => {
+    const f = fixture([
+      { id: 'openai-plan', type: 'openai-plan', credentialsSecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ oauth }))
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(f.secrets.get(secretId)).toBe('')
+    expect(store.settings.providers[0].credentialsSecretId).toBeUndefined()
+  })
+
+  it('keeps other providers secrets when settings fail validation', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, credentialsSecretId: secretId },
+      { id: 'broken', type: 'azure-openai' } as unknown as LLMProvider,
+    ])
+    f.secrets.set(secretId, JSON.stringify({ apiKey: api.apiKey }))
+    await f.createStore().load(f.disk())
+    expect(f.secrets.get(secretId)).toBe(JSON.stringify({ apiKey: api.apiKey }))
+  })
+
+  it('keeps legacy secrets when saving the migrated settings fails', async () => {
+    const f = fixture([
+      { id: 'openai-plan', type: 'openai-plan', credentialsSecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ oauth }))
+    f.save.mockRejectedValueOnce(new Error('disk full'))
+    await f.createStore().load(f.disk())
+    expect(f.secrets.get(secretId)).toBe(JSON.stringify({ oauth }))
+  })
+
+  it('refuses to store ChatGPT plan tokens as plaintext', async () => {
+    const f = fixture([], false),
+      store = f.createStore()
+    await store.load(f.disk())
+    await store.update((s) => ({
+      ...s,
+      providers: [
+        {
+          id: 'openai-plan',
+          type: 'openai-plan',
+          registration: { clientId: 'oaiapp_1', subject: 'user' },
+          oauth: { ...oauth, idToken: 'id', scopes: [] },
+        },
+      ],
+    }))
+    const provider = store.settings.providers[0]
+    expect(provider.type === 'openai-plan' && provider.oauth).toBeFalsy()
+    expect(provider.type === 'openai-plan' && provider.registration).toEqual({
+      clientId: 'oaiapp_1',
+      subject: 'user',
+    })
+    expect(JSON.stringify(f.disk())).not.toContain(oauth.refreshToken)
+    expect(store.getStatus('openai-plan').label).toBe('Needs attention')
   })
 
   it('reports failed cleanup without restoring the disconnected reference', async () => {
