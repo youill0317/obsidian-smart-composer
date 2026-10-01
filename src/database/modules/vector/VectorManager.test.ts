@@ -78,3 +78,27 @@ it('only indexes files inside the query scope', async () => {
     [expect.objectContaining({ path: 'public/a.md' })],
   ])
 })
+
+it('removes partially embedded files so the next update retries them', async () => {
+  const { manager, repository, cachedRead } = setup([])
+  repository.getVectorsByFilePath.mockResolvedValue([])
+  Object.assign(repository, { insertVectors: jest.fn() })
+  cachedRead.mockImplementation((file: { path: string }) =>
+    Promise.resolve(file.path === 'private/b.md' ? 'bad' : 'good'),
+  )
+  const model = {
+    id: 'model',
+    dimension: 1,
+    getEmbedding: (text: string) =>
+      text === 'bad' ? Promise.reject(new Error('fail')) : Promise.resolve([1]),
+  } as never
+  await manager.updateVaultIndex(model, {
+    chunkSize: 1000,
+    excludePatterns: [],
+    includePatterns: [],
+  })
+  expect(repository.deleteVectorsForMultipleFiles).toHaveBeenLastCalledWith(
+    ['private/b.md'],
+    model,
+  )
+})

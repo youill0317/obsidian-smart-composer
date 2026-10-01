@@ -210,6 +210,14 @@ export class VectorManager {
     })
 
     let completedChunks = 0
+    // Files with any chunk not stored must not look up to date afterwards.
+    const remainingChunksByPath = new Map<string, number>()
+    for (const chunk of contentChunks) {
+      remainingChunksByPath.set(
+        chunk.path,
+        (remainingChunksByPath.get(chunk.path) ?? 0) + 1,
+      )
+    }
     const batchChunks = chunkArray(contentChunks, 100)
     const failedChunks: {
       path: string
@@ -302,6 +310,12 @@ export class VectorManager {
           )
         }
         await this.repository.insertVectors(validEmbeddingChunks)
+        for (const chunk of validEmbeddingChunks) {
+          remainingChunksByPath.set(
+            chunk.path,
+            (remainingChunksByPath.get(chunk.path) ?? 1) - 1,
+          )
+        }
       }
     } catch (error) {
       if (
@@ -331,6 +345,16 @@ Please report this issue to the developer if it persists.`,
         ).open()
       }
     } finally {
+      const incompletePaths = [...remainingChunksByPath]
+        .filter(([, remaining]) => remaining > 0)
+        .map(([path]) => path)
+      if (incompletePaths.length > 0) {
+        await this.repository
+          .deleteVectorsForMultipleFiles(incompletePaths, embeddingModel)
+          .catch((error) =>
+            console.error('Failed to remove partially indexed files', error),
+          )
+      }
       await this.requestSave()
     }
   }
