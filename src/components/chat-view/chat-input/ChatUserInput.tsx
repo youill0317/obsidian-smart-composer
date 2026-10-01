@@ -21,7 +21,7 @@ import {
   getMentionableKey,
   serializeMentionable,
 } from '../../../utils/chat/mentionable'
-import { fileToMentionableImage } from '../../../utils/llm/image'
+import { filesToMentionableImages } from '../../../utils/llm/image'
 import { openMarkdownFile, readTFileContent } from '../../../utils/obsidian'
 import { ObsidianMarkdown } from '../ObsidianMarkdown'
 
@@ -189,9 +189,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
     }
 
     const handleUploadImages = async (images: File[]) => {
-      const mentionableImages = await Promise.all(
-        images.map((image) => fileToMentionableImage(image)),
-      )
+      const mentionableImages = await filesToMentionableImages(images)
       handleCreateImageMentionables(mentionableImages)
     }
 

@@ -4,7 +4,7 @@ import { COMMAND_PRIORITY_LOW } from 'lexical'
 import { useEffect } from 'react'
 
 import { MentionableImage } from '../../../../../types/mentionable'
-import { fileToMentionableImage } from '../../../../../utils/llm/image'
+import { filesToMentionableImages } from '../../../../../utils/llm/image'
 
 export default function DragDropPaste({
   onCreateImageMentionables,
@@ -19,9 +19,7 @@ export default function DragDropPaste({
       (files) => {
         ;(async () => {
           const images = files.filter((file) => file.type.startsWith('image/'))
-          const mentionableImages = await Promise.all(
-            images.map(async (image) => await fileToMentionableImage(image)),
-          )
+          const mentionableImages = await filesToMentionableImages(images)
           onCreateImageMentionables?.(mentionableImages)
         })()
         return true
