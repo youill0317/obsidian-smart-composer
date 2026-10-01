@@ -84,7 +84,8 @@ export class ResponseGenerator {
         this.reachedLimit = true
         return
       }
-      const { toolCallRequests } = await this.streamSingleResponse()
+      const { toolCallRequests, availableToolNames } =
+        await this.streamSingleResponse()
       if (toolCallRequests.length === 0) {
         return
       }
@@ -97,10 +98,17 @@ export class ResponseGenerator {
             request: toolCall,
             response: this.abortSignal?.aborted
               ? { status: ToolCallResponseStatus.Aborted }
-              : await this.toolManager.prepareCall(
-                  toolCall,
-                  this.conversationId,
-                ),
+              : // Only tools offered in this request may run (disabled tools and
+                // enableTools=false are excluded from the offered list).
+                !availableToolNames.has(toolCall.name)
+                ? {
+                    status: ToolCallResponseStatus.Error,
+                    error: `Tool ${toolCall.name} is not available.`,
+                  }
+                : await this.toolManager.prepareCall(
+                    toolCall,
+                    this.conversationId,
+                  ),
           })),
         ),
       }
@@ -188,6 +196,7 @@ export class ResponseGenerator {
 
   private async streamSingleResponse(): Promise<{
     toolCallRequests: ToolCallRequest[]
+    availableToolNames: Set<string>
   }> {
     const requestMessages = await this.promptGenerator.generateRequestMessages({
       messages: [...this.receivedMessages, ...this.responseMessages],
@@ -279,6 +288,7 @@ export class ResponseGenerator {
     )
     return {
       toolCallRequests: toolCallRequests,
+      availableToolNames: new Set(availableTools.map((tool) => tool.name)),
     }
   }
 

@@ -26,7 +26,10 @@ function setup(consumeIteration?: () => boolean) {
     }
   })
   const manager = {
-    listAvailableTools: jest.fn().mockResolvedValue([]),
+    listAvailableTools: jest.fn().mockResolvedValue([
+      { name: 'sc_cli_execute', inputSchema: {} },
+      { name: 'srv__tool', inputSchema: {} },
+    ]),
     prepareCall: jest.fn().mockResolvedValue({ status: Status.Running }),
     callTool: jest.fn().mockResolvedValue({
       status: Status.Success,
@@ -162,5 +165,21 @@ it('caps automatic MCP rounds at the chat limit even with a larger CLI budget', 
   const last = messages.at(-1)
   expect(last?.role === 'tool' && last.toolCalls[0].response.status).toBe(
     Status.PendingApproval,
+  )
+})
+
+it('does not run tool calls for tools that were not offered', async () => {
+  const { params, manager } = setup()
+  const generator = new ResponseGenerator({ ...params, enableTools: false })
+  let messages: ChatMessage[] = []
+  generator.subscribe((value) => {
+    messages = value
+  })
+  await generator.run()
+  expect(manager.prepareCall).not.toHaveBeenCalled()
+  expect(manager.callTool).not.toHaveBeenCalled()
+  const result = messages.at(-1)
+  expect(result?.role === 'tool' && result.toolCalls[0].response.status).toBe(
+    Status.Error,
   )
 })
