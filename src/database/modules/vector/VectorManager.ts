@@ -113,7 +113,7 @@ export class VectorManager {
       })
       await this.repository.clearAllVectors(embeddingModel)
     } else {
-      await this.deleteVectorsForDeletedFiles(embeddingModel)
+      await this.deleteStaleVectors(embeddingModel, options)
       filesToIndex = await this.getFilesToIndex({
         embeddingModel: embeddingModel,
         excludePatterns: options.excludePatterns,
@@ -338,18 +338,25 @@ Please report this issue to the developer if it persists.`,
     await this.requestSave()
   }
 
-  private async deleteVectorsForDeletedFiles(
+  // Remove vectors of deleted files and of files the current include/exclude
+  // patterns no longer allow, so they cannot be retrieved.
+  private async deleteStaleVectors(
     embeddingModel: EmbeddingModelClient,
+    patterns: { excludePatterns: string[]; includePatterns: string[] },
   ) {
-    const indexedFilePaths =
-      await this.repository.getIndexedFilePaths(embeddingModel)
-    for (const filePath of indexedFilePaths) {
-      if (!this.app.vault.getAbstractFileByPath(filePath)) {
-        await this.repository.deleteVectorsForMultipleFiles(
-          [filePath],
-          embeddingModel,
-        )
-      }
+    const indexedFilePaths = new Set(
+      await this.repository.getIndexedFilePaths(embeddingModel),
+    )
+    const stalePaths = [...indexedFilePaths].filter(
+      (filePath) =>
+        !this.app.vault.getAbstractFileByPath(filePath) ||
+        !matchesIndexPatterns(filePath, patterns),
+    )
+    if (stalePaths.length > 0) {
+      await this.repository.deleteVectorsForMultipleFiles(
+        stalePaths,
+        embeddingModel,
+      )
     }
   }
 
@@ -364,17 +371,11 @@ Please report this issue to the developer if it persists.`,
     includePatterns: string[]
     reindexAll?: boolean
   }): Promise<TFile[]> {
-    let filesToIndex = this.app.vault.getMarkdownFiles()
-
-    filesToIndex = filesToIndex.filter((file) => {
-      return !excludePatterns.some((pattern) => minimatch(file.path, pattern))
-    })
-
-    if (includePatterns.length > 0) {
-      filesToIndex = filesToIndex.filter((file) => {
-        return includePatterns.some((pattern) => minimatch(file.path, pattern))
-      })
-    }
+    let filesToIndex = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) =>
+        matchesIndexPatterns(file.path, { excludePatterns, includePatterns }),
+      )
 
     if (reindexAll) {
       return filesToIndex
@@ -412,4 +413,19 @@ Please report this issue to the developer if it persists.`,
   async getEmbeddingStats(): Promise<EmbeddingDbStats[]> {
     return await this.repository.getEmbeddingStats()
   }
+}
+
+function matchesIndexPatterns(
+  filePath: string,
+  {
+    excludePatterns,
+    includePatterns,
+  }: { excludePatterns: string[]; includePatterns: string[] },
+): boolean {
+  if (excludePatterns.some((pattern) => minimatch(filePath, pattern)))
+    return false
+  return (
+    includePatterns.length === 0 ||
+    includePatterns.some((pattern) => minimatch(filePath, pattern))
+  )
 }
