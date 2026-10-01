@@ -127,3 +127,40 @@ it('does not dispatch tools when stopped during asynchronous preparation', async
     Status.Aborted,
   )
 })
+
+it('caps automatic MCP rounds at the chat limit even with a larger CLI budget', async () => {
+  const { params, streamResponse, manager } = setup(() => true)
+  streamResponse.mockImplementation(async function* () {
+    yield {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'id',
+                function: { name: 'srv__tool', arguments: '{}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+  })
+  const generator = new ResponseGenerator({
+    ...params,
+    maxAutoIterations: 10,
+    maxMcpAutoIterations: 1,
+  })
+  let messages: ChatMessage[] = []
+  generator.subscribe((value) => {
+    messages = value
+  })
+  await generator.run()
+  expect(manager.callTool).toHaveBeenCalledTimes(1)
+  expect(streamResponse).toHaveBeenCalledTimes(2)
+  const last = messages.at(-1)
+  expect(last?.role === 'tool' && last.toolCalls[0].response.status).toBe(
+    Status.PendingApproval,
+  )
+})
