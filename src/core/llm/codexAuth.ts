@@ -1,6 +1,6 @@
 import type { Server } from 'http'
 
-import { Platform } from 'obsidian'
+import { Platform, requestUrl } from 'obsidian'
 
 import {
   CODEX_AGENT_NAME,
@@ -134,19 +134,22 @@ export async function generateCodexPkce(): Promise<CodexPkceCodes> {
   return { verifier, challenge }
 }
 
+// auth.openai.com does not send CORS headers to app://obsidian.md, so OAuth
+// requests go through requestUrl instead of fetch.
 async function postTokenEndpoint(
   body: Record<string, string>,
 ): Promise<CodexTokenResponse> {
-  const response = await fetch(`${CODEX_ISSUER}/api/accounts/oauth/token`, {
+  const response = await requestUrl({
+    url: `${CODEX_ISSUER}/api/accounts/oauth/token`,
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    contentType: 'application/x-www-form-urlencoded',
     body: new URLSearchParams({ ...body, resource: CODEX_RESOURCE }).toString(),
+    throw: false,
   })
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
+  if (response.status >= 400) {
     let code: string | undefined
     try {
-      const parsed = JSON.parse(text) as {
+      const parsed = JSON.parse(response.text) as {
         error?: string | { code?: string }
       }
       code =
@@ -160,7 +163,7 @@ async function postTokenEndpoint(
       code,
     )
   }
-  return (await response.json()) as CodexTokenResponse
+  return response.json as CodexTokenResponse
 }
 
 export async function exchangeCodexCodeForTokens(params: {
@@ -190,13 +193,14 @@ export async function refreshCodexAccessToken(
 }
 
 function getOpenIdConfiguration(): Promise<OpenIdConfiguration> {
-  openIdConfiguration ??= fetch(
-    `${CODEX_ISSUER}/.well-known/openid-configuration`,
-  ).then(async (response) => {
-    if (!response.ok) {
+  openIdConfiguration ??= requestUrl({
+    url: `${CODEX_ISSUER}/.well-known/openid-configuration`,
+    throw: false,
+  }).then((response) => {
+    if (response.status >= 400) {
       throw new Error(`OpenID configuration request failed: ${response.status}`)
     }
-    return (await response.json()) as OpenIdConfiguration
+    return response.json as OpenIdConfiguration
   })
   openIdConfiguration.catch(() => {
     openIdConfiguration = undefined
@@ -221,11 +225,11 @@ export async function verifyCodexIdToken(
   const claims = JSON.parse(decodeBase64Url(parts[1])) as CodexIdTokenClaims
 
   const { jwks_uri } = await getOpenIdConfiguration()
-  const jwksResponse = await fetch(jwks_uri)
-  if (!jwksResponse.ok) {
+  const jwksResponse = await requestUrl({ url: jwks_uri, throw: false })
+  if (jwksResponse.status >= 400) {
     throw new Error(`JWKS request failed: ${jwksResponse.status}`)
   }
-  const { keys } = (await jwksResponse.json()) as { keys: Jwk[] }
+  const { keys } = jwksResponse.json as { keys: Jwk[] }
   const jwk = keys.find((key) => key.kid === header.kid)
   if (!jwk) throw new Error('ID token signing key not found')
 
@@ -271,16 +275,18 @@ export async function revokeCodexRefreshToken(
 ): Promise<void> {
   const { revocation_endpoint } = await getOpenIdConfiguration()
   if (!revocation_endpoint) throw new Error('No revocation endpoint')
-  const response = await fetch(revocation_endpoint, {
+  const response = await requestUrl({
+    url: revocation_endpoint,
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    contentType: 'application/x-www-form-urlencoded',
     body: new URLSearchParams({
       token: refreshToken,
       token_type_hint: 'refresh_token',
       client_id: clientId,
     }).toString(),
+    throw: false,
   })
-  if (!response.ok) {
+  if (response.status >= 400) {
     throw new Error(`Token revocation failed: ${response.status}`)
   }
 }
