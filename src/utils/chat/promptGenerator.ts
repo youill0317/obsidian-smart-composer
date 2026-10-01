@@ -1,4 +1,4 @@
-import { App, TFile, htmlToMarkdown, requestUrl } from 'obsidian'
+import { App, TFile, htmlToMarkdown } from 'obsidian'
 
 import { editorStateToPlainText } from '../../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { QueryProgressState } from '../../components/chat-view/QueryProgress'
@@ -22,6 +22,11 @@ import {
 } from '../../types/mentionable'
 import { PromptLevel } from '../../types/prompt-level.types'
 import { ToolCallResponseStatus } from '../../types/tool-call.types'
+import {
+  MAX_FETCHED_TEXT_LENGTH,
+  isPublicHttpUrl,
+  requestPublicUrl,
+} from '../fetch-utils'
 import { tokenCount } from '../llm/token'
 import {
   getNestedFiles,
@@ -545,6 +550,9 @@ When writing out new markdown blocks, remember not to include "line_number|" at 
    * ...
    */
   private async getWebsiteContent(url: string): Promise<string> {
+    if (!isPublicHttpUrl(url)) {
+      return 'Not fetched: local and private network addresses are blocked.'
+    }
     if (isYoutubeUrl(url)) {
       try {
         // TODO: pass language based on user preferences
@@ -553,14 +561,17 @@ When writing out new markdown blocks, remember not to include "line_number|" at 
 
         return `Title: ${title}
 Video Transcript:
-${transcript.map((t) => `${t.offset}: ${t.text}`).join('\n')}`
+${transcript
+  .map((t) => `${t.offset}: ${t.text}`)
+  .join('\n')
+  .slice(0, MAX_FETCHED_TEXT_LENGTH)}`
       } catch (error) {
         console.error('Error fetching YouTube transcript', error)
       }
     }
 
-    const response = await requestUrl({ url })
-    return htmlToMarkdown(response.text)
+    const response = await requestPublicUrl({ url })
+    return htmlToMarkdown(response.text.slice(0, MAX_FETCHED_TEXT_LENGTH))
   }
 
   private getModelPromptLevel(): PromptLevel {

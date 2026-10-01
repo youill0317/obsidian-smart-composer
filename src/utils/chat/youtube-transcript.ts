@@ -7,6 +7,8 @@
 
 import { requestUrl } from 'obsidian'
 
+import { requestPublicUrl } from '../fetch-utils'
+
 const RE_YOUTUBE =
   /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i
 const USER_AGENT =
@@ -158,7 +160,7 @@ export class YoutubeTranscript {
         : captions.captionTracks[0]
     ).baseUrl
 
-    const transcriptResponse = await requestUrl({
+    const transcriptResponse = await requestPublicUrl({
       url: transcriptURL,
       headers: {
         ...(config?.lang && { 'Accept-Language': config.lang }),
