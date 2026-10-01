@@ -121,7 +121,6 @@ function ConnectOpenAIPlanModalComponent({
       hostId: getHostId(plugin),
       clientId,
       idTokenHint: registration && provider?.oauth?.idToken,
-      loginHint: registration?.email,
       forceConsent,
     })
     const attempt = {
@@ -184,7 +183,6 @@ function ConnectOpenAIPlanModalComponent({
             registration: {
               clientId,
               subject: identity.subject,
-              email: identity.email,
             },
             oauth: {
               accessToken: tokens.access_token,

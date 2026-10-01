@@ -35,7 +35,6 @@ type CodexIdTokenClaims = {
   sub?: string
   exp?: number
   nonce?: string
-  email?: string
 }
 
 type CodexCallbackConfig = {
@@ -99,7 +98,6 @@ export function buildCodexAuthorizeUrl(params: {
   // Issued client id for reauthorization; omit for first-time registration.
   clientId?: string
   idTokenHint?: string
-  loginHint?: string
   forceConsent?: boolean
 }): string {
   const query = new URLSearchParams({
@@ -116,7 +114,6 @@ export function buildCodexAuthorizeUrl(params: {
   })
   if (!params.clientId) query.set('agent_name_hint', CODEX_AGENT_NAME)
   if (params.idTokenHint) query.set('id_token_hint', params.idTokenHint)
-  if (params.loginHint) query.set('login_hint', params.loginHint)
   if (params.forceConsent) query.set('prompt', 'consent')
   return `${CODEX_ISSUER}/api/accounts/authorize?${query.toString()}`
 }
@@ -215,7 +212,7 @@ function getOpenIdConfiguration(): Promise<OpenIdConfiguration> {
 export async function verifyCodexIdToken(
   idToken: string,
   expected: { clientId: string; nonce: string },
-): Promise<{ subject: string; email?: string }> {
+): Promise<{ subject: string }> {
   const parts = idToken.split('.')
   if (parts.length !== 3) throw new Error('Malformed ID token')
   const header = JSON.parse(decodeBase64Url(parts[0])) as {
@@ -266,7 +263,7 @@ export async function verifyCodexIdToken(
   }
   if (claims.nonce !== expected.nonce) throw new Error('Invalid ID token nonce')
   if (!claims.sub) throw new Error('ID token has no subject')
-  return { subject: claims.sub, email: claims.email }
+  return { subject: claims.sub }
 }
 
 export async function revokeCodexRefreshToken(
