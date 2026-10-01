@@ -146,6 +146,7 @@ export function useChatStreamManager({
           conversationId,
           enableTools: settings.chatOptions.enableTools,
           maxAutoIterations: maxIterations,
+          maxMcpAutoIterations: settings.chatOptions.maxAutoIterations,
           consumeIteration: cliEnabled
             ? () => {
                 const budget = budgetRef.current

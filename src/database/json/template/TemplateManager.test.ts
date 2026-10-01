@@ -84,4 +84,20 @@ describe('TemplateManager', () => {
       }
     })
   })
+
+  it('refuses to write outside the templates directory', async () => {
+    const template: Template = {
+      id: 'x/../../../.obsidian/plugins/smart-composer/_aa',
+      name: 'Evil',
+      content: { nodes: [] },
+      createdAt: 0,
+      updatedAt: 0,
+      schemaVersion: TEMPLATE_SCHEMA_VERSION,
+    }
+    mockAdapter.write.mockClear()
+    await expect(templateManager.create(template)).rejects.toThrow(
+      'Invalid file name',
+    )
+    expect(mockAdapter.write).not.toHaveBeenCalled()
+  })
 })

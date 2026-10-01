@@ -4,6 +4,7 @@ import { BaseLLMProvider } from '../../core/llm/base'
 import { ToolManager } from '../../core/tools/toolManager'
 import { ChatMessage, ChatToolMessage } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
+import { CLI_TOOL_NAME } from '../../types/cli.types'
 import { RequestTool } from '../../types/llm/request'
 import {
   Annotation,
@@ -26,6 +27,8 @@ export type ResponseGeneratorParams = {
   conversationId: string
   enableTools: boolean
   maxAutoIterations: number
+  // Rounds of automatically executed MCP calls; defaults to maxAutoIterations.
+  maxMcpAutoIterations?: number
   promptGenerator: PromptGenerator
   toolManager: ToolManager
   abortSignal?: AbortSignal
@@ -42,6 +45,7 @@ export class ResponseGenerator {
   private readonly abortSignal?: AbortSignal
   private readonly receivedMessages: ChatMessage[]
   private readonly maxAutoIterations: number
+  private readonly maxMcpAutoIterations: number
 
   public reachedLimit = false
   private consumeIteration?: () => boolean
@@ -55,6 +59,8 @@ export class ResponseGenerator {
     this.conversationId = params.conversationId
     this.enableTools = params.enableTools
     this.maxAutoIterations = Math.max(1, params.maxAutoIterations) // Ensure maxAutoIterations is at least 1
+    this.maxMcpAutoIterations =
+      params.maxMcpAutoIterations ?? this.maxAutoIterations
     this.receivedMessages = params.messages
     this.promptGenerator = params.promptGenerator
     this.toolManager = params.toolManager
@@ -71,13 +77,15 @@ export class ResponseGenerator {
   }
 
   public async run() {
+    let mcpAutoRounds = 0
     for (let i = 0; i < this.maxAutoIterations; i++) {
       if (this.abortSignal?.aborted) return
       if (this.consumeIteration && !this.consumeIteration()) {
         this.reachedLimit = true
         return
       }
-      const { toolCallRequests } = await this.streamSingleResponse()
+      const { toolCallRequests, availableToolNames } =
+        await this.streamSingleResponse()
       if (toolCallRequests.length === 0) {
         return
       }
@@ -90,13 +98,36 @@ export class ResponseGenerator {
             request: toolCall,
             response: this.abortSignal?.aborted
               ? { status: ToolCallResponseStatus.Aborted }
-              : await this.toolManager.prepareCall(
-                  toolCall,
-                  this.conversationId,
-                ),
+              : // Only tools offered in this request may run (disabled tools and
+                // enableTools=false are excluded from the offered list).
+                !availableToolNames.has(toolCall.name)
+                ? {
+                    status: ToolCallResponseStatus.Error,
+                    error: `Tool ${toolCall.name} is not available.`,
+                  }
+                : await this.toolManager.prepareCall(
+                    toolCall,
+                    this.conversationId,
+                  ),
           })),
         ),
       }
+
+      // A larger CLI budget must not raise the MCP auto-execution limit.
+      const isAutoMcp = (call: ChatToolMessage['toolCalls'][number]) =>
+        call.request.name !== CLI_TOOL_NAME &&
+        call.response.status === ToolCallResponseStatus.Running
+      if (mcpAutoRounds >= this.maxMcpAutoIterations) {
+        toolMessage.toolCalls = toolMessage.toolCalls.map((call) =>
+          isAutoMcp(call)
+            ? {
+                ...call,
+                response: { status: ToolCallResponseStatus.PendingApproval },
+              }
+            : call,
+        )
+      }
+      if (toolMessage.toolCalls.some(isAutoMcp)) mcpAutoRounds++
 
       // Keep a result for every request so Continue can send a valid tool history.
       if (this.abortSignal?.aborted) {
@@ -165,6 +196,7 @@ export class ResponseGenerator {
 
   private async streamSingleResponse(): Promise<{
     toolCallRequests: ToolCallRequest[]
+    availableToolNames: Set<string>
   }> {
     const requestMessages = await this.promptGenerator.generateRequestMessages({
       messages: [...this.receivedMessages, ...this.responseMessages],
@@ -256,6 +288,7 @@ export class ResponseGenerator {
     )
     return {
       toolCallRequests: toolCallRequests,
+      availableToolNames: new Set(availableTools.map((tool) => tool.name)),
     }
   }
 

@@ -45,6 +45,7 @@ describe('VoyageProvider', () => {
           input_type: 'document',
           output_dimension: 3,
         }),
+        signal: expect.any(AbortSignal),
       },
     )
   })

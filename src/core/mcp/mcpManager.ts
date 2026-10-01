@@ -308,17 +308,6 @@ export class McpManager {
     requestToolName: string
     conversationId?: string
   }): boolean {
-    // Check if the tool is allowed for the conversation
-    if (conversationId) {
-      if (
-        this.allowedToolsByConversation
-          .get(conversationId)
-          ?.has(requestToolName)
-      ) {
-        return true
-      }
-    }
-
     try {
       const { serverName, toolName } = parseToolName(requestToolName)
       const server = this.servers.find((server) => server.name === serverName)
@@ -326,10 +315,20 @@ export class McpManager {
         return false
       }
       const toolOption = server.config.toolOptions[toolName]
-      if (!toolOption) {
+      // A disabled tool must not run, even with an earlier grant.
+      if (toolOption?.disabled) {
         return false
       }
-      return toolOption.allowAutoExecution ?? false
+      // Check if the tool is allowed for the conversation
+      if (
+        conversationId &&
+        this.allowedToolsByConversation
+          .get(conversationId)
+          ?.has(requestToolName)
+      ) {
+        return true
+      }
+      return toolOption?.allowAutoExecution ?? false
     } catch (error) {
       if (error instanceof InvalidToolNameException) {
         return false

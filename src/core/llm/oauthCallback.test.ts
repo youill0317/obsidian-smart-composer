@@ -37,8 +37,13 @@ describe.each([
       try {
         await once(held, 'connect')
         held.write('GET /unfinished HTTP/1.1\r\nHost: localhost\r\n')
-        if (outcome !== 'timeout') {
-          const state = outcome === 'success' ? 'expected-state' : 'wrong'
+        const states =
+          outcome === 'success'
+            ? ['expected-state']
+            : outcome === 'invalid state'
+              ? ['wrong', 'expected-state']
+              : []
+        for (const state of states) {
           await new Promise<void>((resolve, reject) => {
             http
               .get(
@@ -64,11 +69,9 @@ describe.each([
           }),
         ])
         expect(result).toBe(
-          outcome === 'success'
-            ? 'fake-code'
-            : outcome === 'invalid state'
-              ? 'Invalid state parameter'
-              : 'OAuth callback timeout - authorization took too long',
+          outcome === 'timeout'
+            ? 'OAuth callback timeout - authorization took too long'
+            : 'fake-code',
         )
       } finally {
         clearTimeout(deadline)

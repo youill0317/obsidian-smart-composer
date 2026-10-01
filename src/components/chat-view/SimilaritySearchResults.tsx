@@ -21,7 +21,8 @@ function SimiliartySearchItem({
   return (
     <div onClick={handleClick} className="smtcmp-similarity-search-item">
       <div className="smtcmp-similarity-search-item__similarity">
-        {chunk.similarity.toFixed(3)}
+        {/* Stored chat history is not schema-checked; never throw here. */}
+        {Number(chunk.similarity).toFixed(3)}
       </div>
       <div className="smtcmp-similarity-search-item__path">
         {path.basename(chunk.path)}

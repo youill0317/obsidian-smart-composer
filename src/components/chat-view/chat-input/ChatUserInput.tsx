@@ -21,7 +21,7 @@ import {
   getMentionableKey,
   serializeMentionable,
 } from '../../../utils/chat/mentionable'
-import { fileToMentionableImage } from '../../../utils/llm/image'
+import { filesToMentionableImages } from '../../../utils/llm/image'
 import { openMarkdownFile, readTFileContent } from '../../../utils/obsidian'
 import { ObsidianMarkdown } from '../ObsidianMarkdown'
 
@@ -189,9 +189,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
     }
 
     const handleUploadImages = async (images: File[]) => {
-      const mentionableImages = await Promise.all(
-        images.map((image) => fileToMentionableImage(image)),
-      )
+      const mentionableImages = await filesToMentionableImages(images)
       handleCreateImageMentionables(mentionableImages)
     }
 
@@ -290,6 +288,9 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
   },
 )
 
+// Rendering a huge note can freeze Obsidian; the preview only needs the start.
+const MAX_PREVIEW_LENGTH = 20_000
+
 function MentionableContentPreview({
   displayedMentionableKey,
   mentionables,
@@ -325,7 +326,11 @@ function MentionableContentPreview({
         displayedMentionable.type === 'current-file'
       ) {
         if (!displayedMentionable.file) return null
-        return await readTFileContent(displayedMentionable.file, app.vault)
+        const content = await readTFileContent(
+          displayedMentionable.file,
+          app.vault,
+        )
+        return content.slice(0, MAX_PREVIEW_LENGTH)
       } else if (displayedMentionable.type === 'block') {
         const fileContent = await readTFileContent(
           displayedMentionable.file,
@@ -339,6 +344,7 @@ function MentionableContentPreview({
             displayedMentionable.endLine,
           )
           .join('\n')
+          .slice(0, MAX_PREVIEW_LENGTH)
       }
 
       return null

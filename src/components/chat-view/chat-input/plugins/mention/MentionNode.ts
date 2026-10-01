@@ -9,8 +9,6 @@
 
 import {
   $applyNodeReplacement,
-  DOMConversionMap,
-  DOMConversionOutput,
   DOMExportOutput,
   type EditorConfig,
   type LexicalNode,
@@ -35,31 +33,6 @@ export type SerializedMentionNode = Spread<
   SerializedTextNode
 >
 
-function $convertMentionElement(
-  domNode: HTMLElement,
-): DOMConversionOutput | null {
-  const textContent = domNode.textContent
-  const mentionName =
-    domNode.getAttribute(MENTION_NODE_MENTION_NAME_ATTRIBUTE) ??
-    domNode.textContent ??
-    ''
-  const mentionable = JSON.parse(
-    domNode.getAttribute(MENTION_NODE_MENTIONABLE_ATTRIBUTE) ?? '{}',
-  )
-
-  if (textContent !== null) {
-    const node = $createMentionNode(
-      mentionName,
-      mentionable as SerializedMentionable,
-    )
-    return {
-      node,
-    }
-  }
-
-  return null
-}
-
 export class MentionNode extends TextNode {
   __mentionName: string
   __mentionable: SerializedMentionable
@@ -80,7 +53,7 @@ export class MentionNode extends TextNode {
     node.setFormat(serializedNode.format)
     node.setDetail(serializedNode.detail)
     node.setMode(serializedNode.mode)
-    node.setStyle(serializedNode.style)
+    // Stored or pasted node data must not inject inline CSS.
     return node
   }
 
@@ -125,23 +98,8 @@ export class MentionNode extends TextNode {
     return { element }
   }
 
-  static importDOM(): DOMConversionMap | null {
-    return {
-      span: (domNode: HTMLElement) => {
-        if (
-          !domNode.hasAttribute(MENTION_NODE_ATTRIBUTE) ||
-          !domNode.hasAttribute(MENTION_NODE_MENTION_NAME_ATTRIBUTE) ||
-          !domNode.hasAttribute(MENTION_NODE_MENTIONABLE_ATTRIBUTE)
-        ) {
-          return null
-        }
-        return {
-          conversion: $convertMentionElement,
-          priority: 1,
-        }
-      },
-    }
-  }
+  // No importDOM: pasted HTML must not turn into a vault-file mention. Copy
+  // and paste inside the editor uses Lexical's JSON clipboard data instead.
 
   isTextEntity(): true {
     return true

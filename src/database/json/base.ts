@@ -23,9 +23,22 @@ export abstract class AbstractJsonRepository<T, M> {
   // Each subclass implements how to parse a file name into metadata.
   protected abstract parseFileName(fileName: string): M | null
 
+  // File names embed ids read from JSON bodies, so keep every path inside
+  // dataDir and in the subclass's own file-name format.
+  private resolvePath(fileName: string): string {
+    if (
+      fileName.includes('/') ||
+      fileName.includes('\\') ||
+      this.parseFileName(fileName) === null
+    ) {
+      throw new Error(`Invalid file name: ${fileName}`)
+    }
+    return normalizePath(path.join(this.dataDir, fileName))
+  }
+
   public async create(row: T): Promise<void> {
     const fileName = this.generateFileName(row)
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.resolvePath(fileName)
     const content = JSON.stringify(row, null, 2)
 
     if (await this.app.vault.adapter.exists(filePath)) {
@@ -42,11 +55,11 @@ export abstract class AbstractJsonRepository<T, M> {
 
     if (oldFileName === newFileName) {
       // Simple update - filename hasn't changed
-      const filePath = normalizePath(path.join(this.dataDir, oldFileName))
+      const filePath = this.resolvePath(oldFileName)
       await this.app.vault.adapter.write(filePath, content)
     } else {
       // Filename has changed - create new file and delete old one
-      const newFilePath = normalizePath(path.join(this.dataDir, newFileName))
+      const newFilePath = this.resolvePath(newFileName)
       await this.app.vault.adapter.write(newFilePath, content)
       await this.delete(oldFileName)
     }
@@ -68,7 +81,7 @@ export abstract class AbstractJsonRepository<T, M> {
   }
 
   public async read(fileName: string): Promise<T | null> {
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.resolvePath(fileName)
     if (!(await this.app.vault.adapter.exists(filePath))) return null
 
     const content = await this.app.vault.adapter.read(filePath)
@@ -76,7 +89,7 @@ export abstract class AbstractJsonRepository<T, M> {
   }
 
   public async delete(fileName: string): Promise<void> {
-    const filePath = normalizePath(path.join(this.dataDir, fileName))
+    const filePath = this.resolvePath(fileName)
     if (await this.app.vault.adapter.exists(filePath)) {
       await this.app.vault.adapter.remove(filePath)
     }

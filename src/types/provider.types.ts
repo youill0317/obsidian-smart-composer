@@ -41,12 +41,13 @@ export const llmProviderSchema = z.discriminatedUnion('type', [
       })
       .optional(),
     // Sign in with ChatGPT client registration. Unlike oauth, it is kept on
-    // disconnect so reconnecting reuses the issued client id.
+    // disconnect so reconnecting reuses the issued client id. It lives in
+    // plaintext data.json, so it holds no email (older values are dropped on
+    // parse).
     registration: z
       .object({
         clientId: z.string(),
         subject: z.string(),
-        email: z.string().optional(),
       })
       .optional(),
   }),

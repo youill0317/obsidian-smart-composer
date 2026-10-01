@@ -100,6 +100,7 @@ export class VectorManager {
       excludePatterns: string[]
       includePatterns: string[]
       reindexAll?: boolean
+      scope?: { files: string[]; folders: string[] }
     },
     updateProgress?: (indexProgress: IndexProgress) => void,
   ): Promise<void> {
@@ -111,13 +112,15 @@ export class VectorManager {
         includePatterns: options.includePatterns,
         reindexAll: true,
       })
-      await this.repository.clearAllVectors(embeddingModel)
+      // Saves the cleared state, which the early return below would skip.
+      await this.clearAllVectors(embeddingModel)
     } else {
-      await this.deleteVectorsForDeletedFiles(embeddingModel)
+      await this.deleteStaleVectors(embeddingModel, options)
       filesToIndex = await this.getFilesToIndex({
         embeddingModel: embeddingModel,
         excludePatterns: options.excludePatterns,
         includePatterns: options.includePatterns,
+        scope: options.scope,
       })
       await this.repository.deleteVectorsForMultipleFiles(
         filesToIndex.map((file) => file.path),
@@ -207,6 +210,14 @@ export class VectorManager {
     })
 
     let completedChunks = 0
+    // Files with any chunk not stored must not look up to date afterwards.
+    const remainingChunksByPath = new Map<string, number>()
+    for (const chunk of contentChunks) {
+      remainingChunksByPath.set(
+        chunk.path,
+        (remainingChunksByPath.get(chunk.path) ?? 0) + 1,
+      )
+    }
     const batchChunks = chunkArray(contentChunks, 100)
     const failedChunks: {
       path: string
@@ -299,6 +310,12 @@ export class VectorManager {
           )
         }
         await this.repository.insertVectors(validEmbeddingChunks)
+        for (const chunk of validEmbeddingChunks) {
+          remainingChunksByPath.set(
+            chunk.path,
+            (remainingChunksByPath.get(chunk.path) ?? 1) - 1,
+          )
+        }
       }
     } catch (error) {
       if (
@@ -328,6 +345,16 @@ Please report this issue to the developer if it persists.`,
         ).open()
       }
     } finally {
+      const incompletePaths = [...remainingChunksByPath]
+        .filter(([, remaining]) => remaining > 0)
+        .map(([path]) => path)
+      if (incompletePaths.length > 0) {
+        await this.repository
+          .deleteVectorsForMultipleFiles(incompletePaths, embeddingModel)
+          .catch((error) =>
+            console.error('Failed to remove partially indexed files', error),
+          )
+      }
       await this.requestSave()
     }
   }
@@ -338,18 +365,25 @@ Please report this issue to the developer if it persists.`,
     await this.requestSave()
   }
 
-  private async deleteVectorsForDeletedFiles(
+  // Remove vectors of deleted files and of files the current include/exclude
+  // patterns no longer allow, so they cannot be retrieved.
+  private async deleteStaleVectors(
     embeddingModel: EmbeddingModelClient,
+    patterns: { excludePatterns: string[]; includePatterns: string[] },
   ) {
-    const indexedFilePaths =
-      await this.repository.getIndexedFilePaths(embeddingModel)
-    for (const filePath of indexedFilePaths) {
-      if (!this.app.vault.getAbstractFileByPath(filePath)) {
-        await this.repository.deleteVectorsForMultipleFiles(
-          [filePath],
-          embeddingModel,
-        )
-      }
+    const indexedFilePaths = new Set(
+      await this.repository.getIndexedFilePaths(embeddingModel),
+    )
+    const stalePaths = [...indexedFilePaths].filter(
+      (filePath) =>
+        !this.app.vault.getAbstractFileByPath(filePath) ||
+        !matchesIndexPatterns(filePath, patterns),
+    )
+    if (stalePaths.length > 0) {
+      await this.repository.deleteVectorsForMultipleFiles(
+        stalePaths,
+        embeddingModel,
+      )
     }
   }
 
@@ -358,23 +392,27 @@ Please report this issue to the developer if it persists.`,
     excludePatterns,
     includePatterns,
     reindexAll,
+    scope,
   }: {
     embeddingModel: EmbeddingModelClient
     excludePatterns: string[]
     includePatterns: string[]
     reindexAll?: boolean
+    scope?: { files: string[]; folders: string[] }
   }): Promise<TFile[]> {
-    let filesToIndex = this.app.vault.getMarkdownFiles()
-
-    filesToIndex = filesToIndex.filter((file) => {
-      return !excludePatterns.some((pattern) => minimatch(file.path, pattern))
-    })
-
-    if (includePatterns.length > 0) {
-      filesToIndex = filesToIndex.filter((file) => {
-        return includePatterns.some((pattern) => minimatch(file.path, pattern))
-      })
-    }
+    let filesToIndex = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) =>
+        matchesIndexPatterns(file.path, { excludePatterns, includePatterns }),
+      )
+      // Same scope semantics as VectorRepository.performSimilaritySearch.
+      .filter(
+        (file) =>
+          !scope ||
+          (scope.files.length === 0 && scope.folders.length === 0) ||
+          scope.files.includes(file.path) ||
+          scope.folders.some((folder) => file.path.startsWith(`${folder}/`)),
+      )
 
     if (reindexAll) {
       return filesToIndex
@@ -412,4 +450,19 @@ Please report this issue to the developer if it persists.`,
   async getEmbeddingStats(): Promise<EmbeddingDbStats[]> {
     return await this.repository.getEmbeddingStats()
   }
+}
+
+function matchesIndexPatterns(
+  filePath: string,
+  {
+    excludePatterns,
+    includePatterns,
+  }: { excludePatterns: string[]; includePatterns: string[] },
+): boolean {
+  if (excludePatterns.some((pattern) => minimatch(filePath, pattern)))
+    return false
+  return (
+    includePatterns.length === 0 ||
+    includePatterns.some((pattern) => minimatch(filePath, pattern))
+  )
 }

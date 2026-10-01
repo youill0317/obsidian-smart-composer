@@ -3,7 +3,7 @@ import { COMMAND_PRIORITY_LOW, PASTE_COMMAND, PasteCommandType } from 'lexical'
 import { useEffect } from 'react'
 
 import { MentionableImage } from '../../../../../types/mentionable'
-import { fileToMentionableImage } from '../../../../../utils/llm/image'
+import { filesToMentionableImages } from '../../../../../utils/llm/image'
 
 export default function ImagePastePlugin({
   onCreateImageMentionables,
@@ -23,11 +23,9 @@ export default function ImagePastePlugin({
       )
       if (images.length === 0) return false
 
-      Promise.all(images.map((image) => fileToMentionableImage(image))).then(
-        (mentionableImages) => {
-          onCreateImageMentionables?.(mentionableImages)
-        },
-      )
+      filesToMentionableImages(images).then((mentionableImages) => {
+        onCreateImageMentionables?.(mentionableImages)
+      })
       return true
     }
 
