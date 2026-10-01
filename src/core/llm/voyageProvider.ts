@@ -86,6 +86,9 @@ export class VoyageProvider extends BaseLLMProvider<
           output_dimension: options.dimensions,
         }),
       }),
+      // A stalled response would otherwise block indexing indefinitely.
+      // ponytail: no byte cap; a fast oversized body is still parsed whole.
+      signal: AbortSignal.timeout(60_000),
     })
 
     if (response.status === 401 || response.status === 403) {
