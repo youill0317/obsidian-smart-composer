@@ -21,3 +21,9 @@ writeFileSync('versions.json', JSON.stringify(versions, null, 2))
 let packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 packageJson.version = targetVersion
 writeFileSync('package.json', JSON.stringify(packageJson, null, 2))
+
+// keep package-lock.json in step so the release build can use `npm ci`
+let packageLock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+packageLock.version = targetVersion
+packageLock.packages[''].version = targetVersion
+writeFileSync('package-lock.json', JSON.stringify(packageLock, null, 2) + '\n')
