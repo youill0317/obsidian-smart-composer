@@ -100,6 +100,7 @@ export class VectorManager {
       excludePatterns: string[]
       includePatterns: string[]
       reindexAll?: boolean
+      scope?: { files: string[]; folders: string[] }
     },
     updateProgress?: (indexProgress: IndexProgress) => void,
   ): Promise<void> {
@@ -119,6 +120,7 @@ export class VectorManager {
         embeddingModel: embeddingModel,
         excludePatterns: options.excludePatterns,
         includePatterns: options.includePatterns,
+        scope: options.scope,
       })
       await this.repository.deleteVectorsForMultipleFiles(
         filesToIndex.map((file) => file.path),
@@ -366,16 +368,26 @@ Please report this issue to the developer if it persists.`,
     excludePatterns,
     includePatterns,
     reindexAll,
+    scope,
   }: {
     embeddingModel: EmbeddingModelClient
     excludePatterns: string[]
     includePatterns: string[]
     reindexAll?: boolean
+    scope?: { files: string[]; folders: string[] }
   }): Promise<TFile[]> {
     let filesToIndex = this.app.vault
       .getMarkdownFiles()
       .filter((file) =>
         matchesIndexPatterns(file.path, { excludePatterns, includePatterns }),
+      )
+      // Same scope semantics as VectorRepository.performSimilaritySearch.
+      .filter(
+        (file) =>
+          !scope ||
+          (scope.files.length === 0 && scope.folders.length === 0) ||
+          scope.files.includes(file.path) ||
+          scope.folders.some((folder) => file.path.startsWith(`${folder}/`)),
       )
 
     if (reindexAll) {

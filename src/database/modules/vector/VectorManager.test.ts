@@ -11,12 +11,13 @@ function setup(indexedPaths: string[]) {
     path,
     stat: { mtime: 1 },
   }))
+  const cachedRead = jest.fn().mockResolvedValue('')
   const app = {
     vault: {
       getMarkdownFiles: () => files,
       getAbstractFileByPath: (path: string) =>
         files.find((file) => file.path === path) ?? null,
-      cachedRead: jest.fn().mockResolvedValue(''),
+      cachedRead,
     },
   } as unknown as App
   const repository = {
@@ -29,7 +30,7 @@ function setup(indexedPaths: string[]) {
   Object.assign(manager, { repository })
   const save = jest.fn().mockResolvedValue(undefined)
   manager.setSaveCallback(save)
-  return { manager, repository, save }
+  return { manager, repository, save, cachedRead }
 }
 
 const embeddingModel = { id: 'model' } as never
@@ -62,4 +63,18 @@ it('persists the cleared index when a rebuild finds nothing to index', async () 
   })
   expect(repository.clearAllVectors).toHaveBeenCalled()
   expect(save).toHaveBeenCalled()
+})
+
+it('only indexes files inside the query scope', async () => {
+  const { manager, repository, cachedRead } = setup([])
+  repository.getVectorsByFilePath.mockResolvedValue([])
+  await manager.updateVaultIndex(embeddingModel, {
+    chunkSize: 1000,
+    excludePatterns: [],
+    includePatterns: [],
+    scope: { files: [], folders: ['public'] },
+  })
+  expect(cachedRead.mock.calls).toEqual([
+    [expect.objectContaining({ path: 'public/a.md' })],
+  ])
 })

@@ -46,7 +46,10 @@ export class RAGEngine {
   // TODO: Implement automatic vault re-indexing when settings are changed.
   // Currently, users must manually re-index the vault.
   async updateVaultIndex(
-    options: { reindexAll: boolean } = {
+    options: {
+      reindexAll: boolean
+      scope?: { files: string[]; folders: string[] }
+    } = {
       reindexAll: false,
     },
     onQueryProgressChange?: (queryProgress: QueryProgressState) => void,
@@ -61,6 +64,7 @@ export class RAGEngine {
         excludePatterns: this.settings.ragOptions.excludePatterns,
         includePatterns: this.settings.ragOptions.includePatterns,
         reindexAll: options.reindexAll,
+        scope: options.scope,
       },
       (indexProgress) => {
         onQueryProgressChange?.({
@@ -92,7 +96,11 @@ export class RAGEngine {
     }
     // TODO: Decide the vault index update strategy.
     // Current approach: Update on every query.
-    await this.updateVaultIndex({ reindexAll: false }, onQueryProgressChange)
+    // A scoped query only embeds the files it can return.
+    await this.updateVaultIndex(
+      { reindexAll: false, scope },
+      onQueryProgressChange,
+    )
     const queryEmbedding = await this.getQueryEmbedding(query)
     onQueryProgressChange?.({
       type: 'querying',
