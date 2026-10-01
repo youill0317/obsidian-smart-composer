@@ -149,17 +149,11 @@ export async function startGeminiCallbackServer(params: {
       const error = requestUrl.searchParams.get('error')
       const errorDescription = requestUrl.searchParams.get('error_description')
 
-      if (!incomingState) {
-        res.statusCode = 400
-        res.end('Missing state parameter')
-        finalize(new Error('Missing state parameter'))
-        return
-      }
-
+      // Keep waiting: any local page can hit this port, and a stray request
+      // must not cancel the real redirect.
       if (incomingState !== state) {
         res.statusCode = 400
         res.end('Invalid state parameter')
-        finalize(new Error('Invalid state parameter'))
         return
       }
 
