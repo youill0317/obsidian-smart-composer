@@ -51,3 +51,15 @@ it('removes indexed vectors that the current include patterns exclude', async ()
     embeddingModel,
   )
 })
+
+it('persists the cleared index when a rebuild finds nothing to index', async () => {
+  const { manager, repository, save } = setup([])
+  await manager.updateVaultIndex(embeddingModel, {
+    chunkSize: 1000,
+    excludePatterns: ['**/*.md'],
+    includePatterns: [],
+    reindexAll: true,
+  })
+  expect(repository.clearAllVectors).toHaveBeenCalled()
+  expect(save).toHaveBeenCalled()
+})

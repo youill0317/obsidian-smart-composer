@@ -111,7 +111,8 @@ export class VectorManager {
         includePatterns: options.includePatterns,
         reindexAll: true,
       })
-      await this.repository.clearAllVectors(embeddingModel)
+      // Saves the cleared state, which the early return below would skip.
+      await this.clearAllVectors(embeddingModel)
     } else {
       await this.deleteStaleVectors(embeddingModel, options)
       filesToIndex = await this.getFilesToIndex({
