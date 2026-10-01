@@ -95,3 +95,31 @@ it('saves interrupted tool calls as aborted without changing live or completed r
     jest.useRealTimers()
   }
 })
+
+it('does not recreate a chat deleted while its save was pending', async () => {
+  jest.useFakeTimers()
+  try {
+    const manager = {
+      findById: jest.fn().mockResolvedValue(null),
+      createChat: jest.fn().mockResolvedValue(null),
+      deleteChat: jest.fn().mockResolvedValue(undefined),
+      listChats: jest.fn().mockResolvedValue([]),
+    }
+    jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+    jest
+      .mocked(useChatManager)
+      .mockReturnValue(manager as unknown as ChatManager)
+    let history!: ReturnType<typeof useChatHistory>
+    const Harness = () => {
+      history = useChatHistory()
+      return null
+    }
+    renderToStaticMarkup(<Harness />)
+    void history.createOrUpdateConversation('deleted', [])
+    await history.deleteConversation('deleted')
+    await jest.advanceTimersByTimeAsync(300)
+    expect(manager.createChat).not.toHaveBeenCalled()
+  } finally {
+    jest.useRealTimers()
+  }
+})

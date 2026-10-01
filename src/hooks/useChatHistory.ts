@@ -1,7 +1,7 @@
 import debounce from 'lodash.debounce'
 import isEqual from 'lodash.isequal'
 import { App } from 'obsidian'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { editorStateToPlainText } from '../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { useApp } from '../contexts/app-context'
@@ -46,12 +46,16 @@ export function useChatHistory(): UseChatHistory {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // A save queued before deletion must not recreate the deleted chat.
+  const deletedIdsRef = useRef(new Set<string>())
+
   const createOrUpdateConversation = useMemo(
     () =>
       debounce(
         async (id: string, messages: ChatMessage[]): Promise<void> => {
           const serializedMessages = messages.map(serializeChatMessage)
           const existingConversation = await chatManager.findById(id)
+          if (deletedIdsRef.current.has(id)) return
 
           if (existingConversation) {
             if (isEqual(existingConversation.messages, serializedMessages)) {
@@ -87,7 +91,13 @@ export function useChatHistory(): UseChatHistory {
 
   const deleteConversation = useCallback(
     async (id: string): Promise<void> => {
-      await chatManager.deleteChat(id)
+      deletedIdsRef.current.add(id)
+      try {
+        await chatManager.deleteChat(id)
+      } catch (error) {
+        deletedIdsRef.current.delete(id)
+        throw error
+      }
       await fetchChatList()
     },
     [chatManager, fetchChatList],
