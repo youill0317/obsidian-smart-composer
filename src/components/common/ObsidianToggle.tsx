@@ -5,7 +5,8 @@ import { useObsidianSetting } from './ObsidianSetting'
 
 type ObsidianToggleProps = {
   value: boolean
-  onChange: (value: boolean) => void
+  // Return false to refuse the change; the toggle then shows the old value.
+  onChange: (value: boolean) => unknown
 }
 
 export function ObsidianToggle({ value, onChange }: ObsidianToggleProps) {
@@ -42,7 +43,11 @@ export function ObsidianToggle({ value, onChange }: ObsidianToggleProps) {
 
   useEffect(() => {
     if (!toggleComponent) return
-    toggleComponent.onChange((v) => onChangeRef.current(v))
+    toggleComponent.onChange((v) => {
+      void Promise.resolve(onChangeRef.current(v)).then((accepted) => {
+        if (accepted === false) toggleComponent.setValue(!v)
+      })
+    })
   }, [toggleComponent])
 
   useEffect(() => {
