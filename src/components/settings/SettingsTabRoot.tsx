@@ -9,6 +9,7 @@ import { CliSection } from './sections/CliSection'
 import { EtcSection } from './sections/EtcSection'
 import { McpSection } from './sections/McpSection'
 import { ModelsSection } from './sections/ModelsSection'
+import { OcrSection } from './sections/OcrSection'
 import { PlanConnectionsSection } from './sections/PlanConnectionsSection'
 import { ProvidersSection } from './sections/ProvidersSection'
 import { RAGSection } from './sections/RAGSection'
@@ -41,6 +42,7 @@ export function SettingsTabRoot({ app, plugin }: SettingsTabRootProps) {
       <ProvidersSection app={app} plugin={plugin} />
       <ModelsSection app={app} plugin={plugin} />
       <RAGSection app={app} plugin={plugin} />
+      <OcrSection app={app} plugin={plugin} />
       <McpSection app={app} plugin={plugin} />
       <CliSection app={app} plugin={plugin} />
       <TemplateSection app={app} />

@@ -7,6 +7,8 @@ import { parseSmartComposerSettings } from '../settings'
 import { CHAT_MODELS_ADDED_IN_V18 } from './17_to_18'
 import { migrateFrom21To22 } from './21_to_22'
 
+import { SETTINGS_SCHEMA_VERSION } from '.'
+
 const oldEmbedding = {
   providerType: 'gemini',
   providerId: 'gemini',
@@ -38,7 +40,7 @@ it.each([
   }
   const before = JSON.stringify(initial)
   const settings = parseSmartComposerSettings(initial)
-  expect(settings.version).toBe(22)
+  expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
   expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
   expect(settings.chatModels).toEqual(
     expect.arrayContaining(DEFAULT_CHAT_MODELS),
@@ -52,7 +54,7 @@ it.each([
   expect(settings.embeddingModelId).toBe('gemini/gemini-embedding-2')
   expect(JSON.stringify(initial)).toBe(before)
   expect(parseSmartComposerSettings(settings)).toEqual(settings)
-  expect(migrateFrom21To22(settings)).toEqual(settings)
+  expect(migrateFrom21To22(settings)).toEqual({ ...settings, version: 22 })
 })
 
 it.each([

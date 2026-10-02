@@ -1,4 +1,4 @@
-import { TextComponent } from 'obsidian'
+import { TextComponent, setTooltip } from 'obsidian'
 import { useEffect, useRef, useState } from 'react'
 
 import { useObsidianSetting } from './ObsidianSetting'
@@ -8,6 +8,8 @@ type ObsidianTextInputProps = {
   placeholder?: string
   onChange: (value: string) => void
   type?: 'text' | 'number' | 'password'
+  disabled?: boolean
+  tooltip?: string
 }
 
 export function ObsidianTextInput({
@@ -15,6 +17,8 @@ export function ObsidianTextInput({
   placeholder,
   onChange,
   type,
+  disabled,
+  tooltip,
 }: ObsidianTextInputProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { setting } = useObsidianSetting()
@@ -57,6 +61,12 @@ export function ObsidianTextInput({
     if (placeholder) textComponent.setPlaceholder(placeholder)
     if (type) textComponent.inputEl.type = type
   }, [textComponent, value, placeholder, type])
+
+  useEffect(() => {
+    if (!textComponent) return
+    if (disabled !== undefined) textComponent.setDisabled(disabled)
+    if (tooltip) setTooltip(textComponent.inputEl, tooltip)
+  }, [textComponent, disabled, tooltip])
 
   return <div ref={containerRef} />
 }

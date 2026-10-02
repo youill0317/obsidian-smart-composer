@@ -1,8 +1,11 @@
 import {
   Editor,
   MarkdownView,
+  Menu,
   Notice,
   Plugin,
+  TAbstractFile,
+  TFile,
   requireApiVersion,
 } from 'obsidian'
 
@@ -13,6 +16,7 @@ import { InstallerUpdateRequiredModal } from './components/modals/InstallerUpdat
 import { APPLY_VIEW_TYPE, CHAT_VIEW_TYPE } from './constants'
 import { CliManager } from './core/cli/cliManager'
 import { McpManager } from './core/mcp/mcpManager'
+import { OcrConverter, isPdf } from './core/ocr/ocrConverter'
 import { RAGEngine } from './core/rag/ragEngine'
 import { ToolManager } from './core/tools/toolManager'
 import { DatabaseManager } from './database/DatabaseManager'
@@ -43,6 +47,7 @@ export default class SmartComposerPlugin extends Plugin {
   initialChatProps?: ChatProps // TODO: change this to use view state like ApplyView
   settingsChangeListeners: ((newSettings: SmartComposerSettings) => void)[] = []
   toolManager: ToolManager
+  ocrConverter: OcrConverter
   mcpManager: McpManager | null = null
   dbManager: DatabaseManager | null = null
   ragEngine: RAGEngine | null = null
@@ -56,6 +61,7 @@ export default class SmartComposerPlugin extends Plugin {
       new CliManager(this.app, () => this.settings),
       () => this.getMcpManager(),
     )
+    this.ocrConverter = new OcrConverter(this.app, () => this.settings)
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this))
     this.registerView(APPLY_VIEW_TYPE, (leaf) => new ApplyView(leaf))
@@ -149,6 +155,8 @@ export default class SmartComposerPlugin extends Plugin {
         }
       },
     })
+
+    this.registerOcrEntryPoints()
 
     // This adds a settings tab so the user can configure various aspects of the plugin
     this.addSettingTab(new SmartComposerSettingTab(this.app, this))
@@ -275,6 +283,78 @@ export default class SmartComposerPlugin extends Plugin {
     const chatView = leaves[0].view
     chatView.addSelectionToChat(data)
     chatView.focusMessage()
+  }
+
+  private registerOcrEntryPoints() {
+    this.addCommand({
+      id: 'convert-pdf-to-markdown-ocr',
+      name: 'Convert current PDF to Markdown (OCR)',
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile()
+        if (!isPdf(file)) return false
+        if (!checking) void this.convertPdfsWithOcr([file])
+        return true
+      },
+    })
+
+    this.registerEvent(
+      this.app.workspace.on('file-menu', (menu: Menu, file: TAbstractFile) => {
+        if (!isPdf(file)) return
+        menu.addItem((item) =>
+          item
+            .setTitle('Convert PDF to Markdown (OCR)')
+            .setIcon('file-text')
+            .setSection('action')
+            .onClick(() => void this.convertPdfsWithOcr([file])),
+        )
+      }),
+    )
+
+    this.registerEvent(
+      this.app.workspace.on(
+        'files-menu',
+        (menu: Menu, files: TAbstractFile[]) => {
+          const pdfs = files.filter(isPdf)
+          if (pdfs.length === 0) return
+          menu.addItem((item) =>
+            item
+              .setTitle(
+                pdfs.length === 1
+                  ? 'Convert PDF to Markdown (OCR)'
+                  : `Convert ${pdfs.length} PDFs to Markdown (OCR)`,
+              )
+              .setIcon('file-text')
+              .setSection('action')
+              .onClick(() => void this.convertPdfsWithOcr(pdfs)),
+          )
+        },
+      ),
+    )
+  }
+
+  // Converts sequentially; opens the result when a single PDF was converted.
+  private async convertPdfsWithOcr(pdfs: TFile[]) {
+    let converted = 0
+    let lastResult: TFile | null = null
+    for (const pdf of pdfs) {
+      try {
+        const md = await this.ocrConverter.convertFile(pdf, {
+          interactive: true,
+        })
+        if (md) {
+          converted++
+          lastResult = md
+        }
+      } catch (error) {
+        // The converter already showed a Notice.
+        console.error(`OCR conversion failed for ${pdf.path}`, error)
+      }
+    }
+    if (pdfs.length > 1) {
+      new Notice(`OCR finished: ${converted} of ${pdfs.length} PDFs converted.`)
+    } else if (lastResult) {
+      await this.app.workspace.getLeaf('tab').openFile(lastResult)
+    }
   }
 
   async getDbManager(): Promise<DatabaseManager> {

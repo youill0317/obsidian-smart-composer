@@ -11,6 +11,9 @@ import {
 } from 'react'
 
 import { useApp } from '../../../contexts/app-context'
+import { usePlugin } from '../../../contexts/plugin-context'
+import { useSettings } from '../../../contexts/settings-context'
+import { isPdf } from '../../../core/ocr/ocrConverter'
 import {
   Mentionable,
   MentionableImage,
@@ -299,6 +302,9 @@ function MentionableContentPreview({
   mentionables: Mentionable[]
 }) {
   const app = useApp()
+  const { ocrConverter } = usePlugin()
+  const { settings } = useSettings()
+  const chatAutoOcr = settings.ocr.chatAutoOcr
 
   const displayedMentionable: Mentionable | null = useMemo(() => {
     return (
@@ -318,6 +324,7 @@ function MentionableContentPreview({
       'file',
       displayedMentionableKey,
       mentionables.map((m) => getMentionableKey(serializeMentionable(m))), // should be updated when mentionables change (especially on delete)
+      chatAutoOcr,
     ],
     queryFn: async () => {
       if (!displayedMentionable) return null
@@ -326,10 +333,21 @@ function MentionableContentPreview({
         displayedMentionable.type === 'current-file'
       ) {
         if (!displayedMentionable.file) return null
-        const content = await readTFileContent(
-          displayedMentionable.file,
-          app.vault,
-        )
+        let file = displayedMentionable.file
+        if (isPdf(file)) {
+          // Never read a PDF as text; show its OCR markdown when available.
+          const converted = ocrConverter.findExistingMarkdown(file)
+          if (!converted) {
+            if (displayedMentionable.type === 'current-file') {
+              return 'PDF document. Convert it to Markdown (OCR) to include it as the current file.'
+            }
+            return chatAutoOcr
+              ? 'PDF document. It will be converted with OCR when the message is sent.'
+              : 'PDF document. Convert it to Markdown (OCR) from the file menu to include it in chat.'
+          }
+          file = converted
+        }
+        const content = await readTFileContent(file, app.vault)
         return content.slice(0, MAX_PREVIEW_LENGTH)
       } else if (displayedMentionable.type === 'block') {
         const fileContent = await readTFileContent(

@@ -127,9 +127,10 @@ export function fuzzySearch(app: App, query: string): SearchableMentionable[] {
   const currentFile = app.workspace.getActiveFile()
   const openFiles = getOpenFiles(app)
 
+  // PDFs are converted to markdown with OCR when the message is sent.
   const allSupportedFiles = app.vault.getFiles().filter((file) => {
     const extension = file.extension
-    return extension === 'md'
+    return extension === 'md' || extension.toLowerCase() === 'pdf'
   })
 
   const allFilesWithMetadata: SearchItem[] = allSupportedFiles.map((file) => ({

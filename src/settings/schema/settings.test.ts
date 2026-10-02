@@ -8,6 +8,7 @@ import {
 import { cliSettingsSchema } from '../../types/cli.types'
 
 import { SETTINGS_SCHEMA_VERSION } from './migrations'
+import { DEFAULT_OCR_OPTIONS } from './setting.types'
 import { parseSmartComposerSettings } from './settings'
 
 describe('parseSmartComposerSettings', () => {
@@ -46,6 +47,8 @@ describe('parseSmartComposerSettings', () => {
         enableTools: true,
         maxAutoIterations: 1,
       },
+
+      ocr: { ...DEFAULT_OCR_OPTIONS },
     })
   })
 })

@@ -24,6 +24,51 @@ const ragOptionsSchema = z.object({
   includePatterns: z.array(z.string()).catch([]),
 })
 
+export const DEFAULT_OCR_OPTIONS = {
+  providerId: 'mistral',
+  model: 'mistral-ocr-latest',
+  includeImages: true,
+  imageLimit: 0,
+  imageMinSize: 0,
+  tableFormat: 'markdown',
+  paginate: false,
+  outputLocation: 'same-folder',
+  createAssetSubfolder: true,
+  writeMetadata: true,
+  movePdfToFolder: false,
+  deleteOriginal: false,
+  chatAutoOcr: true,
+  chatReuseExisting: true,
+  chatConfirmAboveMb: 10,
+} as const
+
+// Each field falls back on its own, so one invalid or missing value never
+// resets the other OCR options.
+const ocrOptionsSchema = z.object({
+  providerId: z.string().catch(DEFAULT_OCR_OPTIONS.providerId), // id of a provider whose type is 'mistral'
+  model: z.string().catch(DEFAULT_OCR_OPTIONS.model),
+  includeImages: z.boolean().catch(DEFAULT_OCR_OPTIONS.includeImages),
+  imageLimit: z.number().catch(DEFAULT_OCR_OPTIONS.imageLimit), // 0 = no limit
+  imageMinSize: z.number().catch(DEFAULT_OCR_OPTIONS.imageMinSize), // 0 = no minimum
+  tableFormat: z
+    .enum(['markdown', 'html'])
+    .catch(DEFAULT_OCR_OPTIONS.tableFormat),
+  paginate: z.boolean().catch(DEFAULT_OCR_OPTIONS.paginate), // insert a horizontal rule between pages
+  outputLocation: z
+    .enum(['same-folder', 'subfolder'])
+    .catch(DEFAULT_OCR_OPTIONS.outputLocation),
+  createAssetSubfolder: z
+    .boolean()
+    .catch(DEFAULT_OCR_OPTIONS.createAssetSubfolder),
+  writeMetadata: z.boolean().catch(DEFAULT_OCR_OPTIONS.writeMetadata),
+  movePdfToFolder: z.boolean().catch(DEFAULT_OCR_OPTIONS.movePdfToFolder), // only used with 'subfolder'
+  deleteOriginal: z.boolean().catch(DEFAULT_OCR_OPTIONS.deleteOriginal),
+  chatAutoOcr: z.boolean().catch(DEFAULT_OCR_OPTIONS.chatAutoOcr), // run OCR when a PDF is mentioned in chat
+  chatReuseExisting: z.boolean().catch(DEFAULT_OCR_OPTIONS.chatReuseExisting),
+  chatConfirmAboveMb: z.number().catch(DEFAULT_OCR_OPTIONS.chatConfirmAboveMb), // 0 = never ask
+})
+export type OcrOptions = z.infer<typeof ocrOptionsSchema>
+
 /**
  * Settings
  */
@@ -90,6 +135,9 @@ export const smartComposerSettingsSchema = z.object({
       enableTools: true,
       maxAutoIterations: 1,
     }),
+
+  // Document OCR options
+  ocr: ocrOptionsSchema.catch({ ...DEFAULT_OCR_OPTIONS }),
 })
 export type SmartComposerSettings = z.infer<typeof smartComposerSettingsSchema>
 

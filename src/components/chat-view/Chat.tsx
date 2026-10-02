@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { ApplyViewState } from '../../ApplyView'
 import { APPLY_VIEW_TYPE } from '../../constants'
 import { useApp } from '../../contexts/app-context'
+import { usePlugin } from '../../contexts/plugin-context'
 import { useRAG } from '../../contexts/rag-context'
 import { useSettings } from '../../contexts/settings-context'
 import { useTools } from '../../contexts/tools-context'
@@ -85,6 +86,7 @@ export type ChatProps = {
 
 const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
   const app = useApp()
+  const { ocrConverter } = usePlugin()
   const { settings, setSettings } = useSettings()
   const { getRAGEngine } = useRAG()
   const toolManager = useTools()
@@ -97,8 +99,8 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     chatList,
   } = useChatHistory()
   const promptGenerator = useMemo(() => {
-    return new PromptGenerator(getRAGEngine, app, settings)
-  }, [getRAGEngine, app, settings])
+    return new PromptGenerator(getRAGEngine, app, settings, ocrConverter)
+  }, [getRAGEngine, app, settings, ocrConverter])
 
   const [inputMessage, setInputMessage] = useState<ChatUserMessage>(() => {
     const newMessage = getNewInputMessage(app)
