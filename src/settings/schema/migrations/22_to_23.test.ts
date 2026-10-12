@@ -67,12 +67,12 @@ describe('migrateFrom22To23', () => {
     const ocr = {
       providerId: 'my-mistral',
       tableFormat: 'xml',
-      chatAutoOcr: false,
+      paginate: true,
     }
     expect(parseSmartComposerSettings({ version: 23, ocr }).ocr).toEqual({
       ...OCR_DEFAULTS_ADDED_IN_V23,
       providerId: 'my-mistral',
-      chatAutoOcr: false,
+      paginate: true,
     })
   })
 
@@ -82,7 +82,7 @@ describe('migrateFrom22To23', () => {
       providerId: 'other',
       tableFormat: 'html',
       outputLocation: 'subfolder',
-      chatConfirmAboveMb: 0,
+      imageLimit: 5,
     }
     expect(parseSmartComposerSettings({ version: 22, ocr }).ocr).toEqual(ocr)
   })

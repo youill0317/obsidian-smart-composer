@@ -66,12 +66,11 @@ function ControlLabel({ text, warning }: { text: string; warning?: boolean }) {
 }
 
 // Empty or invalid input leaves the stored value unchanged.
-function parseNonNegative(value: string, integer: boolean): number | null {
+function parseNonNegativeInt(value: string): number | null {
   if (value.trim() === '') return null
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return null
-  const clamped = Math.max(0, parsed)
-  return integer ? Math.floor(clamped) : clamped
+  return Math.floor(Math.max(0, parsed))
 }
 
 function OcrOptionsForm({ onClose }: { onClose: () => void }) {
@@ -127,7 +126,7 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
           tooltip="Max images (0 = unlimited)"
           disabled={!ocr.includeImages}
           onChange={(value) => {
-            const parsed = parseNonNegative(value, true)
+            const parsed = parseNonNegativeInt(value)
             if (parsed !== null) void update({ imageLimit: parsed })
           }}
         />
@@ -139,7 +138,7 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
           tooltip="Min image size in px (0 = any)"
           disabled={!ocr.includeImages}
           onChange={(value) => {
-            const parsed = parseNonNegative(value, true)
+            const parsed = parseNonNegativeInt(value)
             if (parsed !== null) void update({ imageMinSize: parsed })
           }}
         />
@@ -182,7 +181,7 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
       </ObsidianSetting>
       <ObsidianSetting
         name="Frontmatter metadata"
-        desc="Record the source PDF, model and page count in the note's frontmatter. Used to find earlier conversions."
+        desc="Record the source PDF, model and page count in the note's frontmatter."
       >
         <ObsidianToggle
           value={ocr.writeMetadata}
@@ -191,7 +190,7 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
       </ObsidianSetting>
       <ObsidianSetting
         name="Original PDF"
-        desc="Applies to conversions from the file menu or command; chat never moves or deletes PDFs. Moving requires the subfolder location. Deleted PDFs go to the trash."
+        desc="Moving requires the subfolder location. Deleted PDFs go to the trash."
       >
         <ControlLabel text="Move into output folder" />
         <ObsidianToggle
@@ -205,31 +204,6 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
           value={ocr.deleteOriginal}
           tooltip="Move the PDF to the trash after conversion"
           onChange={(value) => update({ deleteOriginal: value })}
-        />
-      </ObsidianSetting>
-
-      <ObsidianSetting name="Chat" heading />
-      <ObsidianSetting
-        name="Reuse existing conversion"
-        desc="When a mentioned PDF was already converted, send that note instead of calling the API again."
-      >
-        <ObsidianToggle
-          value={ocr.chatReuseExisting}
-          onChange={(value) => update({ chatReuseExisting: value })}
-        />
-      </ObsidianSetting>
-      <ObsidianSetting
-        name="Confirm before OCR above (MB)"
-        desc="Ask before running OCR on a mentioned PDF larger than this. 0 = never ask."
-      >
-        <ObsidianTextInput
-          type="number"
-          value={ocr.chatConfirmAboveMb.toString()}
-          placeholder="0 = never ask"
-          onChange={(value) => {
-            const parsed = parseNonNegative(value, false)
-            if (parsed !== null) void update({ chatConfirmAboveMb: parsed })
-          }}
         />
       </ObsidianSetting>
 

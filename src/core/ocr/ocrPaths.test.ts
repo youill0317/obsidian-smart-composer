@@ -1,8 +1,4 @@
-import {
-  getBaseName,
-  getCandidateMarkdownPaths,
-  getOcrOutputPaths,
-} from './ocrPaths'
+import { getBaseName, getOcrOutputPaths } from './ocrPaths'
 
 describe('getOcrOutputPaths', () => {
   it('writes next to the PDF in same-folder mode', () => {
@@ -42,17 +38,6 @@ describe('getOcrOutputPaths', () => {
     })
     expect(paths.markdownPath).toBe('scan.md')
     expect(paths.assetDir).toBe('assets')
-  })
-})
-
-describe('getCandidateMarkdownPaths', () => {
-  it('prefers the configured layout', () => {
-    expect(
-      getCandidateMarkdownPaths('x/r.pdf', { outputLocation: 'subfolder' }),
-    ).toEqual(['x/r/r.md', 'x/r.md'])
-    expect(
-      getCandidateMarkdownPaths('x/r.pdf', { outputLocation: 'same-folder' }),
-    ).toEqual(['x/r.md', 'x/r/r.md'])
   })
 })
 

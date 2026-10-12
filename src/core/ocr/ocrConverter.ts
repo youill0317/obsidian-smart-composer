@@ -11,11 +11,7 @@ import { confirmAsync } from '../../components/modals/ConfirmModal'
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
 
 import { MistralOcrClient, OcrProgressStage } from './mistralOcrClient'
-import {
-  getCandidateMarkdownPaths,
-  getOcrOutputPaths,
-  joinVaultPath,
-} from './ocrPaths'
+import { getOcrOutputPaths, joinVaultPath } from './ocrPaths'
 import { combineOcrPages } from './ocrResult'
 
 export const OCR_FRONTMATTER_KEY = 'smtcmp_ocr'
@@ -38,8 +34,7 @@ function errorMessage(error: unknown): string {
 
 /**
  * Converts PDFs in the vault to markdown with Mistral OCR. Used by the file
- * menu, the command palette and chat mentions; it has no React or chat
- * dependencies.
+ * menu and the command palette; it has no React dependencies.
  */
 export class OcrConverter {
   // Concurrent requests for the same PDF share one API call.
@@ -51,67 +46,23 @@ export class OcrConverter {
   ) {}
 
   /**
-   * Returns the markdown produced by an earlier conversion of this PDF, if
-   * any. A file whose frontmatter names this PDF as its source wins over a
-   * plain path match.
+   * Converts a PDF and returns the markdown file. Asks before overwriting an
+   * existing file and returns null when the user declines. Applies the
+   * move/delete options for the original PDF. Errors are shown as a Notice
+   * and rethrown.
    */
-  findExistingMarkdown(pdf: TFile): TFile | null {
-    const { ocr } = this.getSettings()
-    let fallback: TFile | null = null
-    for (const path of getCandidateMarkdownPaths(pdf.path, ocr)) {
-      const md = this.app.vault.getFileByPath(path)
-      if (!md) continue
-      const meta = this.readOcrFrontmatter(md)
-      if (meta?.source === pdf.path) return md
-      if (fallback) continue
-      // A conversion of a different PDF that still exists is not a match.
-      const otherSource =
-        typeof meta?.source === 'string' &&
-        this.app.vault.getFileByPath(meta.source)
-      if (!otherSource) fallback = md
-    }
-    return fallback
-  }
-
-  /**
-   * Markdown for a PDF mentioned in chat: reuses an earlier conversion when
-   * allowed, otherwise converts without prompting.
-   */
-  async getMarkdownForPdf(pdf: TFile): Promise<TFile | null> {
-    if (this.getSettings().ocr.chatReuseExisting) {
-      const existing = this.findExistingMarkdown(pdf)
-      if (existing) return existing
-    }
-    return this.convertFile(pdf, { interactive: false })
-  }
-
-  /**
-   * Converts a PDF and returns the markdown file. Returns null only when the
-   * user declines to overwrite an existing file (interactive mode). Errors
-   * are shown as a Notice and rethrown.
-   *
-   * Interactive conversions (file menu, command) ask before overwriting and
-   * apply the move/delete options for the original PDF. Non-interactive ones
-   * (chat) overwrite only earlier OCR output and never touch the PDF.
-   */
-  convertFile(
-    pdf: TFile,
-    { interactive }: { interactive: boolean },
-  ): Promise<TFile | null> {
+  convertFile(pdf: TFile): Promise<TFile | null> {
     const key = pdf.path
     const running = this.inFlight.get(key)
     if (running) return running
-    const promise = this.convert(pdf, interactive).finally(() => {
+    const promise = this.convert(pdf).finally(() => {
       this.inFlight.delete(key)
     })
     this.inFlight.set(key, promise)
     return promise
   }
 
-  private async convert(
-    pdf: TFile,
-    interactive: boolean,
-  ): Promise<TFile | null> {
+  private async convert(pdf: TFile): Promise<TFile | null> {
     let progress: Notice | null = null
     try {
       const { ocr, providers } = this.getSettings()
@@ -133,19 +84,12 @@ export class OcrConverter {
         throw new Error(`${paths.markdownPath} already exists as a folder.`)
       }
       if (target) {
-        if (interactive) {
-          const overwrite = await confirmAsync(this.app, {
-            title: 'Overwrite existing file?',
-            message: `${target.path} already exists. Replace it with the OCR result of ${pdf.name}?`,
-            ctaText: 'Overwrite',
-          })
-          if (!overwrite) return null
-        } else if (!this.readOcrFrontmatter(target)) {
-          // Never silently replace a note that OCR did not create.
-          throw new Error(
-            `${target.path} already exists and was not created by OCR. Convert the PDF from the file menu to overwrite it.`,
-          )
-        }
+        const overwrite = await confirmAsync(this.app, {
+          title: 'Overwrite existing file?',
+          message: `${target.path} already exists. Replace it with the OCR result of ${pdf.name}?`,
+          ctaText: 'Overwrite',
+        })
+        if (!overwrite) return null
       }
 
       progress = new Notice(`Reading ${pdf.name}...`, 0)
@@ -207,7 +151,7 @@ export class OcrConverter {
       }
 
       const sourceMtime = pdf.stat.mtime
-      if (interactive) await this.handleOriginal(pdf, paths.movedPdfPath)
+      await this.handleOriginal(pdf, paths.movedPdfPath)
 
       if (ocr.writeMetadata) {
         const meta: OcrFrontmatter = {
@@ -225,7 +169,7 @@ export class OcrConverter {
             },
           )
         } catch (error) {
-          // The note is already written; missing metadata only affects reuse.
+          // The note is already written; only the metadata is missing.
           console.error('Failed to write OCR frontmatter', error)
           new Notice(`Could not add OCR metadata to ${md.path}.`)
         }
@@ -280,16 +224,6 @@ export class OcrConverter {
         `Converted, but the original PDF could not be ${ocr.deleteOriginal ? 'deleted' : 'moved'}: ${errorMessage(error)}`,
       )
     }
-  }
-
-  private readOcrFrontmatter(md: TFile): Partial<OcrFrontmatter> | null {
-    const value: unknown =
-      this.app.metadataCache.getFileCache(md)?.frontmatter?.[
-        OCR_FRONTMATTER_KEY
-      ]
-    return value && typeof value === 'object'
-      ? (value as Partial<OcrFrontmatter>)
-      : null
   }
 
   private async ensureFolder(path: string) {

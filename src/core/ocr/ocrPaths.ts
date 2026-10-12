@@ -54,20 +54,3 @@ export function getOcrOutputPaths(
     ),
   }
 }
-
-/** Markdown paths a previous conversion of this PDF may have produced. */
-export function getCandidateMarkdownPaths(
-  pdfPath: string,
-  options: Pick<OcrOptions, 'outputLocation'>,
-): string[] {
-  const preferred = getOcrOutputPaths(pdfPath, {
-    outputLocation: options.outputLocation,
-    createAssetSubfolder: false,
-  }).markdownPath
-  const other = getOcrOutputPaths(pdfPath, {
-    outputLocation:
-      options.outputLocation === 'subfolder' ? 'same-folder' : 'subfolder',
-    createAssetSubfolder: false,
-  }).markdownPath
-  return [preferred, other]
-}

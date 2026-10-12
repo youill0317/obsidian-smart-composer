@@ -338,9 +338,7 @@ export default class SmartComposerPlugin extends Plugin {
     let lastResult: TFile | null = null
     for (const pdf of pdfs) {
       try {
-        const md = await this.ocrConverter.convertFile(pdf, {
-          interactive: true,
-        })
+        const md = await this.ocrConverter.convertFile(pdf)
         if (md) {
           converted++
           lastResult = md

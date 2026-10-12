@@ -6,7 +6,6 @@ import SmartComposerPlugin from '../../../main'
 import { ObsidianButton } from '../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../common/ObsidianSetting'
-import { ObsidianToggle } from '../../common/ObsidianToggle'
 import { OcrOptionsModal } from '../modals/OcrOptionsModal'
 
 type OcrSectionProps = {
@@ -16,7 +15,7 @@ type OcrSectionProps = {
 
 export function OcrSection({ app, plugin }: OcrSectionProps) {
   const { settings, setSettings } = useSettings()
-  const { providerId, chatAutoOcr } = settings.ocr
+  const { providerId } = settings.ocr
 
   const mistralProviders = useMemo(
     () => settings.providers.filter((provider) => provider.type === 'mistral'),
@@ -43,7 +42,7 @@ export function OcrSection({ app, plugin }: OcrSectionProps) {
         name="OCR provider"
         desc={
           hasProviders
-            ? 'Mistral provider used to convert PDFs to Markdown (file menu, command palette and chat mentions). Uses its API key and base URL.'
+            ? 'Mistral provider used to convert PDFs to Markdown (file menu and command palette). Uses its API key and base URL.'
             : 'No Mistral provider found. Add a Mistral provider in the Providers section to use OCR.'
         }
       >
@@ -62,21 +61,6 @@ export function OcrSection({ app, plugin }: OcrSectionProps) {
         <ObsidianButton
           text="Options"
           onClick={() => new OcrOptionsModal(app, plugin).open()}
-        />
-      </ObsidianSetting>
-
-      <ObsidianSetting
-        name="Auto OCR for PDF mentions in chat"
-        desc="Convert mentioned PDFs to Markdown with Mistral OCR when the message is sent. OCR is billed per page."
-      >
-        <ObsidianToggle
-          value={chatAutoOcr}
-          onChange={async (value) => {
-            await setSettings((current) => ({
-              ...current,
-              ocr: { ...current.ocr, chatAutoOcr: value },
-            }))
-          }}
         />
       </ObsidianSetting>
     </div>

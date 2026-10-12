@@ -14,9 +14,6 @@ export const OCR_DEFAULTS_ADDED_IN_V23 = {
   writeMetadata: true,
   movePdfToFolder: false,
   deleteOriginal: false,
-  chatAutoOcr: true,
-  chatReuseExisting: true,
-  chatConfirmAboveMb: 10,
 } as const
 
 /**

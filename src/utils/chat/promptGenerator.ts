@@ -2,7 +2,6 @@ import { App, TFile, htmlToMarkdown } from 'obsidian'
 
 import { editorStateToPlainText } from '../../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { QueryProgressState } from '../../components/chat-view/QueryProgress'
-import { OcrConverter, isPdf } from '../../core/ocr/ocrConverter'
 import { RAGEngine } from '../../core/rag/ragEngine'
 import { SelectEmbedding } from '../../database/schema'
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
@@ -35,26 +34,22 @@ import {
   readTFileContent,
 } from '../obsidian'
 
-import { resolveCurrentPdf, resolvePdfMentions } from './pdfMentions'
 import { YoutubeTranscript, isYoutubeUrl } from './youtube-transcript'
 
 export class PromptGenerator {
   private getRagEngine: () => Promise<RAGEngine>
   private app: App
   private settings: SmartComposerSettings
-  private ocrConverter?: OcrConverter
   private MAX_CONTEXT_MESSAGES = 20
 
   constructor(
     getRagEngine: () => Promise<RAGEngine>,
     app: App,
     settings: SmartComposerSettings,
-    ocrConverter?: OcrConverter,
   ) {
     this.getRagEngine = getRagEngine
     this.app = app
     this.settings = settings
-    this.ocrConverter = ocrConverter
   }
 
   public async generateRequestMessages({
@@ -289,22 +284,15 @@ ${message.annotations
       onQueryProgressChange?.({
         type: 'reading-mentionables',
       })
-      // Mentioned PDFs are replaced by their OCR markdown.
-      const files = await resolvePdfMentions({
-        files: message.mentionables
-          .filter((m): m is MentionableFile => m.type === 'file')
-          .map((m) => m.file),
-        app: this.app,
-        settings: this.settings,
-        ocrConverter: this.ocrConverter,
-      })
+      const files = message.mentionables
+        .filter((m): m is MentionableFile => m.type === 'file')
+        .map((m) => m.file)
       const folders = message.mentionables
         .filter((m): m is MentionableFolder => m.type === 'folder')
         .map((m) => m.folder)
-      // PDFs inside mentioned folders are binary; never read them as text.
-      const nestedFiles = folders
-        .flatMap((folder) => getNestedFiles(folder, this.app.vault))
-        .filter((file) => !isPdf(file))
+      const nestedFiles = folders.flatMap((folder) =>
+        getNestedFiles(folder, this.app.vault),
+      )
       const allFiles = [...files, ...nestedFiles]
       const fileContents = await readMultipleTFiles(allFiles, this.app.vault)
 
@@ -518,13 +506,8 @@ ${customInstruction}
   }
 
   private async getCurrentFileMessage(
-    activeFile: TFile,
-  ): Promise<RequestMessage | undefined> {
-    // A PDF is only included when it was already converted with OCR.
-    const currentFile = isPdf(activeFile)
-      ? resolveCurrentPdf(activeFile, this.ocrConverter)
-      : activeFile
-    if (!currentFile) return undefined
+    currentFile: TFile,
+  ): Promise<RequestMessage> {
     const fileContent = await readTFileContent(currentFile, this.app.vault)
     return {
       role: 'user',

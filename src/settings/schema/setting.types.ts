@@ -37,9 +37,6 @@ export const DEFAULT_OCR_OPTIONS = {
   writeMetadata: true,
   movePdfToFolder: false,
   deleteOriginal: false,
-  chatAutoOcr: true,
-  chatReuseExisting: true,
-  chatConfirmAboveMb: 10,
 } as const
 
 // Each field falls back on its own, so one invalid or missing value never
@@ -63,9 +60,6 @@ const ocrOptionsSchema = z.object({
   writeMetadata: z.boolean().catch(DEFAULT_OCR_OPTIONS.writeMetadata),
   movePdfToFolder: z.boolean().catch(DEFAULT_OCR_OPTIONS.movePdfToFolder), // only used with 'subfolder'
   deleteOriginal: z.boolean().catch(DEFAULT_OCR_OPTIONS.deleteOriginal),
-  chatAutoOcr: z.boolean().catch(DEFAULT_OCR_OPTIONS.chatAutoOcr), // run OCR when a PDF is mentioned in chat
-  chatReuseExisting: z.boolean().catch(DEFAULT_OCR_OPTIONS.chatReuseExisting),
-  chatConfirmAboveMb: z.number().catch(DEFAULT_OCR_OPTIONS.chatConfirmAboveMb), // 0 = never ask
 })
 export type OcrOptions = z.infer<typeof ocrOptionsSchema>
 
