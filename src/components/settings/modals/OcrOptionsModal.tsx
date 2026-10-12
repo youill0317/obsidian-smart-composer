@@ -1,5 +1,4 @@
 import { App } from 'obsidian'
-import { useEffect } from 'react'
 
 import {
   SettingsProvider,
@@ -7,11 +6,9 @@ import {
 } from '../../../contexts/settings-context'
 import SmartComposerPlugin from '../../../main'
 import { OcrOptions } from '../../../settings/schema/setting.types'
+import { ObsidianButton } from '../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../common/ObsidianDropdown'
-import {
-  ObsidianSetting,
-  useObsidianSetting,
-} from '../../common/ObsidianSetting'
+import { ObsidianSetting } from '../../common/ObsidianSetting'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../common/ObsidianToggle'
 import { ReactModal } from '../../common/ReactModal'
@@ -46,25 +43,6 @@ function OcrOptionsModalWrapper({ plugin, onClose }: OcrOptionsModalProps) {
   )
 }
 
-/**
- * Short label inside a setting's control area, so several controls can share
- * one row. It must be rendered right before the control it describes.
- */
-function ControlLabel({ text, warning }: { text: string; warning?: boolean }) {
-  const { setting } = useObsidianSetting()
-  useEffect(() => {
-    if (!setting) return
-    const label = document.createElement('span')
-    label.className = warning
-      ? 'smtcmp-settings-ocr-label smtcmp-settings-ocr-label--warning'
-      : 'smtcmp-settings-ocr-label'
-    label.textContent = text
-    setting.controlEl.appendChild(label)
-    return () => label.remove()
-  }, [setting, text, warning])
-  return null
-}
-
 // Empty or invalid input leaves the stored value unchanged.
 function parseNonNegativeInt(value: string): number | null {
   if (value.trim() === '') return null
@@ -86,23 +64,22 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="smtcmp-settings-ocr-options">
+    <div>
       <ObsidianSetting name="Model" heading />
-      <ObsidianSetting
-        name="OCR model"
-        desc="Mistral OCR model, and whether tables are written as Markdown or HTML."
-      >
+      <ObsidianSetting name="OCR model" desc="Mistral OCR model name.">
         <ObsidianTextInput
           value={ocr.model}
           placeholder="mistral-ocr-latest"
-          tooltip="OCR model"
           onChange={(value) => void update({ model: value.trim() })}
         />
-        <ControlLabel text="Tables" />
+      </ObsidianSetting>
+      <ObsidianSetting
+        name="Table format"
+        desc="How tables are written in the note."
+      >
         <ObsidianDropdown
           value={ocr.tableFormat}
           options={{ markdown: 'Markdown', html: 'HTML' }}
-          tooltip="Table format"
           onChange={(value) =>
             void update({ tableFormat: value === 'html' ? 'html' : 'markdown' })
           }
@@ -112,41 +89,60 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
       <ObsidianSetting name="Images" heading />
       <ObsidianSetting
         name="Extract images"
-        desc="Save images found in the PDF and link them from the note. Max: number of images to keep. Min size: smallest width or height in pixels."
+        desc="Save images found in the PDF and link them from the note."
       >
         <ObsidianToggle
           value={ocr.includeImages}
-          tooltip="Extract images"
           onChange={(value) => update({ includeImages: value })}
         />
-        <ControlLabel text="Max" />
-        <ObsidianTextInput
-          type="number"
-          value={ocr.imageLimit.toString()}
-          tooltip="Max images (0 = unlimited)"
-          disabled={!ocr.includeImages}
-          onChange={(value) => {
-            const parsed = parseNonNegativeInt(value)
-            if (parsed !== null) void update({ imageLimit: parsed })
-          }}
-        />
-        <ControlLabel text="Min size (px)" />
-        <ObsidianTextInput
-          type="number"
-          value={ocr.imageMinSize.toString()}
-          tooltip="Min image size in px (0 = any)"
-          disabled={!ocr.includeImages}
-          onChange={(value) => {
-            const parsed = parseNonNegativeInt(value)
-            if (parsed !== null) void update({ imageMinSize: parsed })
-          }}
-        />
       </ObsidianSetting>
+      {ocr.includeImages && (
+        <>
+          <ObsidianSetting
+            name="Max images"
+            desc="Number of images to keep. 0 means no limit."
+            className="smtcmp-setting-item--nested"
+          >
+            <ObsidianTextInput
+              type="number"
+              value={ocr.imageLimit.toString()}
+              onChange={(value) => {
+                const parsed = parseNonNegativeInt(value)
+                if (parsed !== null) void update({ imageLimit: parsed })
+              }}
+            />
+          </ObsidianSetting>
+          <ObsidianSetting
+            name="Min image size"
+            desc="Smallest width or height in pixels. 0 means any size."
+            className="smtcmp-setting-item--nested"
+          >
+            <ObsidianTextInput
+              type="number"
+              value={ocr.imageMinSize.toString()}
+              onChange={(value) => {
+                const parsed = parseNonNegativeInt(value)
+                if (parsed !== null) void update({ imageMinSize: parsed })
+              }}
+            />
+          </ObsidianSetting>
+          <ObsidianSetting
+            name="Assets folder"
+            desc="Put images in an assets folder next to the note instead of beside it."
+            className="smtcmp-setting-item--nested"
+          >
+            <ObsidianToggle
+              value={ocr.createAssetSubfolder}
+              onChange={(value) => update({ createAssetSubfolder: value })}
+            />
+          </ObsidianSetting>
+        </>
+      )}
 
       <ObsidianSetting name="Output" heading />
       <ObsidianSetting
         name="Output location"
-        desc="Same folder: <name>.md next to the PDF. Subfolder: <name>/<name>.md. Assets: put images in an assets folder next to the note instead of beside it."
+        desc="Same folder: <name>.md next to the PDF. Subfolder: <name>/<name>.md."
       >
         <ObsidianDropdown
           value={ocr.outputLocation}
@@ -154,19 +150,12 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
             'same-folder': 'Same folder as PDF',
             subfolder: 'Subfolder named after PDF',
           }}
-          tooltip="Where the markdown file is written"
           onChange={(value) =>
             void update({
               outputLocation:
                 value === 'subfolder' ? 'subfolder' : 'same-folder',
             })
           }
-        />
-        <ControlLabel text="Assets folder" />
-        <ObsidianToggle
-          value={ocr.createAssetSubfolder}
-          tooltip="Put images in an assets folder"
-          onChange={(value) => update({ createAssetSubfolder: value })}
         />
       </ObsidianSetting>
       <ObsidianSetting
@@ -187,29 +176,32 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
           onChange={(value) => update({ writeMetadata: value })}
         />
       </ObsidianSetting>
+
+      <ObsidianSetting name="Original PDF" heading />
       <ObsidianSetting
-        name="Original PDF"
-        desc="Moving requires the subfolder location. Deleting follows Obsidian's 'Deleted files' setting. The PDF is kept when no text was recognized or some images could not be saved."
+        name="Move into output folder"
+        desc="Move the PDF into the output subfolder. Requires the subfolder output location; ignored when delete is on."
       >
-        <ControlLabel text="Move into output folder" />
         <ObsidianToggle
           // Shown off while it has no effect; the stored choice is kept.
           value={canMovePdf && ocr.movePdfToFolder}
-          tooltip="Move the PDF into the output subfolder"
           disabled={!canMovePdf}
           onChange={(value) => update({ movePdfToFolder: value })}
         />
-        <ControlLabel text="Delete after conversion" warning />
+      </ObsidianSetting>
+      <ObsidianSetting
+        name="Delete after conversion"
+        desc="Move the PDF to the trash, following Obsidian's 'Deleted files' setting. The PDF is kept when no text was recognized or some images could not be saved."
+      >
         <ObsidianToggle
           value={ocr.deleteOriginal}
-          tooltip="Move the PDF to the trash after conversion"
           onChange={(value) => update({ deleteOriginal: value })}
         />
       </ObsidianSetting>
 
-      <div className="modal-button-container">
-        <button onClick={onClose}>Close</button>
-      </div>
+      <ObsidianSetting>
+        <ObsidianButton text="Close" onClick={onClose} />
+      </ObsidianSetting>
     </div>
   )
 }
