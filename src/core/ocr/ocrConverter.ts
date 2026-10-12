@@ -8,10 +8,18 @@ import {
 } from 'obsidian'
 
 import { confirmAsync } from '../../components/modals/ConfirmModal'
-import { SmartComposerSettings } from '../../settings/schema/setting.types'
+import {
+  OcrOptions,
+  SmartComposerSettings,
+} from '../../settings/schema/setting.types'
 
 import { MistralOcrClient, OcrProgressStage } from './mistralOcrClient'
-import { getOcrOutputPaths, joinVaultPath } from './ocrPaths'
+import {
+  OcrOutputPaths,
+  getOcrOutputPaths,
+  getParentPath,
+  joinVaultPath,
+} from './ocrPaths'
 import { combineOcrPages } from './ocrResult'
 
 export const OCR_FRONTMATTER_KEY = 'smtcmp_ocr'
@@ -37,7 +45,7 @@ function errorMessage(error: unknown): string {
  * menu and the command palette; it has no React dependencies.
  */
 export class OcrConverter {
-  // Concurrent requests for the same PDF share one API call.
+  // PDFs currently being converted, so the same PDF never runs twice at once.
   private inFlight = new Map<string, Promise<TFile | null>>()
 
   constructor(
@@ -47,14 +55,16 @@ export class OcrConverter {
 
   /**
    * Converts a PDF and returns the markdown file. Asks before overwriting an
-   * existing file and returns null when the user declines. Applies the
-   * move/delete options for the original PDF. Errors are shown as a Notice
-   * and rethrown.
+   * existing file and returns null when the user declines or the PDF is
+   * already being converted. Applies the move/delete options for the original
+   * PDF. Errors are shown as a Notice and rethrown.
    */
   convertFile(pdf: TFile): Promise<TFile | null> {
     const key = pdf.path
-    const running = this.inFlight.get(key)
-    if (running) return running
+    if (this.inFlight.has(key)) {
+      new Notice(`${pdf.name} is already being converted.`)
+      return Promise.resolve(null)
+    }
     const promise = this.convert(pdf).finally(() => {
       this.inFlight.delete(key)
     })
@@ -79,6 +89,7 @@ export class OcrConverter {
       }
 
       const paths = getOcrOutputPaths(pdf.path, ocr)
+      this.checkOutputPaths(paths, ocr.includeImages)
       const target = this.app.vault.getAbstractFileByPath(paths.markdownPath)
       if (target && !(target instanceof TFile)) {
         throw new Error(`${paths.markdownPath} already exists as a folder.`)
@@ -126,6 +137,7 @@ export class OcrConverter {
       })
 
       await this.ensureFolder(paths.outputDir)
+      if (result.images.length > 0) await this.ensureFolder(paths.assetDir)
       // A leading rule would otherwise be parsed as a frontmatter fence.
       const md = await this.writeText(
         paths.markdownPath,
@@ -135,23 +147,27 @@ export class OcrConverter {
       )
 
       let failedImages = 0
-      if (result.images.length > 0) {
-        await this.ensureFolder(paths.assetDir)
-        for (const image of result.images) {
-          try {
-            await this.writeBinary(
-              joinVaultPath(paths.assetDir, image.fileName),
-              base64ToArrayBuffer(image.base64),
-            )
-          } catch (error) {
-            failedImages++
-            console.error(`Failed to save OCR image ${image.fileName}`, error)
-          }
+      for (const image of result.images) {
+        try {
+          await this.writeBinary(
+            joinVaultPath(paths.assetDir, image.fileName),
+            base64ToArrayBuffer(image.base64),
+          )
+        } catch (error) {
+          failedImages++
+          console.error(`Failed to save OCR image ${image.fileName}`, error)
         }
       }
 
       const sourceMtime = pdf.stat.mtime
-      await this.handleOriginal(pdf, paths.movedPdfPath)
+      // Never delete the only full copy when the result is empty or incomplete.
+      const keptReason = !result.hasContent
+        ? 'no text was recognized'
+        : failedImages > 0
+          ? 'some images could not be saved'
+          : null
+      const keptOriginal = ocr.deleteOriginal && keptReason !== null
+      await this.handleOriginal(pdf, paths.movedPdfPath, ocr, keptOriginal)
 
       if (ocr.writeMetadata) {
         const meta: OcrFrontmatter = {
@@ -182,8 +198,14 @@ export class OcrConverter {
           failedImages > 0
             ? `, ${failedImages} image(s) could not be saved`
             : ''
-        })`,
-        5000,
+        })${
+          keptOriginal
+            ? `. ${pdf.name} was not deleted because ${keptReason}.`
+            : !result.hasContent
+              ? '. No text was recognized.'
+              : ''
+        }`,
+        keptOriginal || !result.hasContent ? 10000 : 5000,
       )
       return md
     } catch (error) {
@@ -194,10 +216,57 @@ export class OcrConverter {
     }
   }
 
-  private async handleOriginal(pdf: TFile, movedPdfPath: string) {
-    const { ocr } = this.getSettings()
+  /**
+   * Fails before the paid API call when an output path cannot be written: a
+   * file where a folder is needed, or a name that differs only in letter case
+   * from an existing one (case-insensitive file systems reject it).
+   */
+  private checkOutputPaths(paths: OcrOutputPaths, includeImages: boolean) {
+    const folders = includeImages
+      ? [paths.outputDir, paths.assetDir]
+      : [paths.outputDir]
+    for (const folder of folders) {
+      let current = ''
+      for (const segment of folder.split('/').filter(Boolean)) {
+        current = joinVaultPath(current, segment)
+        const existing = this.app.vault.getAbstractFileByPath(current)
+        if (existing instanceof TFolder) continue
+        if (existing) throw new Error(`${current} already exists as a file.`)
+        this.assertNoCaseConflict(current)
+      }
+    }
+    if (!this.app.vault.getAbstractFileByPath(paths.markdownPath)) {
+      this.assertNoCaseConflict(paths.markdownPath)
+    }
+  }
+
+  // Call only for a path that does not exist exactly.
+  private assertNoCaseConflict(path: string) {
+    const parentPath = getParentPath(path)
+    const parent = parentPath
+      ? this.app.vault.getAbstractFileByPath(parentPath)
+      : this.app.vault.getRoot()
+    if (!(parent instanceof TFolder)) return
+    const lowerPath = path.toLowerCase()
+    const conflict = parent.children.find(
+      (child) => child.path.toLowerCase() === lowerPath,
+    )
+    if (conflict) {
+      throw new Error(
+        `${conflict.path} already exists with different letter case. Rename it or the PDF and try again.`,
+      )
+    }
+  }
+
+  private async handleOriginal(
+    pdf: TFile,
+    movedPdfPath: string,
+    ocr: OcrOptions,
+    keepOriginal: boolean,
+  ) {
     try {
       if (ocr.deleteOriginal) {
+        if (keepOriginal) return
         if (typeof this.app.fileManager.trashFile === 'function') {
           await this.app.fileManager.trashFile(pdf)
         } else {

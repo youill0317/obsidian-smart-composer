@@ -351,7 +351,11 @@ export default class SmartComposerPlugin extends Plugin {
     if (pdfs.length > 1) {
       new Notice(`OCR finished: ${converted} of ${pdfs.length} PDFs converted.`)
     } else if (lastResult) {
-      await this.app.workspace.getLeaf('tab').openFile(lastResult)
+      try {
+        await this.app.workspace.getLeaf('tab').openFile(lastResult)
+      } catch (error) {
+        console.error(`Failed to open ${lastResult.path}`, error)
+      }
     }
   }
 

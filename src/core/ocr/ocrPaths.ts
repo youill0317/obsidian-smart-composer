@@ -38,8 +38,11 @@ export function getOcrOutputPaths(
 ): OcrOutputPaths {
   const dir = getParentPath(pdfPath)
   const baseName = getBaseName(pdfPath)
+  // A PDF already inside its own subfolder (e.g. moved there by an earlier
+  // conversion) writes into that folder instead of nesting another one.
+  const inOwnSubfolder = dir.slice(dir.lastIndexOf('/') + 1) === baseName
   const outputDir =
-    options.outputLocation === 'subfolder'
+    options.outputLocation === 'subfolder' && !inOwnSubfolder
       ? joinVaultPath(dir, baseName)
       : joinVaultPath(dir)
   const assetLinkDir = options.createAssetSubfolder ? OCR_ASSET_FOLDER : ''

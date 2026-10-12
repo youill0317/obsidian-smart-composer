@@ -10,6 +10,7 @@ import {
 import { useSettings } from '../../../contexts/settings-context'
 import { getEmbeddingModelClient } from '../../../core/rag/embedding'
 import SmartComposerPlugin from '../../../main'
+import { DEFAULT_OCR_OPTIONS } from '../../../settings/schema/setting.types'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
 import { CredentialStorageStatus } from '../CredentialStorageStatus'
@@ -78,6 +79,11 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
           embeddingModels: [...current.embeddingModels].filter(
             (v) => v.providerId !== provider.id,
           ),
+          // OCR falls back to the default Mistral provider.
+          ocr:
+            current.ocr.providerId === provider.id
+              ? { ...current.ocr, providerId: DEFAULT_OCR_OPTIONS.providerId }
+              : current.ocr,
         }))
       },
     }).open()

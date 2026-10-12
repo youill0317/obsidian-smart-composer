@@ -122,7 +122,6 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
         <ObsidianTextInput
           type="number"
           value={ocr.imageLimit.toString()}
-          placeholder="0 = unlimited"
           tooltip="Max images (0 = unlimited)"
           disabled={!ocr.includeImages}
           onChange={(value) => {
@@ -134,7 +133,6 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
         <ObsidianTextInput
           type="number"
           value={ocr.imageMinSize.toString()}
-          placeholder="0 = any"
           tooltip="Min image size in px (0 = any)"
           disabled={!ocr.includeImages}
           onChange={(value) => {
@@ -190,7 +188,7 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
       </ObsidianSetting>
       <ObsidianSetting
         name="Original PDF"
-        desc="Moving requires the subfolder location. Deleted PDFs go to the trash."
+        desc="Moving requires the subfolder location. Deleting follows Obsidian's 'Deleted files' setting. The PDF is kept when no text was recognized or some images could not be saved."
       >
         <ControlLabel text="Move into output folder" />
         <ObsidianToggle

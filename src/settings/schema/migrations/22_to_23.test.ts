@@ -32,6 +32,13 @@ describe('migrateFrom22To23', () => {
     )
   })
 
+  it('gives each fallback its own copy of the defaults', () => {
+    const a = parseSmartComposerSettings({ version: 23 }).ocr
+    const b = parseSmartComposerSettings({ version: 23 }).ocr
+    expect(a).toEqual(b)
+    expect(a).not.toBe(b)
+  })
+
   it('is idempotent', () => {
     const once = migrateFrom22To23({ version: 22 })
     expect(migrateFrom22To23(once)).toEqual(once)

@@ -13,6 +13,8 @@ export type CombinedOcrResult = {
   markdown: string
   images: OcrImageFile[]
   pageCount: number
+  /** False when no page has any text or image. */
+  hasContent: boolean
 }
 
 export type CombineOcrOptions = {
@@ -28,6 +30,17 @@ export const PAGE_SEPARATOR = '\n\n---\n\n'
 const IMAGE_REF_PATTERN = /!\[([^\]]*)\]\(([^)]*)\)/g
 // Image ids the API uses in markdown, e.g. img-0.jpeg
 const API_IMAGE_ID_PATTERN = /^img-\d+\.[a-z0-9]+$/i
+// Code blocks that plugins run as JavaScript when the note is opened.
+const EXECUTABLE_FENCE_PATTERN =
+  /^([ \t]*(?:`{3,}|~{3,})[ \t]*)(dataviewjs|js-engine)(?=[ \t]*$)/gim
+
+/**
+ * Turns code blocks that plugins would execute (DataviewJS, JS Engine) into
+ * plain JavaScript blocks, so text from a PDF never runs as code.
+ */
+export function neutralizeExecutableCodeBlocks(markdown: string): string {
+  return markdown.replace(EXECUTABLE_FENCE_PATTERN, '$1js')
+}
 
 export function stripDataUriPrefix(data: string): string {
   if (!data.startsWith('data:')) return data
@@ -101,7 +114,7 @@ export function combineOcrPages(
       )
     }
 
-    return inlineTables(page).replace(
+    return neutralizeExecutableCodeBlocks(inlineTables(page)).replace(
       IMAGE_REF_PATTERN,
       (match, alt: string, rawTarget: string) => {
         const target = rawTarget.trim()
@@ -117,10 +130,12 @@ export function combineOcrPages(
   })
 
   const separator = options.paginate ? PAGE_SEPARATOR : '\n\n'
-  const markdown = pageMarkdowns.map((page) => page.trim()).join(separator)
+  const trimmedPages = pageMarkdowns.map((page) => page.trim())
+  const markdown = trimmedPages.join(separator)
   return {
     markdown: markdown.length > 0 ? `${markdown}\n` : '',
     images,
     pageCount: sortedPages.length,
+    hasContent: images.length > 0 || trimmedPages.some((page) => page !== ''),
   }
 }

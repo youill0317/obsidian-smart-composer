@@ -2,6 +2,7 @@ import {
   PAGE_SEPARATOR,
   combineOcrPages,
   encodeMarkdownLinkPath,
+  neutralizeExecutableCodeBlocks,
   stripDataUriPrefix,
 } from './ocrResult'
 import { MistralOcrPage } from './ocrTypes'
@@ -30,6 +31,34 @@ describe('combineOcrPages', () => {
     expect(result.images).toEqual([])
   })
 
+  it('reports whether any page has text or images', () => {
+    const blank = combineOcrPages([page(0, '  \n'), page(1, '')], {
+      ...baseOptions,
+      paginate: true,
+    })
+    expect(blank.hasContent).toBe(false)
+    expect(combineOcrPages([page(0, ''), page(1, 'B')], baseOptions)).toEqual(
+      expect.objectContaining({ hasContent: true }),
+    )
+    const imageOnly = combineOcrPages(
+      [
+        page(0, '![img-0.jpeg](img-0.jpeg)', [
+          { id: 'img-0.jpeg', image_base64: 'QUJD' },
+        ]),
+      ],
+      baseOptions,
+    )
+    expect(imageOnly.hasContent).toBe(true)
+  })
+
+  it('does not keep executable code blocks from the PDF', () => {
+    const result = combineOcrPages(
+      [page(0, '```dataviewjs\ndv.paragraph(1)\n```')],
+      baseOptions,
+    )
+    expect(result.markdown).toBe('```js\ndv.paragraph(1)\n```\n')
+  })
+
   it('inserts page separators when paginating', () => {
     const result = combineOcrPages([page(0, 'A'), page(1, 'B'), page(2, 'C')], {
       ...baseOptions,
@@ -43,6 +72,7 @@ describe('combineOcrPages', () => {
       markdown: '',
       images: [],
       pageCount: 0,
+      hasContent: false,
     })
   })
 
@@ -156,5 +186,18 @@ describe('encodeMarkdownLinkPath', () => {
     expect(encodeMarkdownLinkPath('보고서_img-0.jpeg')).toBe(
       '보고서_img-0.jpeg',
     )
+  })
+})
+
+describe('neutralizeExecutableCodeBlocks', () => {
+  it.each([
+    ['```dataviewjs\nx\n```', '```js\nx\n```'],
+    ['  ~~~~ DataviewJS \nx', '  ~~~~ js \nx'],
+    ['````js-engine\nx', '````js\nx'],
+    ['```dataview\nLIST\n```', '```dataview\nLIST\n```'],
+    ['```dataviewjs-like\nx', '```dataviewjs-like\nx'],
+    ['text ```dataviewjs inline', 'text ```dataviewjs inline'],
+  ])('%j -> %j', (input, expected) => {
+    expect(neutralizeExecutableCodeBlocks(input)).toBe(expected)
   })
 })

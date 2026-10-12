@@ -31,6 +31,33 @@ describe('getOcrOutputPaths', () => {
     })
   })
 
+  it('reuses the subfolder when the PDF is already inside it', () => {
+    expect(
+      getOcrOutputPaths('docs/report/report.pdf', {
+        outputLocation: 'subfolder',
+        createAssetSubfolder: true,
+      }),
+    ).toEqual({
+      outputDir: 'docs/report',
+      markdownPath: 'docs/report/report.md',
+      assetDir: 'docs/report/assets',
+      assetLinkDir: 'assets',
+      movedPdfPath: 'docs/report/report.pdf',
+    })
+    expect(
+      getOcrOutputPaths('docs/other/report.pdf', {
+        outputLocation: 'subfolder',
+        createAssetSubfolder: false,
+      }).markdownPath,
+    ).toBe('docs/other/report/report.md')
+    expect(
+      getOcrOutputPaths('report.pdf', {
+        outputLocation: 'subfolder',
+        createAssetSubfolder: false,
+      }).markdownPath,
+    ).toBe('report/report.md')
+  })
+
   it('handles PDFs at the vault root', () => {
     const paths = getOcrOutputPaths('scan.PDF', {
       outputLocation: 'same-folder',

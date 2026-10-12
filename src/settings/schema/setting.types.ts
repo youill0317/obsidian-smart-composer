@@ -131,7 +131,8 @@ export const smartComposerSettingsSchema = z.object({
     }),
 
   // Document OCR options
-  ocr: ocrOptionsSchema.catch({ ...DEFAULT_OCR_OPTIONS }),
+  // A function so every fallback gets its own copy of the defaults.
+  ocr: ocrOptionsSchema.catch(() => ({ ...DEFAULT_OCR_OPTIONS })),
 })
 export type SmartComposerSettings = z.infer<typeof smartComposerSettingsSchema>
 

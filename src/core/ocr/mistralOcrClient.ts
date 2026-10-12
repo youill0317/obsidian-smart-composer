@@ -1,5 +1,6 @@
 import {
   Notice,
+  RequestUrlParam,
   RequestUrlResponse,
   arrayBufferToBase64,
   requestUrl,
@@ -17,6 +18,35 @@ import { MistralOcrResponse, OcrRequestOptions } from './ocrTypes'
 export type OcrProgressStage = 'uploading' | 'processing'
 
 const MAX_ERROR_BODY_LENGTH = 500
+// Uploads and OCR of long documents can take minutes.
+export const LONG_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
+export const SHORT_REQUEST_TIMEOUT_MS = 60 * 1000
+
+/**
+ * requestUrl cannot be cancelled, so this only stops waiting: the request may
+ * still finish (and be billed) on Mistral's side.
+ */
+async function requestWithTimeout(
+  action: string,
+  params: RequestUrlParam,
+  timeoutMs: number,
+): Promise<RequestUrlResponse> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          `Mistral ${action} timed out after ${Math.round(timeoutMs / 1000)} seconds. Mistral may still process (and bill) the request.`,
+        ),
+      )
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([requestUrl(params), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function describeFailure(action: string, response: RequestUrlResponse): Error {
   let body = ''
@@ -93,17 +123,21 @@ export class MistralOcrClient {
     documentUrl: string,
     options: OcrRequestOptions,
   ): Promise<MistralOcrResponse> {
-    const response = await requestUrl({
-      url: `${this.baseUrl}/ocr`,
-      method: 'POST',
-      contentType: 'application/json',
-      headers: this.headers(),
-      body: JSON.stringify(buildOcrRequestBody(documentUrl, options)),
-      throw: false,
-    })
+    const response = await requestWithTimeout(
+      'OCR request',
+      {
+        url: `${this.baseUrl}/ocr`,
+        method: 'POST',
+        contentType: 'application/json',
+        headers: this.headers(),
+        body: JSON.stringify(buildOcrRequestBody(documentUrl, options)),
+        throw: false,
+      },
+      LONG_REQUEST_TIMEOUT_MS,
+    )
     if (!isOk(response)) throw describeFailure('OCR request', response)
-    const result = parseJson<MistralOcrResponse>('OCR request', response)
-    if (!result || !Array.isArray(result.pages)) {
+    const result = parseJson<MistralOcrResponse | null>('OCR request', response)
+    if (!result || !Array.isArray(result.pages) || result.pages.length === 0) {
       throw new Error('Mistral OCR response did not contain any pages')
     }
     return result
@@ -111,36 +145,59 @@ export class MistralOcrClient {
 
   private async uploadFile(pdf: ArrayBuffer, fileName: string) {
     const boundary = `----smtcmp-ocr-${uuidv4().replace(/-/g, '')}`
-    const response = await requestUrl({
-      url: `${this.baseUrl}/files`,
-      method: 'POST',
-      contentType: `multipart/form-data; boundary=${boundary}`,
-      headers: this.headers(),
-      body: buildMultipartBody(boundary, [{ name: 'purpose', value: 'ocr' }], {
-        name: 'file',
-        fileName,
-        contentType: 'application/pdf',
-        data: pdf,
-      }),
-      throw: false,
-    })
+    const response = await requestWithTimeout(
+      'file upload',
+      {
+        url: `${this.baseUrl}/files`,
+        method: 'POST',
+        contentType: `multipart/form-data; boundary=${boundary}`,
+        headers: this.headers(),
+        body: buildMultipartBody(
+          boundary,
+          [{ name: 'purpose', value: 'ocr' }],
+          {
+            name: 'file',
+            fileName,
+            contentType: 'application/pdf',
+            data: pdf,
+          },
+        ),
+        throw: false,
+      },
+      LONG_REQUEST_TIMEOUT_MS,
+    )
     if (!isOk(response)) throw describeFailure('file upload', response)
-    const { id } = parseJson<{ id?: unknown }>('file upload', response)
+    let id: unknown
+    try {
+      id = parseJson<{ id?: unknown } | null>('file upload', response)?.id
+    } catch {
+      id = undefined
+    }
     if (typeof id !== 'string' || !id) {
-      throw new Error('Mistral file upload did not return a file id')
+      // The upload succeeded, so the file may be stored without a known id.
+      throw new Error(
+        'Mistral file upload did not return a file id. The PDF may remain in your Mistral account; you can remove it in the Mistral console.',
+      )
     }
     return id
   }
 
   private async getSignedUrl(fileId: string) {
-    const response = await requestUrl({
-      url: `${this.baseUrl}/files/${encodeURIComponent(fileId)}/url?expiry=1`,
-      method: 'GET',
-      headers: this.headers(),
-      throw: false,
-    })
+    const response = await requestWithTimeout(
+      'signed URL request',
+      {
+        url: `${this.baseUrl}/files/${encodeURIComponent(fileId)}/url?expiry=1`,
+        method: 'GET',
+        headers: this.headers(),
+        throw: false,
+      },
+      SHORT_REQUEST_TIMEOUT_MS,
+    )
     if (!isOk(response)) throw describeFailure('signed URL request', response)
-    const { url } = parseJson<{ url?: unknown }>('signed URL request', response)
+    const url = parseJson<{ url?: unknown } | null>(
+      'signed URL request',
+      response,
+    )?.url
     if (typeof url !== 'string' || !url) {
       throw new Error('Mistral did not return a signed URL for the upload')
     }
@@ -149,12 +206,16 @@ export class MistralOcrClient {
 
   private async deleteFile(fileId: string) {
     try {
-      const response = await requestUrl({
-        url: `${this.baseUrl}/files/${encodeURIComponent(fileId)}`,
-        method: 'DELETE',
-        headers: this.headers(),
-        throw: false,
-      })
+      const response = await requestWithTimeout(
+        'file deletion',
+        {
+          url: `${this.baseUrl}/files/${encodeURIComponent(fileId)}`,
+          method: 'DELETE',
+          headers: this.headers(),
+          throw: false,
+        },
+        SHORT_REQUEST_TIMEOUT_MS,
+      )
       if (isOk(response)) return
       console.warn(describeFailure('file deletion', response).message)
     } catch (error) {
