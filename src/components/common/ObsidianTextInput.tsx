@@ -24,6 +24,9 @@ export function ObsidianTextInput({
   const { setting } = useObsidianSetting()
   const [textComponent, setTextComponent] = useState<TextComponent | null>(null)
   const onChangeRef = useRef(onChange)
+  const valueRef = useRef(value)
+  // Set when a value change arrived while the user was typing.
+  const skippedValueRef = useRef(false)
 
   useEffect(() => {
     if (setting) {
@@ -57,10 +60,35 @@ export function ObsidianTextInput({
 
   useEffect(() => {
     if (!textComponent) return
-    textComponent.setValue(value)
     if (placeholder) textComponent.setPlaceholder(placeholder)
     if (type) textComponent.inputEl.type = type
-  }, [textComponent, value, placeholder, type])
+  }, [textComponent, placeholder, type])
+
+  useEffect(() => {
+    valueRef.current = value
+    if (!textComponent) return
+    const input = textComponent.inputEl
+    // A save that finishes while the user is still typing would replace newer
+    // keystrokes, so the latest value is applied when the field loses focus.
+    if (input.ownerDocument.activeElement === input) {
+      skippedValueRef.current = true
+      return
+    }
+    skippedValueRef.current = false
+    textComponent.setValue(value)
+  }, [textComponent, value])
+
+  useEffect(() => {
+    if (!textComponent) return
+    const input = textComponent.inputEl
+    const handleBlur = () => {
+      if (!skippedValueRef.current) return
+      skippedValueRef.current = false
+      textComponent.setValue(valueRef.current)
+    }
+    input.addEventListener('blur', handleBlur)
+    return () => input.removeEventListener('blur', handleBlur)
+  }, [textComponent])
 
   useEffect(() => {
     if (!textComponent) return

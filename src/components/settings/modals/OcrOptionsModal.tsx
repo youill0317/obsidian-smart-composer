@@ -76,6 +76,7 @@ function parseNonNegativeInt(value: string): number | null {
 function OcrOptionsForm({ onClose }: { onClose: () => void }) {
   const { settings, setSettings } = useSettings()
   const { ocr } = settings
+  const canMovePdf = ocr.outputLocation === 'subfolder' && !ocr.deleteOriginal
 
   const update = async (patch: Partial<OcrOptions>) => {
     await setSettings((current) => ({
@@ -192,9 +193,10 @@ function OcrOptionsForm({ onClose }: { onClose: () => void }) {
       >
         <ControlLabel text="Move into output folder" />
         <ObsidianToggle
-          value={ocr.movePdfToFolder}
+          // Shown off while it has no effect; the stored choice is kept.
+          value={canMovePdf && ocr.movePdfToFolder}
           tooltip="Move the PDF into the output subfolder"
-          disabled={ocr.outputLocation !== 'subfolder' || ocr.deleteOriginal}
+          disabled={!canMovePdf}
           onChange={(value) => update({ movePdfToFolder: value })}
         />
         <ControlLabel text="Delete after conversion" warning />

@@ -85,6 +85,30 @@ describe('MistralOcrClient', () => {
     expect(Notice).not.toHaveBeenCalled()
   })
 
+  it('reports a failed cleanup in the same error when OCR fails', async () => {
+    mockRequestUrl
+      .mockResolvedValueOnce(respond(200, { id: 'file-1' }))
+      .mockResolvedValueOnce(respond(200, { url: 'https://signed' }))
+      .mockResolvedValueOnce(respond(500, 'server error'))
+      .mockResolvedValueOnce(respond(500, 'cannot delete'))
+    await expect(client.process(largePdf, 'a.pdf', options)).rejects.toThrow(
+      /HTTP 500\): server error Could not delete the uploaded PDF \(file-1\)/,
+    )
+    expect(Notice).not.toHaveBeenCalled()
+  })
+
+  it('shows a Notice when cleanup fails after a successful OCR', async () => {
+    mockRequestUrl
+      .mockResolvedValueOnce(respond(200, { id: 'file-1' }))
+      .mockResolvedValueOnce(respond(200, { url: 'https://signed' }))
+      .mockResolvedValueOnce(respond(200, ocrPages))
+      .mockResolvedValueOnce(respond(500, 'cannot delete'))
+    await expect(client.process(largePdf, 'a.pdf', options)).resolves.toEqual(
+      ocrPages,
+    )
+    expect(Notice).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects a response without pages', async () => {
     mockRequestUrl.mockResolvedValueOnce(respond(200, { pages: [] }))
     await expect(client.process(smallPdf, 'a.pdf', options)).rejects.toThrow(

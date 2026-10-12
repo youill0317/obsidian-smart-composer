@@ -69,6 +69,10 @@ function parseJson<T>(action: string, response: RequestUrlResponse): T {
   }
 }
 
+function leftoverUploadMessage(fileId: string) {
+  return `Could not delete the uploaded PDF (${fileId}) from Mistral. You can remove it in the Mistral console.`
+}
+
 function isOk(response: RequestUrlResponse) {
   return response.status >= 200 && response.status < 300
 }
@@ -102,13 +106,22 @@ export class MistralOcrClient {
 
     onProgress?.('uploading')
     const fileId = await this.uploadFile(pdf, fileName)
+    let result: MistralOcrResponse
     try {
       const url = await this.getSignedUrl(fileId)
       onProgress?.('processing')
-      return await this.runOcr(url, options)
-    } finally {
-      await this.deleteFile(fileId)
+      result = await this.runOcr(url, options)
+    } catch (error) {
+      if (!(await this.deleteFile(fileId)) && error instanceof Error) {
+        // One message for both failures instead of two stacked Notices.
+        error.message += ` ${leftoverUploadMessage(fileId)}`
+      }
+      throw error
     }
+    if (!(await this.deleteFile(fileId))) {
+      new Notice(leftoverUploadMessage(fileId))
+    }
+    return result
   }
 
   private headers(extra: Record<string, string> = {}) {
@@ -204,7 +217,8 @@ export class MistralOcrClient {
     return url
   }
 
-  private async deleteFile(fileId: string) {
+  /** Returns false when the uploaded file could not be deleted. */
+  private async deleteFile(fileId: string): Promise<boolean> {
     try {
       const response = await requestWithTimeout(
         'file deletion',
@@ -216,14 +230,12 @@ export class MistralOcrClient {
         },
         SHORT_REQUEST_TIMEOUT_MS,
       )
-      if (isOk(response)) return
+      if (isOk(response)) return true
       console.warn(describeFailure('file deletion', response).message)
     } catch (error) {
       // Cleanup must not hide the OCR result or the original error.
       console.warn('Failed to delete uploaded file from Mistral', error)
     }
-    new Notice(
-      `Could not delete the uploaded PDF (${fileId}) from Mistral. You can remove it in the Mistral console.`,
-    )
+    return false
   }
 }
