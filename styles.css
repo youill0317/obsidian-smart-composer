@@ -2033,3 +2033,23 @@ button.smtcmp-chat-input-model-select {
 .smtcmp-setting-item--nested {
   padding-left: var(--size-4-4);
 }
+
+/* Document OCR options: short labels for controls sharing one row */
+.smtcmp-settings-ocr-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.smtcmp-settings-ocr-label--warning {
+  color: var(--text-error);
+}
+
+.smtcmp-settings-ocr-options .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.smtcmp-settings-ocr-options input[type='number'] {
+  width: 7em;
+}
