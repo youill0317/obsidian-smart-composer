@@ -132,7 +132,11 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
                     new EditProviderModal(app, plugin, provider).open()
                   }}
                 >
-                  {provider.apiKey ? '••••••••' : 'Set API key'}
+                  {provider.apiKey
+                    ? '••••••••'
+                    : provider.apiKeySecretId
+                      ? 'Set Keychain secret'
+                      : 'Set API key'}
                   <CredentialStorageStatus
                     plugin={plugin}
                     providerId={provider.id}

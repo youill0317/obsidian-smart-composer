@@ -44,6 +44,10 @@ export default class SmartComposerPlugin extends Plugin {
   get hasKeychain() {
     return this.credentialStore.hasKeychain
   }
+
+  getSharedApiKey(providerId: string) {
+    return this.credentialStore.getSharedApiKey(providerId)
+  }
   initialChatProps?: ChatProps // TODO: change this to use view state like ApplyView
   settingsChangeListeners: ((newSettings: SmartComposerSettings) => void)[] = []
   toolManager: ToolManager
