@@ -58,15 +58,13 @@ once per provider per plugin session, and its settings show **Plaintext** with t
 reason. Migration is retried on the next settings save or plugin load. Successful
 Keychain storage does not keep a plaintext backup.
 
-Obsidian Keychain is shared by all vaults on a device. API keys for built-in
-providers are stored as `smart-composer-<provider id>`, so your other vaults use
-them without re-entering them. Custom providers keep their API key per vault,
-because the same ID may point to a different server. To use a different key in
-one vault, or to share a custom provider's key, link a secret in the provider's
-**Keychain secret** setting; Smart Composer only reads linked secrets.
-Subscription tokens rotate on refresh, so they stay per vault. Deleting a
-provider leaves its shared API key for other vaults; **Clear API key** removes it
-for every vault on the device.
+API keys for built-in providers are stored as `smart-composer-<provider id>` and
+shared by all vaults on the device. Custom provider API keys and subscription
+tokens stay per vault. To use a different key in one vault, or to share a custom
+provider's key, link a secret in the provider's **Keychain secret** setting;
+Smart Composer only reads linked secrets. Deleting a provider leaves its shared
+API key for other vaults; **Clear API key** removes it for every vault on the
+device.
 
 Keychain values do not travel with a copied or synced `data.json`. On another
 device, **Needs attention** means you should re-enter the API key or reconnect

@@ -253,12 +253,12 @@ export class CredentialSettingsStore {
           provider.apiKey
             ? {
                 label: 'Keychain',
-                detail: `Uses the "${provider.apiKeySecretId}" secret from Obsidian Keychain. Encryption depends on your operating system.`,
+                detail: `Uses the "${provider.apiKeySecretId}" secret from Obsidian Keychain.`,
               }
             : {
                 label: 'Needs attention',
                 detail: this.storage
-                  ? `The "${provider.apiKeySecretId}" Keychain secret is missing or empty on this device. Add it in Obsidian Keychain or unlink it in the provider settings.`
+                  ? `The "${provider.apiKeySecretId}" Keychain secret is missing.`
                   : `Linked to the "${provider.apiKeySecretId}" Keychain secret. Requires Obsidian 1.11.5+ with SecretStorage support.`,
               },
         )
@@ -311,7 +311,7 @@ export class CredentialSettingsStore {
             label: 'Keychain',
             detail: isVaultSecret(id)
               ? 'Stored by Obsidian Keychain. Encryption depends on your operating system.'
-              : `Stored by Obsidian Keychain as "${id}" and shared with your other vaults on this device. Encryption depends on your operating system.`,
+              : `Stored by Obsidian Keychain as "${id}" and shared with other vaults.`,
           })
           migrated ||= migrating && !provider.credentialsSecretId
           return stored

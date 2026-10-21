@@ -230,12 +230,8 @@ function ProviderFormComponent({
               name="Keychain secret"
               desc={
                 plugin.hasKeychain
-                  ? 'Optional. Link a secret from Obsidian Keychain to use as the API key in this vault. ' +
-                    (sharesApiKey
-                      ? 'When nothing is linked, the API key is shared with your other vaults on this device. '
-                      : 'When nothing is linked, the API key is stored for this vault only. ') +
-                    'Changes apply when you save this form.'
-                  : `Linked to the "${formData.apiKeySecretId ?? ''}" Keychain secret, but Obsidian Keychain is unavailable. Requires Obsidian 1.11.5+ with SecretStorage support.`
+                  ? 'Optional. Use a secret from Obsidian Keychain as the API key.'
+                  : `Linked to "${formData.apiKeySecretId ?? ''}". Requires Obsidian 1.11.5+ with SecretStorage support.`
               }
             >
               {plugin.hasKeychain && (
