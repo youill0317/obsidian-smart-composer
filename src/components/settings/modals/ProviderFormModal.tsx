@@ -10,6 +10,7 @@ import {
 } from '../../../types/provider.types'
 import { ObsidianButton } from '../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../common/ObsidianDropdown'
+import { ObsidianSecretInput } from '../../common/ObsidianSecretInput'
 import { ObsidianSetting } from '../../common/ObsidianSetting'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../common/ObsidianToggle'
@@ -172,36 +173,72 @@ function ProviderFormComponent({
 
       {!PLAN_PROVIDER_TYPES.includes(formData.type) && (
         <>
-          <ObsidianSetting
-            name="API Key"
-            desc="(leave blank if not required)"
-            required={providerTypeInfo.requireApiKey}
-          >
-            <ObsidianTextInput
-              value={formData.apiKey ?? ''}
-              placeholder="Enter your API Key"
-              type="password"
-              onChange={(value: string) => {
-                setApiKeyChanged(true)
-                setFormData((prev) => ({ ...prev, apiKey: value }))
-              }}
-            />
-          </ObsidianSetting>
-
-          {(provider?.apiKey || provider?.credentialsSecretId) && (
+          {(plugin.hasKeychain || formData.apiKeySecretId) && (
             <ObsidianSetting
-              name="Clear API key"
-              desc="Clear the saved API key when you save this form."
+              name="Keychain secret"
+              desc="(optional) Use a secret from Obsidian Keychain in this vault. When empty, the API key below is shared with your other vaults on this device."
             >
-              <ObsidianButton
-                text="Clear"
-                onClick={() => {
+              {plugin.hasKeychain && (
+                <ObsidianSecretInput
+                  app={plugin.app}
+                  value={formData.apiKeySecretId ?? ''}
+                  onChange={(value: string) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      apiKeySecretId: value || undefined,
+                    }))
+                  }
+                />
+              )}
+              {formData.apiKeySecretId && (
+                <ObsidianButton
+                  text="Unlink"
+                  onClick={() => {
+                    setApiKeyChanged(true)
+                    setFormData((prev) => ({
+                      ...prev,
+                      apiKeySecretId: undefined,
+                      apiKey: plugin.getSharedApiKey(prev.id) ?? '',
+                    }))
+                  }}
+                />
+              )}
+            </ObsidianSetting>
+          )}
+
+          {!formData.apiKeySecretId && (
+            <ObsidianSetting
+              name="API Key"
+              desc="(leave blank if not required)"
+              required={providerTypeInfo.requireApiKey}
+            >
+              <ObsidianTextInput
+                value={formData.apiKey ?? ''}
+                placeholder="Enter your API Key"
+                type="password"
+                onChange={(value: string) => {
                   setApiKeyChanged(true)
-                  setFormData((prev) => ({ ...prev, apiKey: '' }))
+                  setFormData((prev) => ({ ...prev, apiKey: value }))
                 }}
               />
             </ObsidianSetting>
           )}
+
+          {!formData.apiKeySecretId &&
+            (provider?.apiKey || provider?.credentialsSecretId) && (
+              <ObsidianSetting
+                name="Clear API key"
+                desc="Clear the saved API key when you save this form. A key shared with other vaults is cleared there too."
+              >
+                <ObsidianButton
+                  text="Clear"
+                  onClick={() => {
+                    setApiKeyChanged(true)
+                    setFormData((prev) => ({ ...prev, apiKey: '' }))
+                  }}
+                />
+              </ObsidianSetting>
+            )}
 
           <ObsidianSetting
             name="Base URL"

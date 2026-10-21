@@ -5,6 +5,8 @@ export const baseLlmProviderSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   credentialsSecretId: z.string().optional(),
+  // Keychain secret chosen by the user that holds the API key. Read-only.
+  apiKeySecretId: z.string().optional(),
   additionalSettings: z.record(z.string(), z.string()).optional(),
 })
 
