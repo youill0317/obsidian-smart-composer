@@ -2,7 +2,7 @@ import type { SecretStorage } from 'obsidian'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 
-import { PLAN_PROVIDER_TYPES } from '../constants'
+import { DEFAULT_PROVIDERS, PLAN_PROVIDER_TYPES } from '../constants'
 import { LLMProvider, llmProviderSchema } from '../types/provider.types'
 
 import {
@@ -45,22 +45,16 @@ function isVaultSecret(id: string) {
 }
 
 /**
- * API keys are shared with other vaults on the device through an entry named
- * after the provider ID. Subscription tokens rotate, so they stay per vault.
+ * Built-in API key providers share their key with other vaults on the device.
+ * Custom providers may point anywhere, and subscription tokens rotate, so both
+ * stay per vault.
  */
-function sharedSecretId(provider: LLMProvider, providers: LLMProvider[]) {
+export function sharedSecretId(provider: LLMProvider) {
   if (PLAN_PROVIDER_TYPES.includes(provider.type)) return undefined
-  const slug = (id: string) =>
-    id
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-  const name = slug(provider.id)
-  const id = 'smart-composer-' + name
-  if (!name || isVaultSecret(id)) return undefined
-  // IDs that map to the same entry must not share a key.
-  const owners = providers.filter((p) => slug(p.id) === name)
-  return owners.length === 1 ? id : undefined
+  const builtIn = DEFAULT_PROVIDERS.some(
+    (p) => p.id === provider.id && p.type === provider.type,
+  )
+  return builtIn ? 'smart-composer-' + provider.id : undefined
 }
 
 // Only the openai-plan references removed by the v20 -> v21 migration.
@@ -109,7 +103,7 @@ export class CredentialSettingsStore {
 
   getSharedApiKey(providerId: string): string | undefined {
     const provider = this.settings.providers.find((p) => p.id === providerId)
-    const id = provider && sharedSecretId(provider, this.settings.providers)
+    const id = provider && sharedSecretId(provider)
     try {
       return (id && this.storage?.getSecret(id)) || undefined
     } catch {
@@ -138,32 +132,35 @@ export class CredentialSettingsStore {
       ...parsed,
       providers: parsed.providers.map((provider) => {
         if (provider.apiKeySecretId) return this.resolveLinked(provider)
-        // Without a reference, look for a key another vault already shares.
-        const id =
-          provider.credentialsSecretId ??
-          (this.storage && sharedSecretId(provider, parsed.providers))
         // Plaintext is authoritative after a fallback, including interrupted
         // migrations. Never restore an older Keychain value over it.
-        if (!id || hasCredentials(provider)) return provider
-        try {
-          if (!this.storage || !ownsSecret(id)) throw new Error()
-          const value = this.storage.getSecret(id)
-          if (!value) throw new Error()
-          const payload = isVaultSecret(id)
-            ? payloadSchema.parse(JSON.parse(value))
-            : { apiKey: value }
-          const resolved = llmProviderSchema.parse({
-            ...provider,
-            ...payload,
-            credentialsSecretId: id,
-          })
-          if (!hasCredentials(resolved)) throw new Error()
-          this.synced.set(id, value)
-          return resolved
-        } catch {
-          // Preserve an unresolved reference through unrelated settings saves.
-          return provider
+        if (hasCredentials(provider)) return provider
+        const ref = provider.credentialsSecretId
+        if (ref && !ownsSecret(ref)) return provider
+        // Fall back to a key another vault shares, e.g. when the reference
+        // came from another device.
+        for (const id of [ref, sharedSecretId(provider)]) {
+          if (!id || !this.storage) continue
+          try {
+            const value = this.storage.getSecret(id)
+            if (!value) continue
+            const payload = isVaultSecret(id)
+              ? payloadSchema.parse(JSON.parse(value))
+              : { apiKey: value }
+            const resolved = llmProviderSchema.parse({
+              ...provider,
+              ...payload,
+              credentialsSecretId: id,
+            })
+            if (!hasCredentials(resolved)) continue
+            this.synced.set(id, value)
+            return resolved
+          } catch {
+            // Try the next entry.
+          }
         }
+        // Preserve an unresolved reference through unrelated settings saves.
+        return provider
       }),
     }
     try {
@@ -195,13 +192,31 @@ export class CredentialSettingsStore {
 
   // Linked secrets belong to the user. Read them, never write or clear them.
   private resolveLinked(provider: LLMProvider): LLMProvider {
+    const id = provider.apiKeySecretId ?? ''
     try {
-      const value = this.storage?.getSecret(provider.apiKeySecretId ?? '')
+      // Per-vault entries hold a JSON payload, not an API key.
+      const value = isVaultSecret(id) ? null : this.storage?.getSecret(id)
       if (value) return { ...provider, apiKey: value }
     } catch {
       // Reported as needing attention by persist().
     }
     return { ...provider, apiKey: undefined }
+  }
+
+  // Adopt a shared key another vault replaced while this vault left it as is.
+  private refreshShared(provider: LLMProvider): LLMProvider {
+    const id = provider.credentialsSecretId
+    if (!this.storage || !id || id !== sharedSecretId(provider)) return provider
+    if (!provider.apiKey || this.synced.get(id) !== provider.apiKey)
+      return provider
+    try {
+      const value = this.storage.getSecret(id)
+      if (!value || value === provider.apiKey) return provider
+      this.synced.set(id, value)
+      return { ...provider, apiKey: value }
+    } catch {
+      return provider
+    }
   }
 
   private references(settings: SmartComposerSettings) {
@@ -219,10 +234,13 @@ export class CredentialSettingsStore {
   }
 
   private async persist(next: SmartComposerSettings, migrating = false) {
+    const previous = this.settings.providers
     next = {
       ...next,
       providers: next.providers.map((provider) =>
-        provider.apiKeySecretId ? this.resolveLinked(provider) : provider,
+        provider.apiKeySecretId
+          ? this.resolveLinked(provider)
+          : this.refreshShared(provider),
       ),
     }
     const statuses = new Map<string, CredentialStatus>()
@@ -235,11 +253,13 @@ export class CredentialSettingsStore {
           provider.apiKey
             ? {
                 label: 'Keychain',
-                detail: `Uses the "${provider.apiKeySecretId}" secret from Obsidian Keychain.`,
+                detail: `Uses the "${provider.apiKeySecretId}" secret from Obsidian Keychain. Encryption depends on your operating system.`,
               }
             : {
                 label: 'Needs attention',
-                detail: `The "${provider.apiKeySecretId}" Keychain secret is missing or empty on this device.`,
+                detail: this.storage
+                  ? `The "${provider.apiKeySecretId}" Keychain secret is missing or empty on this device. Add it in Obsidian Keychain or unlink it in the provider settings.`
+                  : `Linked to the "${provider.apiKeySecretId}" Keychain secret. Requires Obsidian 1.11.5+ with SecretStorage support.`,
               },
         )
         const stored = { ...provider }
@@ -266,15 +286,14 @@ export class CredentialSettingsStore {
         provider.credentialsSecretId && ownsSecret(provider.credentialsSecretId)
           ? provider.credentialsSecretId
           : 'smart-composer-' + uuidv4()
-      const shared = sharedSecretId(provider, next.providers)
+      const shared = sharedSecretId(provider)
       let reason = 'Requires Obsidian 1.11.5+ with SecretStorage support.'
       if (this.storage) {
         try {
           if (shared && id !== shared) {
-            // Loading must not replace a different key another vault shares.
+            // Never replace a different key another vault shares.
             const existing = this.storage.getSecret(shared)
-            if (!migrating || !existing || existing === provider.apiKey)
-              id = shared
+            if (!existing || existing === provider.apiKey) id = shared
           }
           const payload = isVaultSecret(id)
             ? JSON.stringify(credentials(provider))
@@ -292,7 +311,7 @@ export class CredentialSettingsStore {
             label: 'Keychain',
             detail: isVaultSecret(id)
               ? 'Stored by Obsidian Keychain. Encryption depends on your operating system.'
-              : `Stored in Obsidian Keychain as "${id}" and shared with your other vaults on this device.`,
+              : `Stored by Obsidian Keychain as "${id}" and shared with your other vaults on this device. Encryption depends on your operating system.`,
           })
           migrated ||= migrating && !provider.credentialsSecretId
           return stored
@@ -347,7 +366,12 @@ export class CredentialSettingsStore {
           const index = next.providers.findIndex(
             (p) => p.id === previous.id && p.type === previous.type,
           )
-          if (index < 0 || !hasCredentials(next.providers[index]))
+          // A linked key must not stay behind as a plain API key.
+          if (
+            index < 0 ||
+            next.providers[index].apiKeySecretId ||
+            !hasCredentials(next.providers[index])
+          )
             return previous
           return {
             ...previous,
@@ -366,7 +390,13 @@ export class CredentialSettingsStore {
       throw new Error('Smart Composer settings could not be saved.')
     }
     const refs = this.references(diskSettings)
-    const removed = [...this.knownRefs].filter((id) => !refs.has(id))
+    const removed = new Set([...this.knownRefs].filter((id) => !refs.has(id)))
+    // A key cleared right after unlinking was never referenced in this vault.
+    for (const provider of next.providers) {
+      const before = previous.find((p) => p.id === provider.id)
+      const id = sharedSecretId(provider)
+      if (id && before?.apiKeySecretId && before.apiKey) removed.add(id)
+    }
     this.knownRefs = refs
     this.settings = {
       ...next,
@@ -388,9 +418,7 @@ export class CredentialSettingsStore {
       // cleared this provider's key, not when it was deleted or linked.
       const cleared = next.providers.some(
         (p) =>
-          !p.apiKeySecretId &&
-          !hasCredentials(p) &&
-          sharedSecretId(p, next.providers) === id,
+          !p.apiKeySecretId && !hasCredentials(p) && sharedSecretId(p) === id,
       )
       if (!isVaultSecret(id) && !cleared) continue
       this.synced.delete(id)

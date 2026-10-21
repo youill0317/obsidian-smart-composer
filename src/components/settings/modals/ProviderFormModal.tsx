@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { PLAN_PROVIDER_TYPES, PROVIDER_TYPES_INFO } from '../../../constants'
 import SmartComposerPlugin from '../../../main'
+import { sharedSecretId } from '../../../settings/credentialSettingsStore'
 import {
   LLMProvider,
   LLMProviderType,
@@ -126,6 +127,17 @@ function ProviderFormComponent({
   }
 
   const providerTypeInfo = PROVIDER_TYPES_INFO[formData.type]
+  const sharesApiKey = !!sharedSecretId(formData)
+
+  // Return to the vault's own key. The linked value must not become it.
+  const unlink = () => {
+    setApiKeyChanged(true)
+    setFormData((prev) => ({
+      ...prev,
+      apiKeySecretId: undefined,
+      apiKey: plugin.getSharedApiKey(prev.id) ?? '',
+    }))
+  }
 
   return (
     <>
@@ -173,39 +185,6 @@ function ProviderFormComponent({
 
       {!PLAN_PROVIDER_TYPES.includes(formData.type) && (
         <>
-          {(plugin.hasKeychain || formData.apiKeySecretId) && (
-            <ObsidianSetting
-              name="Keychain secret"
-              desc="(optional) Use a secret from Obsidian Keychain in this vault. When empty, the API key below is shared with your other vaults on this device."
-            >
-              {plugin.hasKeychain && (
-                <ObsidianSecretInput
-                  app={plugin.app}
-                  value={formData.apiKeySecretId ?? ''}
-                  onChange={(value: string) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      apiKeySecretId: value || undefined,
-                    }))
-                  }
-                />
-              )}
-              {formData.apiKeySecretId && (
-                <ObsidianButton
-                  text="Unlink"
-                  onClick={() => {
-                    setApiKeyChanged(true)
-                    setFormData((prev) => ({
-                      ...prev,
-                      apiKeySecretId: undefined,
-                      apiKey: plugin.getSharedApiKey(prev.id) ?? '',
-                    }))
-                  }}
-                />
-              )}
-            </ObsidianSetting>
-          )}
-
           {!formData.apiKeySecretId && (
             <ObsidianSetting
               name="API Key"
@@ -228,10 +207,16 @@ function ProviderFormComponent({
             (provider?.apiKey || provider?.credentialsSecretId) && (
               <ObsidianSetting
                 name="Clear API key"
-                desc="Clear the saved API key when you save this form. A key shared with other vaults is cleared there too."
+                desc={
+                  'Clear the saved API key when you save this form.' +
+                  (plugin.hasKeychain && sharesApiKey
+                    ? ' A key shared with other vaults is cleared there too.'
+                    : '')
+                }
               >
                 <ObsidianButton
                   text="Clear"
+                  warning
                   onClick={() => {
                     setApiKeyChanged(true)
                     setFormData((prev) => ({ ...prev, apiKey: '' }))
@@ -239,6 +224,38 @@ function ProviderFormComponent({
                 />
               </ObsidianSetting>
             )}
+
+          {(plugin.hasKeychain || formData.apiKeySecretId) && (
+            <ObsidianSetting
+              name="Keychain secret"
+              desc={
+                plugin.hasKeychain
+                  ? 'Optional. Link a secret from Obsidian Keychain to use as the API key in this vault. ' +
+                    (sharesApiKey
+                      ? 'When nothing is linked, the API key is shared with your other vaults on this device. '
+                      : 'When nothing is linked, the API key is stored for this vault only. ') +
+                    'Changes apply when you save this form.'
+                  : `Linked to the "${formData.apiKeySecretId ?? ''}" Keychain secret, but Obsidian Keychain is unavailable. Requires Obsidian 1.11.5+ with SecretStorage support.`
+              }
+            >
+              {plugin.hasKeychain && (
+                <ObsidianSecretInput
+                  app={plugin.app}
+                  value={formData.apiKeySecretId ?? ''}
+                  onChange={(value: string) => {
+                    if (!value) {
+                      unlink()
+                      return
+                    }
+                    setFormData((prev) => ({ ...prev, apiKeySecretId: value }))
+                  }}
+                />
+              )}
+              {formData.apiKeySecretId && (
+                <ObsidianButton text="Unlink" onClick={unlink} />
+              )}
+            </ObsidianSetting>
+          )}
 
           <ObsidianSetting
             name="Base URL"

@@ -438,7 +438,7 @@ describe('Keychain credential settings', () => {
     await store.load(f.disk())
     await store.update((s) => ({
       ...s,
-      providers: [{ ...api, apiKey: 'new-key' }],
+      providers: [{ ...s.providers[0], apiKey: 'new-key' }],
     }))
     expect(f.secrets.get(sharedId)).toBe('new-key')
   })
@@ -450,6 +450,7 @@ describe('Keychain credential settings', () => {
     f.secrets.set(sharedId, 'changed-in-another-vault')
     await store.update((s) => ({ ...s, systemPrompt: 'changed' }))
     expect(f.secrets.get(sharedId)).toBe('changed-in-another-vault')
+    expect(store.settings.providers[0].apiKey).toBe('changed-in-another-vault')
   })
 
   it('leaves the shared API key for other vaults when a provider is deleted', async () => {
@@ -460,13 +461,42 @@ describe('Keychain credential settings', () => {
     expect(f.secrets.get(sharedId)).toBe(api.apiKey)
   })
 
-  it('does not share keys between providers whose IDs map to the same entry', async () => {
-    const f = fixture([api, { ...api, id: 'OpenAI', apiKey: 'other-key' }])
+  it('keeps custom provider API keys per vault', async () => {
+    const f = fixture([{ ...api, id: 'my-proxy' }])
     const store = f.createStore()
     await store.load(f.disk())
-    const ids = store.settings.providers.map((p) => p.credentialsSecretId)
-    for (const id of ids) expect(id).toMatch(/^smart-composer-[0-9a-f-]{36}$/)
-    expect(f.secrets.has(sharedId)).toBe(false)
+    expect(store.settings.providers[0].credentialsSecretId).toMatch(
+      /^smart-composer-[0-9a-f-]{36}$/,
+    )
+    expect(f.secrets.has('smart-composer-my-proxy')).toBe(false)
+  })
+
+  it('keeps a per-vault API key through later saves while another vault shares a different one', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, credentialsSecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ apiKey: api.apiKey }))
+    f.secrets.set(sharedId, 'other-vault-key')
+    const store = f.createStore()
+    await store.load(f.disk())
+    await store.update((s) => ({ ...s, systemPrompt: 'changed' }))
+    await store.update((s) => ({
+      ...s,
+      providers: [{ ...s.providers[0], apiKey: 'new-key' }],
+    }))
+    expect(f.secrets.get(sharedId)).toBe('other-vault-key')
+    expect(store.settings.providers[0].credentialsSecretId).toBe(secretId)
+  })
+
+  it('falls back to the shared API key when the reference is missing on this device', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, credentialsSecretId: secretId },
+    ])
+    f.secrets.set(sharedId, api.apiKey)
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
+    expect(store.getStatus(api.id).label).toBe('Keychain')
   })
 
   it('reads a linked Keychain secret without writing or clearing it', async () => {
@@ -510,5 +540,58 @@ describe('Keychain credential settings', () => {
     expect(store.settings.providers[0].apiKey).toBe('linked-key')
     expect(f.secrets.get(sharedId)).toBe(api.apiKey)
     expect(store.getSharedApiKey(api.id)).toBe(api.apiKey)
+  })
+  it('does not leave a linked key behind as a plain API key after a failed save', async () => {
+    const f = fixture([api], false)
+    const store = f.createStore()
+    await store.load(f.disk())
+    f.save.mockRejectedValueOnce(new Error('disk full'))
+    await expect(
+      store.update((s) => ({
+        ...s,
+        providers: [{ id: api.id, type: api.type, apiKeySecretId: 'my-key' }],
+      })),
+    ).rejects.toThrow()
+    expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
+    expect(store.settings.providers[0].apiKeySecretId).toBeUndefined()
+  })
+
+  it('clears the shared API key when cleared right after unlinking', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, apiKeySecretId: 'my-openai-key' },
+    ])
+    f.secrets.set('my-openai-key', 'linked-key')
+    f.secrets.set(sharedId, api.apiKey)
+    const store = f.createStore()
+    await store.load(f.disk())
+    await store.update((s) => ({
+      ...s,
+      providers: [{ id: api.id, type: api.type }],
+    }))
+    expect(f.secrets.get(sharedId)).toBe('')
+    expect(f.secrets.get('my-openai-key')).toBe('linked-key')
+  })
+
+  it('does not read per-vault entries as linked secrets', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, apiKeySecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ apiKey: api.apiKey }))
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(store.settings.providers[0].apiKey).toBeUndefined()
+    expect(store.getStatus(api.id).label).toBe('Needs attention')
+  })
+
+  it('explains a linked secret without Keychain support', async () => {
+    const f = fixture(
+      [{ id: api.id, type: api.type, apiKeySecretId: 'my-openai-key' }],
+      false,
+    )
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(store.getStatus(api.id).detail).toContain(
+      'Requires Obsidian 1.11.5+',
+    )
   })
 })
