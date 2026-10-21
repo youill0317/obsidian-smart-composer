@@ -1,46 +1,30 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-} from 'react'
+import { createContext, useContext, useEffect, useMemo } from 'react'
 
-import { DatabaseManager } from '../database/DatabaseManager'
-import { LegacyTemplateManager } from '../database/modules/template/TemplateManager'
 import { VectorManager } from '../database/modules/vector/VectorManager'
 
 type DatabaseContextType = {
-  getDatabaseManager: () => Promise<DatabaseManager>
   getVectorManager: () => Promise<VectorManager>
-  getTemplateManager: () => Promise<LegacyTemplateManager>
 }
 
 const DatabaseContext = createContext<DatabaseContextType | null>(null)
 
 export function DatabaseProvider({
   children,
-  getDatabaseManager,
+  getVectorManager,
 }: {
   children: React.ReactNode
-  getDatabaseManager: () => Promise<DatabaseManager>
+  getVectorManager: () => Promise<VectorManager>
 }) {
-  const getVectorManager = useCallback(async () => {
-    return (await getDatabaseManager()).getVectorManager()
-  }, [getDatabaseManager])
-
-  const getTemplateManager = useCallback(async () => {
-    return (await getDatabaseManager()).getTemplateManager()
-  }, [getDatabaseManager])
-
   useEffect(() => {
-    // start initialization of dbManager in the background
-    void getDatabaseManager()
-  }, [getDatabaseManager])
+    // start initialization of vectorManager in the background
+    getVectorManager().catch((error) =>
+      console.error('Failed to initialize vector manager', error),
+    )
+  }, [getVectorManager])
 
   const value = useMemo(() => {
-    return { getDatabaseManager, getVectorManager, getTemplateManager }
-  }, [getDatabaseManager, getVectorManager, getTemplateManager])
+    return { getVectorManager }
+  }, [getVectorManager])
 
   return (
     <DatabaseContext.Provider value={value}>

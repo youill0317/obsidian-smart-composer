@@ -51,7 +51,7 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
       message: message,
       ctaText: 'Delete',
       onConfirm: async () => {
-        const vectorManager = (await plugin.getDbManager()).getVectorManager()
+        const vectorManager = await plugin.getVectorManager()
         const embeddingStats = await vectorManager.getEmbeddingStats()
 
         // Clear embeddings for each associated embedding model

@@ -36,7 +36,7 @@ export function EmbeddingModelsSubSection({
       message: message,
       ctaText: 'Delete',
       onConfirm: async () => {
-        const vectorManager = (await plugin.getDbManager()).getVectorManager()
+        const vectorManager = await plugin.getVectorManager()
         const embeddingStats = await vectorManager.getEmbeddingStats()
         const embeddingStat = embeddingStats.find((v) => v.model === modelId)
 

@@ -6,6 +6,7 @@ export const CHAT_VIEW_TYPE = 'smtcmp-chat-view'
 export const APPLY_VIEW_TYPE = 'smtcmp-apply-view'
 
 export const PGLITE_DB_PATH = '.smtcmp_vector_db.tar.gz'
+export const VECTOR_STORE_DIR = '.smtcmp_vector_store'
 
 // Sign in with ChatGPT (ChatGPT plan usage for open-source apps).
 // https://developers.openai.com/siwc/token-sharing-open-source

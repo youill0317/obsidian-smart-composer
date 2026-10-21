@@ -67,7 +67,7 @@ function EmbeddingDbManagerModalComponentWrapper({
           plugin.addSettingsChangeListener(listener)
         }
       >
-        <DatabaseProvider getDatabaseManager={() => plugin.getDbManager()}>
+        <DatabaseProvider getVectorManager={() => plugin.getVectorManager()}>
           <QueryClientProvider client={queryClient}>
             <EmbeddingDbManageModalComponent />
           </QueryClientProvider>
