@@ -68,8 +68,7 @@ device.
 
 Keychain values do not travel with a copied or synced `data.json`. On another
 device, **Needs attention** means you should re-enter the API key or reconnect
-the subscription. For a linked **Keychain secret**, add that secret in Obsidian
-Keychain or unlink it. Missing references are preserved when saving unrelated settings.
+the subscription. Missing references are preserved when saving unrelated settings.
 Use **Clear API key** and save, **Disconnect**, or reset settings to explicitly
 remove credentials. Only Smart Composer's generated entries are cleared; the
 public API leaves empty entries that can be removed in Obsidian's Keychain UI.
