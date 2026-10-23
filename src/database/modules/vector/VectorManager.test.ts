@@ -1,12 +1,14 @@
 import { App } from 'obsidian'
 
+import { createMemoryAdapter } from './memoryAdapter.testutil'
 import { VectorManager } from './VectorManager'
+import { VectorStore } from './VectorStore'
 
 jest.mock('../../../components/modals/ErrorModal', () => ({
-  ErrorModal: jest.fn(),
+  ErrorModal: jest.fn().mockImplementation(() => ({ open: jest.fn() })),
 }))
 
-function setup(indexedPaths: string[]) {
+function setup() {
   const files = ['public/a.md', 'private/b.md'].map((path) => ({
     path,
     stat: { mtime: 1 },
@@ -20,54 +22,58 @@ function setup(indexedPaths: string[]) {
       cachedRead,
     },
   } as unknown as App
-  const repository = {
-    getIndexedFilePaths: jest.fn().mockResolvedValue(indexedPaths),
-    getVectorsByFilePath: jest.fn().mockResolvedValue([{ mtime: 1 }]),
-    deleteVectorsForMultipleFiles: jest.fn().mockResolvedValue(undefined),
-    clearAllVectors: jest.fn().mockResolvedValue(undefined),
-  }
-  const manager = new VectorManager(app, null as never)
-  Object.assign(manager, { repository })
-  const save = jest.fn().mockResolvedValue(undefined)
-  manager.setSaveCallback(save)
-  return { manager, repository, save, cachedRead }
+  const { adapter } = createMemoryAdapter()
+  const store = new VectorStore(adapter)
+  const manager = new VectorManager(app, store)
+  return { manager, store, adapter, files, cachedRead }
 }
 
-const embeddingModel = { id: 'model' } as never
+const embeddingModel = {
+  id: 'model',
+  dimension: 1,
+  getEmbedding: jest.fn().mockResolvedValue([1]),
+}
+
+async function seed(store: VectorStore, paths: string[]) {
+  const index = await store.getIndex(embeddingModel)
+  for (const path of paths) {
+    index.setFile(path, 1, [
+      { content: path, metadata: { startLine: 1, endLine: 1 }, embedding: [1] },
+    ])
+  }
+  await index.flush()
+  return index
+}
 
 it('removes indexed vectors that the current include patterns exclude', async () => {
-  const { manager, repository } = setup([
-    'public/a.md',
-    'private/b.md',
-    'private/b.md',
-    'gone.md',
-  ])
+  const { manager, store, adapter } = setup()
+  const index = await seed(store, ['public/a.md', 'private/b.md', 'gone.md'])
   await manager.updateVaultIndex(embeddingModel, {
     chunkSize: 1000,
     excludePatterns: [],
     includePatterns: ['public/**'],
   })
-  expect(repository.deleteVectorsForMultipleFiles).toHaveBeenCalledWith(
-    ['private/b.md', 'gone.md'],
-    embeddingModel,
-  )
+  expect(index.paths()).toEqual(['public/a.md'])
+  // Persisted, not only removed in memory.
+  const reloaded = await new VectorStore(adapter).getIndex(embeddingModel)
+  expect(reloaded.paths()).toEqual(['public/a.md'])
 })
 
 it('persists the cleared index when a rebuild finds nothing to index', async () => {
-  const { manager, repository, save } = setup([])
+  const { manager, store, adapter } = setup()
+  await seed(store, ['public/a.md'])
   await manager.updateVaultIndex(embeddingModel, {
     chunkSize: 1000,
     excludePatterns: ['**/*.md'],
     includePatterns: [],
     reindexAll: true,
   })
-  expect(repository.clearAllVectors).toHaveBeenCalled()
-  expect(save).toHaveBeenCalled()
+  const reloaded = await new VectorStore(adapter).getIndex(embeddingModel)
+  expect(reloaded.paths()).toEqual([])
 })
 
 it('only indexes files inside the query scope', async () => {
-  const { manager, repository, cachedRead } = setup([])
-  repository.getVectorsByFilePath.mockResolvedValue([])
+  const { manager, cachedRead } = setup()
   await manager.updateVaultIndex(embeddingModel, {
     chunkSize: 1000,
     excludePatterns: [],
@@ -79,10 +85,25 @@ it('only indexes files inside the query scope', async () => {
   ])
 })
 
-it('removes partially embedded files so the next update retries them', async () => {
-  const { manager, repository, cachedRead } = setup([])
-  repository.getVectorsByFilePath.mockResolvedValue([])
-  Object.assign(repository, { insertVectors: jest.fn() })
+it('skips files whose stored mtime is current', async () => {
+  const { manager, store, files, cachedRead } = setup()
+  await seed(store, ['public/a.md', 'private/b.md'])
+  files[1].stat.mtime = 2
+  cachedRead.mockResolvedValue('changed')
+  await manager.updateVaultIndex(embeddingModel, {
+    chunkSize: 1000,
+    excludePatterns: [],
+    includePatterns: [],
+  })
+  expect(cachedRead.mock.calls).toEqual([
+    [expect.objectContaining({ path: 'private/b.md' })],
+  ])
+  const index = await store.getIndex(embeddingModel)
+  expect(index.getMtime('private/b.md')).toBe(2)
+})
+
+it('leaves partially embedded files unindexed so the next update retries them', async () => {
+  const { manager, store, adapter, cachedRead } = setup()
   cachedRead.mockImplementation((file: { path: string }) =>
     Promise.resolve(file.path === 'private/b.md' ? 'bad' : 'good'),
   )
@@ -91,14 +112,29 @@ it('removes partially embedded files so the next update retries them', async () 
     dimension: 1,
     getEmbedding: (text: string) =>
       text === 'bad' ? Promise.reject(new Error('fail')) : Promise.resolve([1]),
-  } as never
+  }
   await manager.updateVaultIndex(model, {
     chunkSize: 1000,
     excludePatterns: [],
     includePatterns: [],
   })
-  expect(repository.deleteVectorsForMultipleFiles).toHaveBeenLastCalledWith(
-    ['private/b.md'],
-    model,
-  )
+  expect((await store.getIndex(model)).paths()).toEqual(['public/a.md'])
+  const reloaded = await new VectorStore(adapter).getIndex(model)
+  expect(reloaded.paths()).toEqual(['public/a.md'])
+})
+
+it('treats an embedding of the wrong dimension as a failed chunk', async () => {
+  const { manager, store, cachedRead } = setup()
+  cachedRead.mockResolvedValue('text')
+  const model = {
+    id: 'model',
+    dimension: 2,
+    getEmbedding: () => Promise.resolve([1, 0, 0]),
+  }
+  await manager.updateVaultIndex(model, {
+    chunkSize: 1000,
+    excludePatterns: [],
+    includePatterns: [],
+  })
+  expect((await store.getIndex(model)).paths()).toEqual([])
 })

@@ -83,7 +83,7 @@ export class ChatView extends ItemView {
             >
               <DarkModeProvider>
                 <DatabaseProvider
-                  getDatabaseManager={() => this.plugin.getDbManager()}
+                  getVectorManager={() => this.plugin.getVectorManager()}
                 >
                   <RAGProvider getRAGEngine={() => this.plugin.getRAGEngine()}>
                     <QueryClientProvider client={queryClient}>

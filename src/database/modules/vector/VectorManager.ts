@@ -1,4 +1,3 @@
-import { PgliteDatabase } from 'drizzle-orm/pglite'
 import { backOff } from 'exponential-backoff'
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import { minimatch } from 'minimatch'
@@ -12,32 +11,35 @@ import {
   LLMBaseUrlNotSetException,
   LLMRateLimitExceededException,
 } from '../../../core/llm/exception'
-import {
-  InsertEmbedding,
-  SelectEmbedding,
-  VectorMetaData,
-} from '../../../database/schema'
+import { VectorMetaData } from '../../../database/schema'
 import {
   EmbeddingDbStats,
   EmbeddingModelClient,
 } from '../../../types/embedding'
 import { chunkArray } from '../../../utils/common/chunk-array'
 
-import { VectorRepository } from './VectorRepository'
+import {
+  EmbeddedChunk,
+  EmbeddingSearchResult,
+  ModelVectorIndex,
+  VectorStore,
+  isInScope,
+} from './VectorStore'
+
+type ContentChunk = {
+  path: string
+  mtime: number
+  content: string
+  metadata: VectorMetaData
+}
 
 export class VectorManager {
   private app: App
-  private repository: VectorRepository
-  private saveCallback: (() => Promise<void>) | null = null
-  private vacuumCallback: (() => Promise<void>) | null = null
+  private store: VectorStore
 
-  private async requestSave() {
+  private async requestSave(index: ModelVectorIndex) {
     try {
-      if (this.saveCallback) {
-        await this.saveCallback()
-      } else {
-        throw new Error('No save callback set')
-      }
+      await index.flush()
     } catch (error) {
       new ErrorModal(
         this.app,
@@ -51,23 +53,9 @@ export class VectorManager {
     }
   }
 
-  private async requestVacuum() {
-    if (this.vacuumCallback) {
-      await this.vacuumCallback()
-    }
-  }
-
-  constructor(app: App, db: PgliteDatabase) {
+  constructor(app: App, store: VectorStore) {
     this.app = app
-    this.repository = new VectorRepository(app, db)
-  }
-
-  setSaveCallback(callback: () => Promise<void>) {
-    this.saveCallback = callback
-  }
-
-  setVacuumCallback(callback: () => Promise<void>) {
-    this.vacuumCallback = callback
+    this.store = store
   }
 
   async performSimilaritySearch(
@@ -81,16 +69,9 @@ export class VectorManager {
         folders: string[]
       }
     },
-  ): Promise<
-    (Omit<SelectEmbedding, 'embedding'> & {
-      similarity: number
-    })[]
-  > {
-    return await this.repository.performSimilaritySearch(
-      queryVector,
-      embeddingModel,
-      options,
-    )
+  ): Promise<EmbeddingSearchResult[]> {
+    const index = await this.store.getIndex(embeddingModel)
+    return index.search(queryVector, options)
   }
 
   async updateVaultIndex(
@@ -104,31 +85,30 @@ export class VectorManager {
     },
     updateProgress?: (indexProgress: IndexProgress) => void,
   ): Promise<void> {
+    const index = await this.store.getIndex(embeddingModel)
     let filesToIndex: TFile[]
     if (options.reindexAll) {
       filesToIndex = await this.getFilesToIndex({
-        embeddingModel: embeddingModel,
+        index,
         excludePatterns: options.excludePatterns,
         includePatterns: options.includePatterns,
         reindexAll: true,
       })
-      // Saves the cleared state, which the early return below would skip.
-      await this.clearAllVectors(embeddingModel)
+      index.clear()
     } else {
-      await this.deleteStaleVectors(embeddingModel, options)
+      this.deleteStaleVectors(index, options)
       filesToIndex = await this.getFilesToIndex({
-        embeddingModel: embeddingModel,
+        index,
         excludePatterns: options.excludePatterns,
         includePatterns: options.includePatterns,
         scope: options.scope,
       })
-      await this.repository.deleteVectorsForMultipleFiles(
-        filesToIndex.map((file) => file.path),
-        embeddingModel,
-      )
+      index.deleteFiles(filesToIndex.map((file) => file.path))
     }
 
     if (filesToIndex.length === 0) {
+      // Persists the deletions above; writes nothing if there were none.
+      await this.requestSave(index)
       return
     }
 
@@ -157,19 +137,17 @@ export class VectorManager {
             const fileDocuments = await textSplitter.createDocuments([
               sanitizedContent,
             ])
-            return fileDocuments.map(
-              (chunk): Omit<InsertEmbedding, 'model' | 'dimension'> => {
-                return {
-                  path: file.path,
-                  mtime: file.stat.mtime,
-                  content: chunk.pageContent,
-                  metadata: {
-                    startLine: chunk.metadata.loc.lines.from as number,
-                    endLine: chunk.metadata.loc.lines.to as number,
-                  },
-                }
-              },
-            )
+            return fileDocuments.map((chunk): ContentChunk => {
+              return {
+                path: file.path,
+                mtime: file.stat.mtime,
+                content: chunk.pageContent,
+                metadata: {
+                  startLine: chunk.metadata.loc.lines.from as number,
+                  endLine: chunk.metadata.loc.lines.to as number,
+                },
+              }
+            })
           } catch (error) {
             failedFiles.push({
               path: file.path,
@@ -210,15 +188,25 @@ export class VectorManager {
     })
 
     let completedChunks = 0
-    // Files with any chunk not stored must not look up to date afterwards.
-    const remainingChunksByPath = new Map<string, number>()
-    for (const chunk of contentChunks) {
-      remainingChunksByPath.set(
-        chunk.path,
-        (remainingChunksByPath.get(chunk.path) ?? 0) + 1,
-      )
-    }
-    const batchChunks = chunkArray(contentChunks, 100)
+    // A file is stored only once all of its chunks are embedded, so a file
+    // with a failed chunk stays unindexed and is retried by the next update.
+    const pendingFiles = new Map<
+      string,
+      { mtime: number; chunks: EmbeddedChunk[]; remaining: number }
+    >()
+    const positions = contentChunks.map((chunk) => {
+      const pending = pendingFiles.get(chunk.path) ?? {
+        mtime: chunk.mtime,
+        chunks: [],
+        remaining: 0,
+      }
+      pendingFiles.set(chunk.path, pending)
+      return pending.remaining++
+    })
+    const batchChunks = chunkArray(
+      contentChunks.map((chunk, i) => ({ ...chunk, position: positions[i] })),
+      100,
+    )
     const failedChunks: {
       path: string
       metadata: VectorMetaData
@@ -227,7 +215,10 @@ export class VectorManager {
 
     try {
       for (const batchChunk of batchChunks) {
-        const embeddingChunks: (InsertEmbedding | null)[] = await Promise.all(
+        const embeddingChunks: (
+          | (EmbeddedChunk & { path: string; position: number })
+          | null
+        )[] = await Promise.all(
           batchChunk.map(async (chunk) => {
             try {
               return await backOff(
@@ -248,6 +239,11 @@ export class VectorManager {
                     chunk.content,
                     { purpose: 'document' },
                   )
+                  if (embedding.length !== embeddingModel.dimension) {
+                    throw new Error(
+                      `Embedding has ${embedding.length} dimensions, but model ${embeddingModel.id} is configured for ${embeddingModel.dimension}`,
+                    )
+                  }
                   completedChunks += 1
 
                   updateProgress?.({
@@ -258,10 +254,8 @@ export class VectorManager {
 
                   return {
                     path: chunk.path,
-                    mtime: chunk.mtime,
+                    position: chunk.position,
                     content: chunk.content,
-                    model: embeddingModel.id,
-                    dimension: embeddingModel.dimension,
                     embedding,
                     metadata: chunk.metadata,
                   }
@@ -309,12 +303,15 @@ export class VectorManager {
             'All chunks in batch failed to embed. Stopping indexing process.',
           )
         }
-        await this.repository.insertVectors(validEmbeddingChunks)
-        for (const chunk of validEmbeddingChunks) {
-          remainingChunksByPath.set(
-            chunk.path,
-            (remainingChunksByPath.get(chunk.path) ?? 1) - 1,
-          )
+        for (const { path, position, ...chunk } of validEmbeddingChunks) {
+          const pending = pendingFiles.get(path)
+          if (!pending) continue
+          pending.chunks[position] = chunk
+          pending.remaining -= 1
+          if (pending.remaining === 0) {
+            index.setFile(path, pending.mtime, pending.chunks)
+            pendingFiles.delete(path)
+          }
         }
       }
     } catch (error) {
@@ -345,56 +342,41 @@ Please report this issue to the developer if it persists.`,
         ).open()
       }
     } finally {
-      const incompletePaths = [...remainingChunksByPath]
-        .filter(([, remaining]) => remaining > 0)
-        .map(([path]) => path)
-      if (incompletePaths.length > 0) {
-        await this.repository
-          .deleteVectorsForMultipleFiles(incompletePaths, embeddingModel)
-          .catch((error) =>
-            console.error('Failed to remove partially indexed files', error),
-          )
-      }
-      await this.requestSave()
+      await this.requestSave(index)
     }
   }
 
   async clearAllVectors(embeddingModel: EmbeddingModelClient) {
-    await this.repository.clearAllVectors(embeddingModel)
-    await this.requestVacuum()
-    await this.requestSave()
+    const index = await this.store.getIndex(embeddingModel)
+    index.clear()
+    await this.requestSave(index)
   }
 
   // Remove vectors of deleted files and of files the current include/exclude
   // patterns no longer allow, so they cannot be retrieved.
-  private async deleteStaleVectors(
-    embeddingModel: EmbeddingModelClient,
+  private deleteStaleVectors(
+    index: ModelVectorIndex,
     patterns: { excludePatterns: string[]; includePatterns: string[] },
   ) {
-    const indexedFilePaths = new Set(
-      await this.repository.getIndexedFilePaths(embeddingModel),
+    index.deleteFiles(
+      index
+        .paths()
+        .filter(
+          (filePath) =>
+            !this.app.vault.getAbstractFileByPath(filePath) ||
+            !matchesIndexPatterns(filePath, patterns),
+        ),
     )
-    const stalePaths = [...indexedFilePaths].filter(
-      (filePath) =>
-        !this.app.vault.getAbstractFileByPath(filePath) ||
-        !matchesIndexPatterns(filePath, patterns),
-    )
-    if (stalePaths.length > 0) {
-      await this.repository.deleteVectorsForMultipleFiles(
-        stalePaths,
-        embeddingModel,
-      )
-    }
   }
 
   private async getFilesToIndex({
-    embeddingModel,
+    index,
     excludePatterns,
     includePatterns,
     reindexAll,
     scope,
   }: {
-    embeddingModel: EmbeddingModelClient
+    index: ModelVectorIndex
     excludePatterns: string[]
     includePatterns: string[]
     reindexAll?: boolean
@@ -405,14 +387,8 @@ Please report this issue to the developer if it persists.`,
       .filter((file) =>
         matchesIndexPatterns(file.path, { excludePatterns, includePatterns }),
       )
-      // Same scope semantics as VectorRepository.performSimilaritySearch.
-      .filter(
-        (file) =>
-          !scope ||
-          (scope.files.length === 0 && scope.folders.length === 0) ||
-          scope.files.includes(file.path) ||
-          scope.folders.some((folder) => file.path.startsWith(`${folder}/`)),
-      )
+      // Same scope semantics as the similarity search.
+      .filter((file) => isInScope(file.path, scope))
 
     if (reindexAll) {
       return filesToIndex
@@ -421,12 +397,8 @@ Please report this issue to the developer if it persists.`,
     // Check for updated or new files
     filesToIndex = await Promise.all(
       filesToIndex.map(async (file) => {
-        // TODO: Query all rows at once and compare them to enhance performance
-        const fileChunks = await this.repository.getVectorsByFilePath(
-          file.path,
-          embeddingModel,
-        )
-        if (fileChunks.length === 0) {
+        const indexedMtime = index.getMtime(file.path)
+        if (indexedMtime === undefined) {
           // File is not indexed, so we need to index it
           const fileContent = await this.app.vault.cachedRead(file)
           if (fileContent.length === 0) {
@@ -435,7 +407,7 @@ Please report this issue to the developer if it persists.`,
           }
           return file
         }
-        const outOfDate = file.stat.mtime > fileChunks[0].mtime
+        const outOfDate = file.stat.mtime > indexedMtime
         if (outOfDate) {
           // File has changed, so we need to re-index it
           return file
@@ -448,7 +420,7 @@ Please report this issue to the developer if it persists.`,
   }
 
   async getEmbeddingStats(): Promise<EmbeddingDbStats[]> {
-    return await this.repository.getEmbeddingStats()
+    return await this.store.getStats()
   }
 }
 

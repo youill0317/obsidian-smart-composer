@@ -63,8 +63,9 @@ async function transferChatHistoryFromLegacy(app: App): Promise<void> {
 
 async function transferTemplatesFromDrizzle(
   app: App,
-  dbManager: DatabaseManager,
+  getDbManager: () => Promise<DatabaseManager>,
 ): Promise<void> {
+  const dbManager = await getDbManager()
   const jsonTemplateManager = new TemplateManager(app)
   const drizzleTemplateManager = dbManager.getTemplateManager()
 
@@ -101,9 +102,10 @@ async function transferTemplatesFromDrizzle(
   console.log('Templates migration to JSON database completed')
 }
 
+// The legacy database is only opened when the migration still has to run.
 export async function migrateToJsonDatabase(
   app: App,
-  dbManager: DatabaseManager,
+  getDbManager: () => Promise<DatabaseManager>,
   onMigrationComplete?: () => void,
 ): Promise<void> {
   if (await hasMigrationCompleted(app)) {
@@ -111,7 +113,7 @@ export async function migrateToJsonDatabase(
   }
 
   await transferChatHistoryFromLegacy(app)
-  await transferTemplatesFromDrizzle(app, dbManager)
+  await transferTemplatesFromDrizzle(app, getDbManager)
   await markMigrationCompleted(app)
   onMigrationComplete?.()
 }

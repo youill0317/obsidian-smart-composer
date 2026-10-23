@@ -22,6 +22,9 @@ import { ToolManager } from './core/tools/toolManager'
 import { DatabaseManager } from './database/DatabaseManager'
 import { PGLiteAbortedException } from './database/exception'
 import { migrateToJsonDatabase } from './database/json/migrateToJsonDatabase'
+import { migrateVectorsFromPglite } from './database/modules/vector/migrateFromPglite'
+import { VectorManager } from './database/modules/vector/VectorManager'
+import { VectorStore } from './database/modules/vector/VectorStore'
 import { CredentialSettingsStore } from './settings/credentialSettingsStore'
 import {
   SettingsUpdate,
@@ -54,8 +57,10 @@ export default class SmartComposerPlugin extends Plugin {
   ocrConverter: OcrConverter
   mcpManager: McpManager | null = null
   dbManager: DatabaseManager | null = null
+  vectorManager: VectorManager | null = null
   ragEngine: RAGEngine | null = null
   private dbManagerInitPromise: Promise<DatabaseManager> | null = null
+  private vectorManagerInitPromise: Promise<VectorManager> | null = null
   private ragEngineInitPromise: Promise<RAGEngine> | null = null
   private timeoutIds: ReturnType<typeof setTimeout>[] = [] // Use ReturnType instead of number
 
@@ -179,7 +184,9 @@ export default class SmartComposerPlugin extends Plugin {
 
     // Promise cleanup
     this.dbManagerInitPromise = null
+    this.vectorManagerInitPromise = null
     this.ragEngineInitPromise = null
+    this.vectorManager = null
 
     // DatabaseManager cleanup
     this.dbManager?.cleanup()
@@ -387,6 +394,30 @@ export default class SmartComposerPlugin extends Plugin {
     return this.dbManagerInitPromise
   }
 
+  async getVectorManager(): Promise<VectorManager> {
+    if (this.vectorManager) {
+      return this.vectorManager
+    }
+
+    if (!this.vectorManagerInitPromise) {
+      this.vectorManagerInitPromise = (async () => {
+        try {
+          const store = new VectorStore(this.app.vault.adapter)
+          await migrateVectorsFromPglite(this.app, store, async () =>
+            (await this.getDbManager()).getDb(),
+          )
+          this.vectorManager = new VectorManager(this.app, store)
+          return this.vectorManager
+        } catch (error) {
+          this.vectorManagerInitPromise = null
+          throw error
+        }
+      })()
+    }
+
+    return this.vectorManagerInitPromise
+  }
+
   async getRAGEngine(): Promise<RAGEngine> {
     if (this.ragEngine) {
       return this.ragEngine
@@ -395,11 +426,10 @@ export default class SmartComposerPlugin extends Plugin {
     if (!this.ragEngineInitPromise) {
       this.ragEngineInitPromise = (async () => {
         try {
-          const dbManager = await this.getDbManager()
           this.ragEngine = new RAGEngine(
             this.app,
             this.settings,
-            dbManager.getVectorManager(),
+            await this.getVectorManager(),
           )
           return this.ragEngine
         } catch (error) {
@@ -439,11 +469,14 @@ export default class SmartComposerPlugin extends Plugin {
 
   private async migrateToJsonStorage() {
     try {
-      const dbManager = await this.getDbManager()
-      await migrateToJsonDatabase(this.app, dbManager, async () => {
-        await this.reloadChatView()
-        console.log('Migration to JSON storage completed successfully')
-      })
+      await migrateToJsonDatabase(
+        this.app,
+        () => this.getDbManager(),
+        async () => {
+          await this.reloadChatView()
+          console.log('Migration to JSON storage completed successfully')
+        },
+      )
     } catch (error) {
       console.error('Failed to migrate to JSON storage:', error)
       new Notice(
