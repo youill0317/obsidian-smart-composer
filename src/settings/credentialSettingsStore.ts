@@ -1,7 +1,7 @@
 import type { SecretStorage } from 'obsidian'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 
+import { PLAN_PROVIDER_TYPES } from '../constants'
 import { LLMProvider, llmProviderSchema } from '../types/provider.types'
 
 import {
@@ -11,7 +11,11 @@ import {
 } from './schema/setting.types'
 import { parseSmartComposerSettings } from './schema/settings'
 
-type Storage = Pick<SecretStorage, 'getSecret' | 'setSecret'>
+// deleteSecret is not in the public API. Without it, entries are only emptied.
+type Storage = Pick<SecretStorage, 'getSecret' | 'setSecret'> &
+  Partial<Pick<SecretStorage, 'listSecrets'>> & {
+    deleteSecret?: (id: string) => boolean
+  }
 export type CredentialStatus = {
   label: 'Keychain' | 'Plaintext' | 'Needs attention' | 'Not configured'
   detail: string
@@ -35,12 +39,31 @@ function hasCredentials(provider: LLMProvider) {
 }
 
 function ownsSecret(id: string) {
-  return /^smart-composer-[0-9a-f-]{36}$/.test(id)
+  return /^smart-composer-[a-z0-9-]+$/.test(id)
 }
 
-// 1.2.21 stored built-in provider API keys raw as smart-composer-<provider id>.
-function isProviderSecret(id: string) {
-  return /^smart-composer-[a-z0-9-]+$/.test(id) && !ownsSecret(id)
+// Keychain IDs allow lowercase letters, digits and dashes, up to 64 characters.
+function secretId(provider: LLMProvider, n = 1) {
+  const name = provider.id
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+  const suffix = n > 1 ? `-${n}` : ''
+  return (
+    ('smart-composer-' + (name || 'provider')).slice(0, 64 - suffix.length) +
+    suffix
+  )
+}
+
+// API keys are stored as is. Subscription tokens, and entries under the
+// generated IDs of 1.2.22 and earlier, hold a JSON payload.
+function holdsPayload(provider: LLMProvider, id: string) {
+  return (
+    PLAN_PROVIDER_TYPES.includes(provider.type) ||
+    /^smart-composer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+      id,
+    )
+  )
 }
 
 // Only the openai-plan references removed by the v20 -> v21 migration.
@@ -108,22 +131,13 @@ export class CredentialSettingsStore {
         // Plaintext is authoritative after a fallback, including interrupted
         // migrations. Never restore an older Keychain value over it.
         if (!id || hasCredentials(provider)) return provider
-        if (isProviderSecret(id)) {
-          try {
-            const value = this.storage?.getSecret(id)
-            if (!value) return provider
-            // Move it to a per-vault entry; the old entry is cleared once saved.
-            this.knownRefs.add(id)
-            return { ...provider, apiKey: value }
-          } catch {
-            return provider
-          }
-        }
         try {
           if (!this.storage || !ownsSecret(id)) throw new Error()
           const value = this.storage.getSecret(id)
           if (!value) throw new Error()
-          const payload = payloadSchema.parse(JSON.parse(value))
+          const payload = holdsPayload(provider, id)
+            ? payloadSchema.parse(JSON.parse(value))
+            : { apiKey: value }
           const resolved = llmProviderSchema.parse({ ...provider, ...payload })
           if (!hasCredentials(resolved)) throw new Error()
           return resolved
@@ -139,6 +153,20 @@ export class CredentialSettingsStore {
       this.notify(
         'Smart Composer settings could not be saved. Existing credentials were not removed.',
       )
+      return
+    }
+    // Remove entries earlier versions emptied because they could not delete.
+    try {
+      for (const id of this.storage?.listSecrets?.() ?? []) {
+        if (
+          ownsSecret(id) &&
+          !this.knownRefs.has(id) &&
+          !this.storage?.getSecret(id)
+        )
+          this.storage?.deleteSecret?.(id)
+      }
+    } catch {
+      // Empty entries are harmless.
     }
   }
 
@@ -178,6 +206,12 @@ export class CredentialSettingsStore {
     const statuses = new Map<string, CredentialStatus>()
     let migrated = false
     const rejected = new Set<number>()
+    // Keep unresolved references so another provider never takes their entry.
+    const used = new Set(
+      next.providers
+        .filter((provider) => !hasCredentials(provider))
+        .map((provider) => provider.credentialsSecretId),
+    )
     const providers = next.providers.map((provider, index): LLMProvider => {
       if (!hasCredentials(provider)) {
         statuses.set(
@@ -193,14 +227,15 @@ export class CredentialSettingsStore {
         return { ...provider }
       }
 
-      const id =
-        provider.credentialsSecretId && ownsSecret(provider.credentialsSecretId)
-          ? provider.credentialsSecretId
-          : 'smart-composer-' + uuidv4()
+      let id = secretId(provider)
+      for (let n = 2; used.has(id); n++) id = secretId(provider, n)
+      used.add(id)
       let reason = 'Requires Obsidian 1.11.5+ with SecretStorage support.'
       if (this.storage) {
         try {
-          const payload = JSON.stringify(credentials(provider))
+          const payload = holdsPayload(provider, id)
+            ? JSON.stringify(credentials(provider))
+            : (provider.apiKey ?? '')
           this.knownRefs.add(id)
           this.storage.setSecret(id, payload)
           if (this.storage.getSecret(id) !== payload) throw new Error()
@@ -209,8 +244,7 @@ export class CredentialSettingsStore {
           if ('oauth' in stored) delete stored.oauth
           statuses.set(provider.id, {
             label: 'Keychain',
-            detail:
-              'Stored by Obsidian Keychain. Encryption depends on your operating system.',
+            detail: `Stored by Obsidian Keychain as "${id}". Encryption depends on your operating system.`,
           })
           migrated ||= migrating && !provider.credentialsSecretId
           return stored
@@ -304,9 +338,10 @@ export class CredentialSettingsStore {
     for (const id of removed) {
       try {
         if (!this.storage) throw new Error()
-        // There is no public delete API. Clear only our own referenced values.
+        // Clear only our own referenced values.
         if (this.storage.getSecret(id)) this.storage.setSecret(id, '')
         if (this.storage.getSecret(id)) throw new Error()
+        this.storage.deleteSecret?.(id)
       } catch {
         this.warnOnce(
           'cleanup-' + id,

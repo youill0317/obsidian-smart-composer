@@ -169,7 +169,8 @@ describe('Keychain credential settings', () => {
     const store = f.createStore()
     await store.load(f.disk())
     expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
-    expect(f.secrets.get(secretId)).toContain(api.apiKey)
+    expect(f.secrets.get('smart-composer-openai')).toBe(api.apiKey)
+    expect(f.secrets.get(secretId)).toBe('')
   })
 
   it('preserves the previous file and secrets if settings persistence fails, then retries', async () => {
@@ -280,25 +281,90 @@ describe('Keychain credential settings', () => {
     expect(store.settings.providers[0].credentialsSecretId).toBeUndefined()
   })
 
-  it('moves a 1.2.21 provider entry to a per-vault entry', async () => {
+  it('stores API keys as is and subscriptions as JSON under the provider ID', async () => {
     const f = fixture([
+      api,
+      { id: 'anthropic-plan', type: 'anthropic-plan', oauth },
       {
-        id: api.id,
-        type: api.type,
-        credentialsSecretId: 'smart-composer-openai',
+        id: 'My Provider',
+        type: 'openai-compatible',
+        apiKey: 'a',
+        baseUrl: 'x',
+      },
+      {
+        id: 'my-provider',
+        type: 'openai-compatible',
+        apiKey: 'b',
+        baseUrl: 'x',
       },
     ])
-    f.secrets.set('smart-composer-openai', api.apiKey)
     const store = f.createStore()
     await store.load(f.disk())
-    const id = store.settings.providers[0].credentialsSecretId
-    expect(id).toMatch(/^smart-composer-[0-9a-f-]{36}$/)
-    expect(f.secrets.get('smart-composer-openai')).toBe('')
+    expect(f.secrets.get('smart-composer-openai')).toBe(api.apiKey)
+    expect(
+      JSON.parse(f.secrets.get('smart-composer-anthropic-plan') ?? ''),
+    ).toEqual({
+      oauth,
+    })
+    expect(f.secrets.get('smart-composer-my-provider')).toBe('a')
+    expect(f.secrets.get('smart-composer-my-provider-2')).toBe('b')
+    const reloaded = f.createStore()
+    await reloaded.load(f.disk())
+    expect(reloaded.settings).toEqual(store.settings)
+  })
+
+  it.each([
+    [secretId, JSON.stringify({ apiKey: api.apiKey })],
+    ['smart-composer-openai', api.apiKey],
+  ])('moves an earlier entry %s to the provider ID', async (id, value) => {
+    const f = fixture([{ id: api.id, type: api.type, credentialsSecretId: id }])
+    f.secrets.set(id, value)
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(store.settings.providers[0].credentialsSecretId).toBe(
+      'smart-composer-openai',
+    )
+    expect(f.secrets.get('smart-composer-openai')).toBe(api.apiKey)
+    if (id !== 'smart-composer-openai') expect(f.secrets.get(id)).toBe('')
     expect(f.notice).not.toHaveBeenCalled()
     const reloaded = f.createStore()
     await reloaded.load(f.disk())
     expect(reloaded.settings.providers[0].apiKey).toBe(api.apiKey)
-    expect(reloaded.getStatus(api.id).label).toBe('Keychain')
+  })
+
+  it('deletes old and empty entries when Keychain can delete', async () => {
+    const f = fixture([
+      { id: api.id, type: api.type, credentialsSecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ apiKey: api.apiKey }))
+    f.secrets.set('smart-composer-anthropic', '')
+    f.secrets.set('another-plugin', '')
+    const storage = Object.assign(f.storage, {
+      listSecrets: () => [...f.secrets.keys()],
+      deleteSecret: (id: string) => f.secrets.delete(id),
+    })
+    const store = new CredentialSettingsStore(storage, f.save, f.notice)
+    await store.load(f.disk())
+    expect([...f.secrets.keys()].sort()).toEqual([
+      'another-plugin',
+      'smart-composer-openai',
+    ])
+  })
+
+  it('does not give an unresolved entry to another provider', async () => {
+    const f = fixture([
+      {
+        id: 'foo',
+        type: 'openai-compatible',
+        baseUrl: 'x',
+        credentialsSecretId: 'smart-composer-foo',
+      },
+      { id: 'Foo', type: 'openai-compatible', baseUrl: 'x', apiKey: 'b' },
+    ])
+    const store = f.createStore()
+    await store.load(f.disk())
+    expect(f.secrets.get('smart-composer-foo')).toBeUndefined()
+    expect(f.secrets.get('smart-composer-foo-2')).toBe('b')
   })
 
   it('keeps other providers secrets when settings fail validation', async () => {
