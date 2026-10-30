@@ -40,7 +40,6 @@ export class PromptGenerator {
   private getRagEngine: () => Promise<RAGEngine>
   private app: App
   private settings: SmartComposerSettings
-  private MAX_CONTEXT_MESSAGES = 20
 
   constructor(
     getRagEngine: () => Promise<RAGEngine>,
@@ -123,10 +122,10 @@ export class PromptGenerator {
   }: {
     messages: ChatMessage[]
   }): RequestMessage[] {
-    // Get the last MAX_CONTEXT_MESSAGES messages and parse them into request messages
-    const requestMessages: RequestMessage[] = messages
-      .slice(-this.MAX_CONTEXT_MESSAGES)
-      .flatMap((message): RequestMessage[] => {
+    // Send the whole conversation so the original request stays in context
+    // during long tool runs and the prompt prefix stays cacheable
+    const requestMessages: RequestMessage[] = messages.flatMap(
+      (message): RequestMessage[] => {
         if (message.role === 'user') {
           // We assume that all user messages have been compiled
           return [
@@ -141,7 +140,8 @@ export class PromptGenerator {
           // message.role === 'tool'
           return this.parseToolMessage({ message })
         }
-      })
+      },
+    )
 
     // TODO: Also verify that tool messages appear right after their corresponding assistant tool calls
     const filteredRequestMessages: RequestMessage[] = requestMessages

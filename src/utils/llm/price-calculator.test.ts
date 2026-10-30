@@ -77,4 +77,24 @@ describe('calculateLLMCost', () => {
       ).toBeCloseTo(expected, 8)
     },
   )
+
+  it('should price cached Anthropic prompt tokens', () => {
+    expect(
+      calculateLLMCost({
+        model: {
+          providerType: 'anthropic',
+          providerId: 'anthropic',
+          id: 'claude-opus-5-5',
+          model: 'claude-opus-5-5',
+        } as ChatModel,
+        usage: {
+          prompt_tokens: 100_000,
+          completion_tokens: 0,
+          total_tokens: 100_000,
+          cache_read_tokens: 80_000,
+          cache_write_tokens: 10_000,
+        },
+      }),
+    ).toBeCloseTo((10_000 * 4 + 80_000 * 0.4 + 10_000 * 5) / 1_000_000)
+  })
 })

@@ -75,9 +75,11 @@ export class AnthropicProvider extends BaseLLMProvider<
       const response = await this.client.messages.create(
         {
           model: request.model,
-          messages: request.messages
-            .map((m) => AnthropicProvider.parseRequestMessage(m))
-            .filter((m) => m !== null),
+          messages: AnthropicProvider.addCacheBreakpoint(
+            request.messages
+              .map((m) => AnthropicProvider.parseRequestMessage(m))
+              .filter((m) => m !== null),
+          ),
           system: systemMessage,
           thinking: model.thinking?.enabled
             ? {
@@ -169,9 +171,11 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       const stream = await this.client.messages.create(
         {
           model: request.model,
-          messages: request.messages
-            .map((m) => AnthropicProvider.parseRequestMessage(m))
-            .filter((m) => m !== null),
+          messages: AnthropicProvider.addCacheBreakpoint(
+            request.messages
+              .map((m) => AnthropicProvider.parseRequestMessage(m))
+              .filter((m) => m !== null),
+          ),
           system: systemMessage,
           thinking: model.thinking?.enabled
             ? {
@@ -256,13 +260,7 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       if (chunk.type === 'message_start') {
         messageId = chunk.message.id
         model = chunk.message.model
-        usage = {
-          prompt_tokens: chunk.message.usage.input_tokens,
-          completion_tokens: chunk.message.usage.output_tokens,
-          total_tokens:
-            chunk.message.usage.input_tokens +
-            chunk.message.usage.output_tokens,
-        }
+        usage = AnthropicProvider.parseUsage(chunk.message.usage)
       } else if (
         chunk.type === 'content_block_start' ||
         chunk.type === 'content_block_delta'
@@ -277,7 +275,7 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
         }
       } else if (chunk.type === 'message_delta') {
         usage = {
-          prompt_tokens: usage.prompt_tokens,
+          ...usage,
           completion_tokens:
             usage.completion_tokens + chunk.usage.output_tokens,
           total_tokens: usage.total_tokens + chunk.usage.output_tokens,
@@ -428,12 +426,7 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       ],
       model: response.model,
       object: 'chat.completion',
-      usage: {
-        prompt_tokens: response.usage.input_tokens,
-        completion_tokens: response.usage.output_tokens,
-        total_tokens:
-          response.usage.input_tokens + response.usage.output_tokens,
-      },
+      usage: AnthropicProvider.parseUsage(response.usage),
     }
   }
 
@@ -530,6 +523,46 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       }
     }
     return null
+  }
+
+  // Cache the prompt up to the last message. The next request reads this
+  // prefix from the cache and only the new messages are written.
+  static addCacheBreakpoint(messages: MessageParam[]): MessageParam[] {
+    const last = messages[messages.length - 1]
+    if (!last) return messages
+    const content: ContentBlockParam[] =
+      typeof last.content === 'string'
+        ? [{ type: 'text', text: last.content }]
+        : last.content
+    const block = content[content.length - 1]
+    if (!block || (block.type === 'text' && !block.text)) return messages
+    return [
+      ...messages.slice(0, -1),
+      {
+        ...last,
+        content: [
+          ...content.slice(0, -1),
+          {
+            ...block,
+            cache_control: { type: 'ephemeral' },
+          } as ContentBlockParam,
+        ],
+      },
+    ]
+  }
+
+  // input_tokens excludes the tokens read from or written to the cache.
+  private static parseUsage(usage: Anthropic.Usage): ResponseUsage {
+    const cacheRead = usage.cache_read_input_tokens ?? 0
+    const cacheWrite = usage.cache_creation_input_tokens ?? 0
+    const promptTokens = usage.input_tokens + cacheRead + cacheWrite
+    return {
+      prompt_tokens: promptTokens,
+      completion_tokens: usage.output_tokens,
+      total_tokens: promptTokens + usage.output_tokens,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+    }
   }
 
   static validateSystemMessages(

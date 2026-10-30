@@ -25,6 +25,9 @@ export type ResponseUsage = {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  // Parts of prompt_tokens read from or written to the prompt cache
+  cache_read_tokens?: number
+  cache_write_tokens?: number
 }
 
 export type ResponseProviderMetadata = {

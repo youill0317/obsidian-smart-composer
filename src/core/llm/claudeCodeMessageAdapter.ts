@@ -96,9 +96,11 @@ export class ClaudeCodeMessageAdapter {
     thinking?: { enabled: boolean; budget_tokens: number }
   }): MessageCreateParams {
     const system = AnthropicProvider.validateSystemMessages(request.messages)
-    const messages = request.messages
-      .map((m) => AnthropicProvider.parseRequestMessage(m))
-      .filter((m) => m !== null)
+    const messages = AnthropicProvider.addCacheBreakpoint(
+      request.messages
+        .map((m) => AnthropicProvider.parseRequestMessage(m))
+        .filter((m) => m !== null),
+    )
     const tools = request.tools?.map((t) =>
       AnthropicProvider.parseRequestTool(t),
     )
