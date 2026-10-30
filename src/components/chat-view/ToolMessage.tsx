@@ -204,6 +204,7 @@ function ToolCallItem({
                 <button
                   onClick={() => {
                     void handleToolCall()
+                    setIsOpen(false)
                   }}
                 >
                   Allow this execution
