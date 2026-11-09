@@ -4,6 +4,8 @@ import { parseSmartComposerSettings } from '../settings'
 
 import { OCR_DEFAULTS_ADDED_IN_V23, migrateFrom22To23 } from './22_to_23'
 
+import { SETTINGS_SCHEMA_VERSION } from '.'
+
 describe('migrateFrom22To23', () => {
   it('adds OCR defaults when missing', () => {
     const initial = { version: 22, systemPrompt: 'keep me' }
@@ -14,10 +16,6 @@ describe('migrateFrom22To23', () => {
       ocr: OCR_DEFAULTS_ADDED_IN_V23,
     })
     expect(initial).toEqual({ version: 22, systemPrompt: 'keep me' })
-  })
-
-  it('matches the schema defaults', () => {
-    expect(OCR_DEFAULTS_ADDED_IN_V23).toEqual(DEFAULT_OCR_OPTIONS)
   })
 
   it('never overwrites an existing ocr object', () => {
@@ -61,36 +59,12 @@ describe('migrateFrom22To23', () => {
     }
     const before = JSON.stringify(initial)
     const settings = parseSmartComposerSettings(initial)
-    expect(settings.version).toBe(23)
-    expect(settings.ocr).toEqual(OCR_DEFAULTS_ADDED_IN_V23)
+    expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
+    expect(settings.ocr).toEqual(DEFAULT_OCR_OPTIONS)
     expect(settings.providers).toEqual(providers)
     expect(settings.systemPrompt).toBe('Be brief.')
     expect(settings.chatOptions).toEqual(initial.chatOptions)
     expect(JSON.stringify(initial)).toBe(before)
     expect(parseSmartComposerSettings(settings)).toEqual(settings)
-  })
-
-  it('fills in missing or invalid OCR fields without resetting the rest', () => {
-    const ocr = {
-      providerId: 'my-mistral',
-      tableFormat: 'xml',
-      paginate: true,
-    }
-    expect(parseSmartComposerSettings({ version: 23, ocr }).ocr).toEqual({
-      ...OCR_DEFAULTS_ADDED_IN_V23,
-      providerId: 'my-mistral',
-      paginate: true,
-    })
-  })
-
-  it('keeps customized OCR options through parsing', () => {
-    const ocr = {
-      ...OCR_DEFAULTS_ADDED_IN_V23,
-      providerId: 'other',
-      tableFormat: 'html',
-      outputLocation: 'subfolder',
-      imageLimit: 5,
-    }
-    expect(parseSmartComposerSettings({ version: 22, ocr }).ocr).toEqual(ocr)
   })
 })

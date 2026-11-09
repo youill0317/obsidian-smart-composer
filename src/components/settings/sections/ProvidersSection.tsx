@@ -13,7 +13,6 @@ import SmartComposerPlugin from '../../../main'
 import { DEFAULT_OCR_OPTIONS } from '../../../settings/schema/setting.types'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
-import { CredentialStorageStatus } from '../CredentialStorageStatus'
 import {
   AddProviderModal,
   EditProviderModal,
@@ -133,10 +132,6 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
                   }}
                 >
                   {provider.apiKey ? '••••••••' : 'Set API key'}
-                  <CredentialStorageStatus
-                    plugin={plugin}
-                    providerId={provider.id}
-                  />
                 </td>
                 <td>
                   <div className="smtcmp-settings-actions">

@@ -1,5 +1,3 @@
-import { OcrOptions } from '../../settings/schema/setting.types'
-
 export const OCR_ASSET_FOLDER = 'assets'
 
 export function joinVaultPath(...parts: string[]): string {
@@ -24,35 +22,27 @@ export type OcrOutputPaths = {
   /** Folder that holds the markdown file. */
   outputDir: string
   markdownPath: string
-  /** Folder that holds extracted images. */
+  /** Folder that holds extracted images and the original PDF. */
   assetDir: string
-  /** Image folder relative to the markdown file ('' when beside it). */
-  assetLinkDir: string
-  /** Where the PDF goes when it is moved into the output folder. */
+  /** Where the PDF is moved after conversion. */
   movedPdfPath: string
 }
 
-export function getOcrOutputPaths(
-  pdfPath: string,
-  options: Pick<OcrOptions, 'outputLocation' | 'createAssetSubfolder'>,
-): OcrOutputPaths {
+export function getOcrOutputPaths(pdfPath: string): OcrOutputPaths {
   const dir = getParentPath(pdfPath)
-  const baseName = getBaseName(pdfPath)
-  // A PDF already inside its own subfolder (e.g. moved there by an earlier
-  // conversion) writes into that folder instead of nesting another one.
-  const inOwnSubfolder = dir.slice(dir.lastIndexOf('/') + 1) === baseName
+  // A PDF already moved into the assets folder by an earlier conversion
+  // writes next to that folder instead of nesting another one.
   const outputDir =
-    options.outputLocation === 'subfolder' && !inOwnSubfolder
-      ? joinVaultPath(dir, baseName)
-      : joinVaultPath(dir)
-  const assetLinkDir = options.createAssetSubfolder ? OCR_ASSET_FOLDER : ''
+    dir.slice(dir.lastIndexOf('/') + 1) === OCR_ASSET_FOLDER
+      ? getParentPath(dir)
+      : dir
+  const assetDir = joinVaultPath(outputDir, OCR_ASSET_FOLDER)
   return {
     outputDir,
-    markdownPath: joinVaultPath(outputDir, `${baseName}.md`),
-    assetDir: joinVaultPath(outputDir, assetLinkDir),
-    assetLinkDir,
+    markdownPath: joinVaultPath(outputDir, `${getBaseName(pdfPath)}.md`),
+    assetDir,
     movedPdfPath: joinVaultPath(
-      outputDir,
+      assetDir,
       pdfPath.slice(pdfPath.lastIndexOf('/') + 1),
     ),
   }

@@ -2,15 +2,19 @@
 
 <p align="center">
   <a href="https://github.com/glowingjade/obsidian-smart-composer/wiki">Documentation</a>
-  ·
-  <a href="https://github.com/glowingjade/obsidian-smart-composer/issues">Report Bug</a>
-  ·
-  <a href="https://github.com/glowingjade/obsidian-smart-composer/discussions">Discussions</a>
 </p>
 
 > [!NOTE]
 > **What's New**
 >
+> **📄 Document OCR** — Convert PDFs to Markdown with Mistral OCR from the file menu or command palette
+> 
+> **🔑 Keychain Storage** — API keys and subscription tokens are stored in Obsidian Keychain
+> 
+> **🔍 Embeddings** — Voyage AI embedding models, and faster vault search with embeddings stored in sharded files
+> 
+> **💻 CLI Tools** — Run CLI tools from chat with per-run approval, including an Obsidian CLI preset
+> 
 > **v1.2.8** — Connect your Gemini account
 > 
 > **v1.2.7** — Connect your Claude or OpenAI account directly (no API key required)
@@ -18,16 +22,6 @@
 > **v1.2.6** — Support for GPT-5.2, Opus 4.5, Gemini 3, and Grok 4.1
 > 
 > **🔌 MCP Support** — Connect Smart Composer to external tools and data sources via the [Model Context Protocol](https://modelcontextprotocol.io)
-
-> [!WARNING]
-> **⚠️ Maintenance Notice**
->
-> This plugin is currently maintained by a single developer and is **not under active development**.  
-> Occasional updates or bug fixes may still be released, but **issues and feature requests may not be reviewed promptly**.
->
-> **🔗 Community Forks**  
-> A list of community-maintained forks is available in the [Community Fork Collection](https://github.com/glowingjade/obsidian-smart-composer/discussions/496).  
-> If you're maintaining a fork, feel free to add it there. And if you're simply interested in exploring alternative versions, you're welcome to check it out as well.
 
 > ### Risks of connecting a Claude subscription
 > 
@@ -45,38 +39,11 @@ Everytime we ask ChatGPT, we need to put so much context information for each qu
 
 ## Credential storage
 
-API keys and OpenAI, Claude, and Gemini subscription credentials use Obsidian
-Keychain by default on Obsidian 1.11.5+ when the SecretStorage API is available.
-On first load, existing credentials are moved automatically. The plugin verifies
-that the stored value can be read back before removing it from `data.json`.
-Each provider's entry is named `smart-composer-<provider id>` and only that
-reference remains in the settings file. API keys are stored as is; OAuth tokens
-and their account/project metadata are stored together as JSON.
-
-If the API is unavailable or a storage operation fails verification, the affected
-provider automatically falls back to plaintext in `data.json`. A notice appears
-once per provider per plugin session, and its settings show **Plaintext** with the
-reason. Migration is retried on the next settings save or plugin load. Successful
-Keychain storage does not keep a plaintext backup.
-
-Keychain values do not travel with a copied or synced `data.json`. On another
-device, **Needs attention** means you should re-enter the API key or reconnect
-the subscription. Missing references are preserved when saving unrelated settings.
-Use **Clear API key** and save, **Disconnect**, or reset settings to explicitly
-remove credentials. Only Smart Composer's own entries are removed. If Obsidian
-cannot delete an entry, it is left empty and can be removed in the Keychain UI.
-A cleanup failure is reported without reconnecting the provider.
-
-**Security limits:** Keychain encryption depends on Obsidian and the operating
-system; the label **Keychain** is not an independent encryption check. The public
-API does not acknowledge durable disk writes, so immediate readback cannot detect
-all asynchronous storage failures. Deleting entries uses Obsidian's internal
-`deleteSecret` when available. This integration does not add its own encryption. Existing backups and Git history are not scrubbed.
-Older Smart Composer releases do not understand the new references and may require
-credentials to be entered again. MCP configuration is outside this migration.
-
-See the [Obsidian SecretStorage guide](https://docs.obsidian.md/plugins/guides/secret-storage)
-and [Obsidian 1.11.5 encryption release notes](https://obsidian.md/changelog/2026-01-20-desktop-v1.11.5/).
+On Obsidian 1.11.5+, API keys and subscription credentials are stored in Obsidian
+Keychain as `smart-composer-<provider id>`; only that reference stays in
+`data.json`. When Keychain is unavailable, they are kept in `data.json`. Keychain
+values do not sync with `data.json`, so other devices need the API key or
+subscription sign-in again.
 
 ## Features
 
@@ -101,7 +68,6 @@ Now, you can **add website links and images** as additional context for your que
   - Drag & drop
   - Paste from clipboard
 - **Youtube link support**: YouTube transcripts are fetched and included as context
-- **Coming soon**: Support for external files (PDF, DOCX, ...)
 
 ### Apply Edit
 
@@ -128,19 +94,28 @@ Smart Composer **suggests edits to your document.** You can apply with a single 
 Connect Smart Composer to external MCP servers.
 MCP lets you use powerful third-party tools and data sources right inside your chat.
 
+### Document OCR
+
+Convert PDFs to Markdown with [Mistral OCR](https://mistral.ai/news/mistral-ocr) from the file menu or the command palette.
+
+- The note is created next to the PDF, with images in an `assets` folder
+- The original PDF is moved into the `assets` folder
+
 ### Additional Features
 
 - **Custom Model Selection**: Use your own model by setting your API Key (stored locally). Supported API providers:
   - OpenAI
   - Anthropic
   - Google (Gemini)
-  - Groq
+  - xAI
   - DeepSeek
+  - Mistral
+  - Voyage AI (embeddings)
+  - Perplexity
   - OpenRouter
   - Azure OpenAI
   - Ollama
   - LM Studio
-  - MorphLLM
   - Any other OpenAI-compatible providers
 - **Local Model Support**: Run open-source LLMs and embedding models locally with [Ollama](https://ollama.ai) for complete privacy and offline usage.
 - **Custom System Prompts**: Define your own system prompts that will be applied to every chat conversation.
@@ -178,32 +153,9 @@ MCP lets you use powerful third-party tools and data sources right inside your c
 
 **📚 For detailed setup instructions and documentation, please visit our [Documentation](https://github.com/glowingjade/obsidian-smart-composer/wiki).**
 
-## Roadmap
-
-To see our up-to-date project roadmap and progress, please check out our [GitHub Projects kanban board](https://github.com/glowingjade/obsidian-smart-composer/projects?query=is%3Aopen).
-
-Some of our planned features include:
-
-- Support for external files (PDF, DOCX, etc.)
-- Mentioning with tags or other metadata
-
-## Feedback and Support
-
-We value your input and want to ensure you can easily share your thoughts and report any issues:
-
-- **Bug Reports**: If you encounter any bugs or unexpected behavior, please submit an issue on our [GitHub Issues](https://github.com/glowingjade/obsidian-smart-composer/issues) page. Be sure to include as much detail as possible to help us reproduce and address the problem.
-
-- **Feature Requests**: For new feature ideas or enhancements, please use our [GitHub Discussions - Ideas & Feature Requests](https://github.com/glowingjade/obsidian-smart-composer/discussions/categories/ideas-feature-requests) page. Create a new discussion to share your suggestions. This allows for community engagement and helps us prioritize future developments.
-
-- **Show and Tell**: We love seeing how you use Smart Composer! Share your unique use cases, workflows, or interesting applications of the plugin in the [GitHub Discussions - Smart Composer Showcase](https://github.com/glowingjade/obsidian-smart-composer/discussions/categories/smart-composer-showcase) page.
-
-Your feedback and experiences are crucial in making Smart Composer better for everyone!
-
 ## Contributing
 
 We welcome all kinds of contributions to Smart Composer, including bug reports, bug fixes, documentation improvements, and feature enhancements.
-
-**For major feature ideas, please create an issue first to discuss feasibility and implementation approach.**
 
 If you're interested in contributing, please refer to our [CONTRIBUTING.md](CONTRIBUTING.md) file for detailed information on:
 
@@ -229,19 +181,3 @@ We also want to thank everyone else who has contributed. Your time and effort he
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-
-## Support the Project
-
-If you find Smart Composer valuable, consider supporting its development:
-
-<a href="https://www.buymeacoffee.com/kevin.on" target="_blank">
-  <img src="https://github.com/user-attachments/assets/e794767d-b7dd-40eb-9132-e48ae7088000" alt="Buy Me A Coffee" width="180">
-</a>
-
-Follow me on X (Twitter) [@andy_suh_](https://x.com/andy_suh_) for updates and announcements!
-
-Your support helps maintain and improve this plugin. Every contribution is appreciated and makes a difference. Thank you for your support!
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=glowingjade/obsidian-smart-composer&type=Date)](https://star-history.com/#glowingjade/obsidian-smart-composer&Date)

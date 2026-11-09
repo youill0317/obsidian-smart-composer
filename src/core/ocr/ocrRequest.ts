@@ -6,6 +6,8 @@ export const MAX_INLINE_PDF_BYTES = 20 * 1024 * 1024
 
 export const DEFAULT_MISTRAL_BASE_URL = 'https://api.mistral.ai/v1'
 
+export const MISTRAL_OCR_MODEL = 'mistral-ocr-latest'
+
 export function resolveMistralBaseUrl(baseUrl?: string): string {
   const trimmed = baseUrl?.trim()
   return trimmed ? trimmed.replace(/\/+$/, '') : DEFAULT_MISTRAL_BASE_URL
