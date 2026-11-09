@@ -8,29 +8,18 @@ import {
 } from 'obsidian'
 
 import { confirmAsync } from '../../components/modals/ConfirmModal'
-import {
-  OcrOptions,
-  SmartComposerSettings,
-} from '../../settings/schema/setting.types'
+import { SmartComposerSettings } from '../../settings/schema/setting.types'
 
 import { MistralOcrClient, OcrProgressStage } from './mistralOcrClient'
 import {
+  OCR_ASSET_FOLDER,
   OcrOutputPaths,
   getOcrOutputPaths,
   getParentPath,
   joinVaultPath,
 } from './ocrPaths'
+import { MISTRAL_OCR_MODEL } from './ocrRequest'
 import { combineOcrPages } from './ocrResult'
-
-export const OCR_FRONTMATTER_KEY = 'smtcmp_ocr'
-
-export type OcrFrontmatter = {
-  source: string
-  source_mtime: number
-  model: string
-  pages: number
-  converted_at: string
-}
 
 export function isPdf(file: TAbstractFile | null | undefined): file is TFile {
   return file instanceof TFile && file.extension.toLowerCase() === 'pdf'
@@ -56,8 +45,8 @@ export class OcrConverter {
   /**
    * Converts a PDF and returns the markdown file. Asks before overwriting an
    * existing file and returns null when the user declines or the PDF is
-   * already being converted. Applies the move/delete options for the original
-   * PDF. Errors are shown as a Notice and rethrown.
+   * already being converted. Moves the original PDF into the assets folder.
+   * Errors are shown as a Notice and rethrown.
    */
   convertFile(pdf: TFile): Promise<TFile | null> {
     const key = pdf.path
@@ -79,7 +68,7 @@ export class OcrConverter {
       const provider = providers.find((p) => p.id === ocr.providerId)
       if (!provider || provider.type !== 'mistral') {
         throw new Error(
-          `OCR provider "${ocr.providerId}" was not found. Add a Mistral provider in Settings > Providers and select it under Document OCR.`,
+          `OCR provider "${ocr.providerId}" was not found. Add a Mistral provider in Settings > Providers.`,
         )
       }
       if (!provider.apiKey) {
@@ -88,8 +77,8 @@ export class OcrConverter {
         )
       }
 
-      const paths = getOcrOutputPaths(pdf.path, ocr)
-      this.checkOutputPaths(paths, ocr.includeImages)
+      const paths = getOcrOutputPaths(pdf.path)
+      this.checkOutputPaths(paths)
       const target = this.app.vault.getAbstractFileByPath(paths.markdownPath)
       if (target && !(target instanceof TFile)) {
         throw new Error(`${paths.markdownPath} already exists as a folder.`)
@@ -113,11 +102,11 @@ export class OcrConverter {
         data,
         pdf.name,
         {
-          model: ocr.model,
-          includeImages: ocr.includeImages,
-          imageLimit: ocr.imageLimit,
-          imageMinSize: ocr.imageMinSize,
-          tableFormat: ocr.tableFormat,
+          model: MISTRAL_OCR_MODEL,
+          includeImages: true,
+          imageLimit: 0,
+          imageMinSize: 0,
+          tableFormat: 'markdown',
         },
         (stage: OcrProgressStage) => {
           progress?.setMessage(
@@ -130,14 +119,14 @@ export class OcrConverter {
 
       progress.setMessage(`Saving OCR result for ${pdf.name}...`)
       const result = combineOcrPages(response.pages, {
-        includeImages: ocr.includeImages,
-        paginate: ocr.paginate,
+        includeImages: true,
+        paginate: true,
         pdfBaseName: pdf.basename,
-        assetLinkDir: paths.assetLinkDir,
+        assetLinkDir: OCR_ASSET_FOLDER,
       })
 
       await this.ensureFolder(paths.outputDir)
-      if (result.images.length > 0) await this.ensureFolder(paths.assetDir)
+      await this.ensureFolder(paths.assetDir)
       // A leading rule would otherwise be parsed as a frontmatter fence.
       const md = await this.writeText(
         paths.markdownPath,
@@ -159,37 +148,7 @@ export class OcrConverter {
         }
       }
 
-      const sourceMtime = pdf.stat.mtime
-      // Never delete the only full copy when the result is empty or incomplete.
-      const keptReason = !result.hasContent
-        ? 'no text was recognized'
-        : failedImages > 0
-          ? 'some images could not be saved'
-          : null
-      const keptOriginal = ocr.deleteOriginal && keptReason !== null
-      await this.handleOriginal(pdf, paths.movedPdfPath, ocr, keptOriginal)
-
-      if (ocr.writeMetadata) {
-        const meta: OcrFrontmatter = {
-          source: pdf.path,
-          source_mtime: sourceMtime,
-          model: response.model ?? ocr.model,
-          pages: response.usage_info?.pages_processed ?? result.pageCount,
-          converted_at: new Date().toISOString(),
-        }
-        try {
-          await this.app.fileManager.processFrontMatter(
-            md,
-            (frontmatter: Record<string, unknown>) => {
-              frontmatter[OCR_FRONTMATTER_KEY] = meta
-            },
-          )
-        } catch (error) {
-          // The note is already written; only the metadata is missing.
-          console.error('Failed to write OCR frontmatter', error)
-          new Notice(`Could not add OCR metadata to ${md.path}.`)
-        }
-      }
+      await this.moveOriginal(pdf, paths.movedPdfPath)
 
       progress.hide()
       progress = null
@@ -198,14 +157,8 @@ export class OcrConverter {
           failedImages > 0
             ? `, ${failedImages} image(s) could not be saved`
             : ''
-        })${
-          keptOriginal
-            ? `. ${pdf.name} was not deleted because ${keptReason}.`
-            : !result.hasContent
-              ? '. No text was recognized.'
-              : ''
-        }`,
-        keptOriginal || !result.hasContent ? 10000 : 5000,
+        })${!result.hasContent ? '. No text was recognized.' : ''}`,
+        !result.hasContent ? 10000 : 5000,
       )
       return md
     } catch (error) {
@@ -221,11 +174,8 @@ export class OcrConverter {
    * file where a folder is needed, or a name that differs only in letter case
    * from an existing one (case-insensitive file systems reject it).
    */
-  private checkOutputPaths(paths: OcrOutputPaths, includeImages: boolean) {
-    const folders = includeImages
-      ? [paths.outputDir, paths.assetDir]
-      : [paths.outputDir]
-    for (const folder of folders) {
+  private checkOutputPaths(paths: OcrOutputPaths) {
+    for (const folder of [paths.outputDir, paths.assetDir]) {
       let current = ''
       for (const segment of folder.split('/').filter(Boolean)) {
         current = joinVaultPath(current, segment)
@@ -258,39 +208,18 @@ export class OcrConverter {
     }
   }
 
-  private async handleOriginal(
-    pdf: TFile,
-    movedPdfPath: string,
-    ocr: OcrOptions,
-    keepOriginal: boolean,
-  ) {
+  private async moveOriginal(pdf: TFile, movedPdfPath: string) {
+    if (pdf.path === movedPdfPath) return
     try {
-      if (ocr.deleteOriginal) {
-        if (keepOriginal) return
-        if (typeof this.app.fileManager.trashFile === 'function') {
-          await this.app.fileManager.trashFile(pdf)
-        } else {
-          await this.app.vault.trash(pdf, true)
-        }
+      if (this.app.vault.getAbstractFileByPath(movedPdfPath)) {
+        new Notice(`Did not move ${pdf.name}: ${movedPdfPath} already exists.`)
         return
       }
-      if (
-        ocr.movePdfToFolder &&
-        ocr.outputLocation === 'subfolder' &&
-        pdf.path !== movedPdfPath
-      ) {
-        if (this.app.vault.getAbstractFileByPath(movedPdfPath)) {
-          new Notice(
-            `Did not move ${pdf.name}: ${movedPdfPath} already exists.`,
-          )
-          return
-        }
-        await this.app.fileManager.renameFile(pdf, movedPdfPath)
-      }
+      await this.app.fileManager.renameFile(pdf, movedPdfPath)
     } catch (error) {
-      console.error('Failed to move or delete the original PDF', error)
+      console.error('Failed to move the original PDF', error)
       new Notice(
-        `Converted, but the original PDF could not be ${ocr.deleteOriginal ? 'deleted' : 'moved'}: ${errorMessage(error)}`,
+        `Converted, but the original PDF could not be moved: ${errorMessage(error)}`,
       )
     }
   }

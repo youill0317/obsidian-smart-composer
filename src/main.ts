@@ -40,10 +40,6 @@ export default class SmartComposerPlugin extends Plugin {
     return this.credentialStore.settings
   }
 
-  getCredentialStatus(providerId: string) {
-    return this.credentialStore.getStatus(providerId)
-  }
-
   get hasKeychain() {
     return this.credentialStore.hasKeychain
   }
@@ -298,7 +294,7 @@ export default class SmartComposerPlugin extends Plugin {
       name: 'Convert current PDF to Markdown (OCR)',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile()
-        if (!isPdf(file)) return false
+        if (!this.settings.ocr.enabled || !isPdf(file)) return false
         if (!checking) void this.convertPdfsWithOcr([file])
         return true
       },
@@ -306,7 +302,7 @@ export default class SmartComposerPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on('file-menu', (menu: Menu, file: TAbstractFile) => {
-        if (!isPdf(file)) return
+        if (!this.settings.ocr.enabled || !isPdf(file)) return
         menu.addItem((item) =>
           item
             .setTitle('Convert PDF to Markdown (OCR)')
@@ -321,6 +317,7 @@ export default class SmartComposerPlugin extends Plugin {
       this.app.workspace.on(
         'files-menu',
         (menu: Menu, files: TAbstractFile[]) => {
+          if (!this.settings.ocr.enabled) return
           const pdfs = files.filter(isPdf)
           if (pdfs.length === 0) return
           menu.addItem((item) =>

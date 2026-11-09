@@ -26,42 +26,13 @@ const ragOptionsSchema = z.object({
 
 export const DEFAULT_OCR_OPTIONS = {
   providerId: 'mistral',
-  model: 'mistral-ocr-latest',
-  includeImages: true,
-  imageLimit: 0,
-  imageMinSize: 0,
-  tableFormat: 'markdown',
-  paginate: false,
-  outputLocation: 'same-folder',
-  createAssetSubfolder: true,
-  writeMetadata: true,
-  movePdfToFolder: false,
-  deleteOriginal: false,
+  enabled: true,
 } as const
 
-// Each field falls back on its own, so one invalid or missing value never
-// resets the other OCR options.
 const ocrOptionsSchema = z.object({
   providerId: z.string().catch(DEFAULT_OCR_OPTIONS.providerId), // id of a provider whose type is 'mistral'
-  model: z.string().catch(DEFAULT_OCR_OPTIONS.model),
-  includeImages: z.boolean().catch(DEFAULT_OCR_OPTIONS.includeImages),
-  imageLimit: z.number().catch(DEFAULT_OCR_OPTIONS.imageLimit), // 0 = no limit
-  imageMinSize: z.number().catch(DEFAULT_OCR_OPTIONS.imageMinSize), // 0 = no minimum
-  tableFormat: z
-    .enum(['markdown', 'html'])
-    .catch(DEFAULT_OCR_OPTIONS.tableFormat),
-  paginate: z.boolean().catch(DEFAULT_OCR_OPTIONS.paginate), // insert a horizontal rule between pages
-  outputLocation: z
-    .enum(['same-folder', 'subfolder'])
-    .catch(DEFAULT_OCR_OPTIONS.outputLocation),
-  createAssetSubfolder: z
-    .boolean()
-    .catch(DEFAULT_OCR_OPTIONS.createAssetSubfolder),
-  writeMetadata: z.boolean().catch(DEFAULT_OCR_OPTIONS.writeMetadata),
-  movePdfToFolder: z.boolean().catch(DEFAULT_OCR_OPTIONS.movePdfToFolder), // only used with 'subfolder'
-  deleteOriginal: z.boolean().catch(DEFAULT_OCR_OPTIONS.deleteOriginal),
+  enabled: z.boolean().catch(DEFAULT_OCR_OPTIONS.enabled),
 })
-export type OcrOptions = z.infer<typeof ocrOptionsSchema>
 
 /**
  * Settings

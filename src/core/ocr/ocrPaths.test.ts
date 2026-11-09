@@ -1,70 +1,30 @@
 import { getBaseName, getOcrOutputPaths } from './ocrPaths'
 
 describe('getOcrOutputPaths', () => {
-  it('writes next to the PDF in same-folder mode', () => {
-    expect(
-      getOcrOutputPaths('docs/My report.pdf', {
-        outputLocation: 'same-folder',
-        createAssetSubfolder: true,
-      }),
-    ).toEqual({
+  it('writes next to the PDF and moves the PDF into assets', () => {
+    expect(getOcrOutputPaths('docs/My report.pdf')).toEqual({
       outputDir: 'docs',
       markdownPath: 'docs/My report.md',
       assetDir: 'docs/assets',
-      assetLinkDir: 'assets',
-      movedPdfPath: 'docs/My report.pdf',
+      movedPdfPath: 'docs/assets/My report.pdf',
     })
   })
 
-  it('writes into a subfolder named after the PDF', () => {
-    expect(
-      getOcrOutputPaths('docs/a.b.pdf', {
-        outputLocation: 'subfolder',
-        createAssetSubfolder: false,
-      }),
-    ).toEqual({
-      outputDir: 'docs/a.b',
-      markdownPath: 'docs/a.b/a.b.md',
-      assetDir: 'docs/a.b',
-      assetLinkDir: '',
-      movedPdfPath: 'docs/a.b/a.b.pdf',
+  it('writes next to the assets folder when the PDF is already inside it', () => {
+    expect(getOcrOutputPaths('docs/assets/a.b.pdf')).toEqual({
+      outputDir: 'docs',
+      markdownPath: 'docs/a.b.md',
+      assetDir: 'docs/assets',
+      movedPdfPath: 'docs/assets/a.b.pdf',
     })
-  })
-
-  it('reuses the subfolder when the PDF is already inside it', () => {
-    expect(
-      getOcrOutputPaths('docs/report/report.pdf', {
-        outputLocation: 'subfolder',
-        createAssetSubfolder: true,
-      }),
-    ).toEqual({
-      outputDir: 'docs/report',
-      markdownPath: 'docs/report/report.md',
-      assetDir: 'docs/report/assets',
-      assetLinkDir: 'assets',
-      movedPdfPath: 'docs/report/report.pdf',
-    })
-    expect(
-      getOcrOutputPaths('docs/other/report.pdf', {
-        outputLocation: 'subfolder',
-        createAssetSubfolder: false,
-      }).markdownPath,
-    ).toBe('docs/other/report/report.md')
-    expect(
-      getOcrOutputPaths('report.pdf', {
-        outputLocation: 'subfolder',
-        createAssetSubfolder: false,
-      }).markdownPath,
-    ).toBe('report/report.md')
+    expect(getOcrOutputPaths('assets/scan.pdf').markdownPath).toBe('scan.md')
   })
 
   it('handles PDFs at the vault root', () => {
-    const paths = getOcrOutputPaths('scan.PDF', {
-      outputLocation: 'same-folder',
-      createAssetSubfolder: true,
-    })
+    const paths = getOcrOutputPaths('scan.PDF')
     expect(paths.markdownPath).toBe('scan.md')
     expect(paths.assetDir).toBe('assets')
+    expect(paths.movedPdfPath).toBe('assets/scan.PDF')
   })
 })
 

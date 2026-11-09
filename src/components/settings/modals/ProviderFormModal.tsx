@@ -188,21 +188,6 @@ function ProviderFormComponent({
             />
           </ObsidianSetting>
 
-          {(provider?.apiKey || provider?.credentialsSecretId) && (
-            <ObsidianSetting
-              name="Clear API key"
-              desc="Clear the saved API key when you save this form."
-            >
-              <ObsidianButton
-                text="Clear"
-                onClick={() => {
-                  setApiKeyChanged(true)
-                  setFormData((prev) => ({ ...prev, apiKey: '' }))
-                }}
-              />
-            </ObsidianSetting>
-          )}
-
           <ObsidianSetting
             name="Base URL"
             desc="(leave blank if using default)"

@@ -11,7 +11,6 @@ import { waitForCodexRefresh } from '../../../core/llm/openaiCodexProvider'
 import SmartComposerPlugin from '../../../main'
 import { LLMProvider } from '../../../types/provider.types'
 import { ConfirmModal } from '../../modals/ConfirmModal'
-import { CredentialStorageStatus } from '../CredentialStorageStatus'
 import { ConnectClaudePlanModal } from '../modals/ConnectClaudePlanModal'
 import { ConnectGeminiPlanModal } from '../modals/ConnectGeminiPlanModal'
 import { ConnectOpenAIPlanModal } from '../modals/ConnectOpenAIPlanModal'
@@ -145,10 +144,6 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">Claude</div>
             <PlanConnectionStatusBadge connected={isClaudeConnected} />
           </div>
-          <CredentialStorageStatus
-            plugin={plugin}
-            providerId={CLAUDE_PLAN_PROVIDER_ID}
-          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your Claude Code usage from your Claude plan.
@@ -178,10 +173,6 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">OpenAI</div>
             <PlanConnectionStatusBadge connected={isOpenAIConnected} />
           </div>
-          <CredentialStorageStatus
-            plugin={plugin}
-            providerId={OPENAI_PLAN_PROVIDER_ID}
-          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your ChatGPT plan through Sign in with ChatGPT.
@@ -230,10 +221,6 @@ export function PlanConnectionsSection({
             <div className="smtcmp-plan-connection-card-title">Gemini</div>
             <PlanConnectionStatusBadge connected={isGeminiConnected} />
           </div>
-          <CredentialStorageStatus
-            plugin={plugin}
-            providerId={GEMINI_PLAN_PROVIDER_ID}
-          />
 
           <div className="smtcmp-plan-connection-card-desc">
             Uses your Gemini Code Assist usage from your Google AI Plan.
