@@ -65,6 +65,8 @@ export class PromptGenerator {
     contextWindow?: number
   }): Promise<{
     requestMessages: RequestMessage[]
+    // Characters of the request as the provider's adapter sends it
+    requestChars: number
     // Id of the first chat message sent, when older ones were left out
     requestStartId?: string
   }> {
@@ -105,63 +107,110 @@ export class PromptGenerator {
     const capturingMessage = compiledMessages
       .filter((m): m is ChatUserMessage => m.role === 'user' && !!m.currentFile)
       .pop()
+    const build = (start: number) =>
+      this.buildRequest({
+        messages: compiledMessages.slice(start),
+        model,
+        systemMessage,
+        customInstructionMessage,
+        capturingMessage,
+      })
     const start = this.getHistoryStart({
       messages: compiledMessages,
       model,
       contextWindow,
-      fixedChars: [systemMessage, customInstructionMessage].reduce(
-        (sum, message) => sum + (message ? getRequestMessageChars(message) : 0),
-        0,
-      ),
-      currentFileChars: capturingMessage?.currentFile
-        ? this.getCurrentFilePrompt(capturingMessage.currentFile).length
-        : 0,
-      captureIndex: capturingMessage
-        ? compiledMessages.indexOf(capturingMessage)
-        : -1,
+      getRequestChars: (from) => build(from).requestChars,
     })
-    const keptMessages = compiledMessages.slice(start)
-
-    const requestMessages: RequestMessage[] = [
-      systemMessage,
-      ...(customInstructionMessage ? [customInstructionMessage] : []),
-      ...this.getChatHistoryMessages({
-        messages: keptMessages,
-        // A dropped capture moves to the first message sent
-        currentFile: capturingMessage?.currentFile && {
-          message: keptMessages.includes(capturingMessage)
-            ? capturingMessage
-            : keptMessages[0],
-          capture: capturingMessage.currentFile,
-        },
-      }),
-    ]
 
     return {
-      requestMessages,
-      requestStartId: start > 0 ? keptMessages[0].id : undefined,
+      ...build(start),
+      requestStartId: start > 0 ? compiledMessages[start].id : undefined,
+    }
+  }
+
+  // Builds the request for a history. A provider's adapter sends nothing
+  // before the provider's latest compaction, so the custom instructions and a
+  // current file captured before it follow the compacted turn instead.
+  // `requestChars` counts what the adapter sends.
+  private buildRequest({
+    messages,
+    model,
+    systemMessage,
+    customInstructionMessage,
+    capturingMessage,
+  }: {
+    messages: ChatMessage[]
+    model: Pick<ChatModel, 'providerType' | 'model'>
+    systemMessage: RequestMessage
+    customInstructionMessage: RequestMessage | null
+    capturingMessage?: ChatUserMessage
+  }): { requestMessages: RequestMessage[]; requestChars: number } {
+    let cut = -1
+    messages.forEach((message, index) => {
+      if (getProviderCompaction(message, model.providerType)) cut = index
+    })
+    let anchor = cut + 1
+    while (cut >= 0 && messages[anchor]?.role === 'tool') anchor++
+
+    const capture = capturingMessage?.currentFile
+    const sendsCapturingMessage =
+      !!capturingMessage && messages.indexOf(capturingMessage) >= anchor
+    const history = (slice: ChatMessage[]) =>
+      this.getChatHistoryMessages({
+        messages: slice,
+        currentFile:
+          capture && sendsCapturingMessage
+            ? { message: capturingMessage, capture }
+            : undefined,
+      })
+    const sent: RequestMessage[] = [
+      ...(cut >= 0 ? history(messages.slice(cut, anchor)) : []),
+      ...(customInstructionMessage ? [customInstructionMessage] : []),
+      ...(capture && !sendsCapturingMessage
+        ? [
+            {
+              role: 'user' as const,
+              content: this.getCurrentFilePrompt(capture),
+            },
+          ]
+        : []),
+      ...history(messages.slice(anchor)),
+    ]
+    const compaction =
+      cut >= 0
+        ? getProviderCompaction(messages[cut], model.providerType)
+        : undefined
+
+    return {
+      requestMessages: [
+        systemMessage,
+        ...(cut > 0 ? history(messages.slice(0, cut)) : []),
+        ...sent,
+      ],
+      requestChars:
+        [systemMessage, ...sent].reduce(
+          (sum, message) => sum + getRequestMessageChars(message),
+          0,
+        ) +
+        (compaction && 'content' in compaction ? compaction.content.length : 0),
     }
   }
 
   // Index of the first chat message to send. Whole turns are dropped from the
   // start so the request fits the model's context window: a cut recorded on an
   // earlier reply is kept, and it moves forward once the request would reach
-  // the limit. Turns are sized by apportioning the provider-reported input
-  // tokens of the last request by character length.
+  // the limit. Requests are sized from the provider-reported input tokens of
+  // the last request and its character count.
   private getHistoryStart({
     messages,
     model,
     contextWindow,
-    fixedChars,
-    currentFileChars,
-    captureIndex,
+    getRequestChars,
   }: {
     messages: ChatMessage[]
     model: Pick<ChatModel, 'providerType' | 'model'>
     contextWindow?: number
-    fixedChars: number
-    currentFileChars: number
-    captureIndex: number
+    getRequestChars: (start: number) => number
   }): number {
     let currentTurn = 0
     messages.forEach((message, index) => {
@@ -176,58 +225,20 @@ export class PromptGenerator {
     }
 
     let start = 0
-    let lastReply = -1
-    messages.forEach((message, index) => {
-      if (message.role !== 'assistant') return
+    let tokensPerChar = 0
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue
       start = Math.max(start, cutIndex(message.requestStartId, currentTurn))
-      if (message.metadata?.usage) lastReply = index
-    })
-
-    const historyLimit = getClientHistoryLimit(model, contextWindow)
-    if (!historyLimit || lastReply < 0) return start
-
-    const chars = messages.map((message) => this.getMessageChars(message))
-    const sumChars = (from: number, to: number) =>
-      chars.slice(from, to).reduce((sum, c) => sum + c, 0)
-
-    // Characters of the request that produced the last reply
-    const reply = messages[lastReply] as ChatAssistantMessage
-    let replyStart = cutIndex(reply.requestStartId, lastReply)
-    let compactionChars = 0
-    const replyModel = reply.metadata?.model
-    if (replyModel && !getClientHistoryLimit(replyModel)) {
-      // The provider's adapter sends nothing before its latest compaction
-      for (let i = replyStart; i < lastReply; i++) {
-        const message = messages[i]
-        if (message.role !== 'assistant') continue
-        if (replyModel.providerType === 'anthropic') {
-          const compaction = message.providerMetadata?.anthropic?.compaction
-          if (compaction) {
-            replyStart = i
-            compactionChars = compaction.content.length
-          }
-        } else if (
-          (replyModel.providerType === 'openai' ||
-            replyModel.providerType === 'openai-plan') &&
-          message.providerMetadata?.openai?.compaction
-        ) {
-          replyStart = i
-          compactionChars = 0
-        }
+      const promptTokens = message.metadata?.usage?.prompt_tokens
+      if (promptTokens && message.requestChars) {
+        tokensPerChar = promptTokens / message.requestChars
       }
     }
-    const replyRequestChars =
-      fixedChars +
-      (captureIndex < lastReply ? currentFileChars : 0) +
-      compactionChars +
-      sumChars(replyStart, lastReply)
-    const promptTokens = reply.metadata?.usage?.prompt_tokens ?? 0
-    if (replyRequestChars <= 0 || promptTokens <= 0) return start
-    const tokensPerChar = promptTokens / replyRequestChars
 
-    const estimate = (from: number) =>
-      tokensPerChar *
-      (fixedChars + currentFileChars + sumChars(from, messages.length))
+    const historyLimit = getClientHistoryLimit(model, contextWindow)
+    if (!historyLimit || tokensPerChar <= 0) return start
+
+    const estimate = (from: number) => tokensPerChar * getRequestChars(from)
     if (estimate(start) < historyLimit.limit) return start
     for (let i = start + 1; i < currentTurn; i++) {
       if (messages[i].role === 'user' && estimate(i) <= historyLimit.target) {
@@ -235,19 +246,6 @@ export class PromptGenerator {
       }
     }
     return currentTurn
-  }
-
-  private getMessageChars(message: ChatMessage): number {
-    const requestMessages: RequestMessage[] =
-      message.role === 'user'
-        ? [{ role: 'user', content: message.promptContent ?? '' }]
-        : message.role === 'assistant'
-          ? this.parseAssistantMessage({ message })
-          : this.parseToolMessage({ message })
-    return requestMessages.reduce(
-      (sum, m) => sum + getRequestMessageChars(m),
-      0,
-    )
   }
 
   private getChatHistoryMessages({
@@ -725,6 +723,25 @@ ${transcript
       (model) => model.id === this.settings.chatModelId,
     )
     return chatModel?.promptLevel ?? PromptLevel.Default
+  }
+}
+
+// The compaction the provider's adapter resumes from, if the message has one
+function getProviderCompaction(
+  message: ChatMessage,
+  providerType: ChatModel['providerType'],
+) {
+  if (message.role !== 'assistant') return undefined
+  switch (providerType) {
+    case 'anthropic':
+      return message.providerMetadata?.anthropic?.compaction
+    case 'openai':
+    case 'openai-plan':
+      return message.providerMetadata?.openai?.compaction
+    case 'xai':
+      return message.providerMetadata?.xai?.compaction
+    default:
+      return undefined
   }
 }
 

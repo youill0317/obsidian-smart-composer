@@ -67,9 +67,7 @@ function setup() {
       previousMessages: history,
     })
     return [
-      ...history.map((m) =>
-        currentFile && m.role === 'user' ? { ...m, currentFile: undefined } : m,
-      ),
+      ...history,
       { ...message, promptContent, similaritySearchResults, currentFile },
     ]
   }
@@ -251,10 +249,26 @@ describe('dropping old turns to fit the context window', () => {
     model: { providerType: string; model: string } = MODEL,
   ) => {
     const { generator } = setup()
-    return generator.generateRequestMessages({
-      messages,
-      model: model as typeof MODEL,
-    })
+    const generate = (history: ChatMessage[]) =>
+      generator.generateRequestMessages({
+        messages: history,
+        model: model as typeof MODEL,
+      })
+    // Record the size of the request that produced each reply with usage
+    const recorded: ChatMessage[] = []
+    for (const [index, message] of messages.entries()) {
+      if (message.role !== 'assistant' || !message.metadata?.usage) {
+        recorded.push(message)
+        continue
+      }
+      const from = messages.findIndex((m) => m.id === message.requestStartId)
+      recorded.push({
+        ...message,
+        requestChars: (await generate(messages.slice(Math.max(from, 0), index)))
+          .requestChars,
+      })
+    }
+    return generate(recorded)
   }
   const firstHistoryMessage = (request: RequestMessage[]) =>
     String(request[2].content).slice(0, 3)
@@ -328,6 +342,117 @@ describe('dropping old turns to fit the context window', () => {
     expect(countBlocks(requestMessages)).toBe(1)
     expect(text(requestMessages[2])).toContain(FILE_HEADER)
     expect(text(requestMessages[2])).toContain('note body')
+  })
+
+  it('sizes the request with the capture it was sent with', async () => {
+    const note = (content: string) => ({ path: 'note.md', content })
+    const messages = [
+      user('u1', { currentFile: note('a'.repeat(60 * SIZE)) }),
+      assistant('a1', usage(200_000)),
+      // The note changed, so the newest message captures it again
+      user('u2', { currentFile: note('b'.repeat(60 * SIZE)) }),
+    ]
+    const { requestMessages, requestStartId } = await build(messages)
+    expect(requestStartId).toBeUndefined()
+    expect(requestMessages).toHaveLength(2 + messages.length)
+    expect(countBlocks(requestMessages)).toBe(1)
+  })
+
+  it('ignores usage of replies without a recorded request size', async () => {
+    const { generator } = setup()
+    const { requestStartId } = await generator.generateRequestMessages({
+      messages: history(),
+      model: MODEL,
+    })
+    expect(requestStartId).toBeUndefined()
+  })
+
+  describe('after a provider compaction', () => {
+    const opus = { providerType: 'anthropic', model: 'claude-opus-5-5' }
+    const compacted = {
+      providerMetadata: {
+        anthropic: {
+          compaction: { type: 'compaction' as const, content: 'summary' },
+        },
+      },
+    }
+    const note = { currentFile: { path: 'note.md', content: 'note body' } }
+
+    it('sends the custom instructions and the current file after the compacted turn', async () => {
+      const messages = [
+        user('u1', note),
+        assistant('a1'),
+        user('u2'),
+        assistant('a2', compacted),
+        user('u3'),
+      ]
+      const { requestMessages } = await build(messages, opus)
+      expect(requestMessages.map((m) => m.role)).toEqual([
+        'system',
+        'user',
+        'assistant',
+        'user',
+        'assistant',
+        'user',
+        'user',
+        'user',
+      ])
+      expect(text(requestMessages[1])).not.toContain(FILE_HEADER)
+      expect(text(requestMessages[5])).toContain('custom')
+      expect(text(requestMessages[6])).toContain('note body')
+      expect(text(requestMessages[7])).toContain('u3:')
+      expect(countBlocks(requestMessages)).toBe(1)
+
+      // A compaction of another provider does not move them
+      const other = (await build(messages)).requestMessages
+      expect(text(other[1])).toContain('custom')
+      expect(text(other[2])).toContain('note body')
+    })
+
+    it('keeps a tool result next to its call', async () => {
+      const messages: ChatMessage[] = [
+        user('u1', note),
+        assistant('a1', {
+          ...compacted,
+          toolCallRequests: [{ id: 'call', name: 'tool' }],
+        }),
+        {
+          role: 'tool',
+          id: 'tool',
+          toolCalls: [
+            {
+              request: { id: 'call', name: 'tool' },
+              response: {
+                status: ToolCallResponseStatus.Success,
+                data: { type: 'text', text: 'done' },
+              },
+            },
+          ],
+        },
+      ]
+      const { requestMessages } = await build(messages, opus)
+      expect(requestMessages.map((m) => m.role)).toEqual([
+        'system',
+        'user',
+        'assistant',
+        'tool',
+        'user',
+        'user',
+      ])
+      expect(text(requestMessages[4])).toContain('custom')
+      expect(text(requestMessages[5])).toContain('note body')
+    })
+
+    it('leaves a current file captured after the compaction in its message', async () => {
+      const { requestMessages } = await build(
+        [user('u1'), assistant('a1', compacted), user('u2', note)],
+        opus,
+      )
+      expect(requestMessages).toHaveLength(5)
+      expect(text(requestMessages[3])).toContain('custom')
+      expect(text(requestMessages[4])).toContain('note body')
+      expect(text(requestMessages[4])).toContain('u2:')
+    })
   })
 
   it('leaves trimming to providers that compact', async () => {

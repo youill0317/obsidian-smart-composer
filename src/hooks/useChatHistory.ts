@@ -177,6 +177,7 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
         metadata: message.metadata,
         providerMetadata: message.providerMetadata,
         requestStartId: message.requestStartId,
+        requestChars: message.requestChars,
       }
     case 'tool':
       return {
@@ -216,6 +217,7 @@ const deserializeChatMessage = (
         metadata: message.metadata,
         providerMetadata: message.providerMetadata,
         requestStartId: message.requestStartId,
+        requestChars: message.requestChars,
       }
     case 'tool':
       return {

@@ -167,7 +167,7 @@ export class ResponseGenerator {
     toolCallRequests: ToolCallRequest[]
     availableToolNames: Set<string>
   }> {
-    const { requestMessages, requestStartId } =
+    const { requestMessages, requestStartId, requestChars } =
       await this.promptGenerator.generateRequestMessages({
         messages: [...this.receivedMessages, ...this.responseMessages],
         model: this.model,
@@ -224,6 +224,7 @@ export class ResponseGenerator {
         },
         // Recorded so later requests leave out at least the same messages
         requestStartId,
+        requestChars,
       })
     }
     const lastMessage = this.responseMessages.at(-1)

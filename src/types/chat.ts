@@ -40,6 +40,8 @@ export type ChatAssistantMessage = {
   // First message of the history sent with the request that produced this
   // message, when older messages were left out to fit the context window
   requestStartId?: string
+  // Characters of the request that produced this message
+  requestChars?: number
 }
 export type ChatToolMessage = {
   role: 'tool'
@@ -86,6 +88,8 @@ export type SerializedChatAssistantMessage = {
   // First message of the history sent with the request that produced this
   // message, when older messages were left out to fit the context window
   requestStartId?: string
+  // Characters of the request that produced this message
+  requestChars?: number
 }
 export type SerializedChatToolMessage = {
   role: 'tool'

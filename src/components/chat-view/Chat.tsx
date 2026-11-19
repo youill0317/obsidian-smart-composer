@@ -267,22 +267,9 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         }),
       )
 
-      // A new capture replaces older ones so only one copy is stored
-      const newestMessage = compiledMessages.at(-1)
-      const submittedMessages =
-        newestMessage?.role === 'user' && newestMessage.currentFile
-          ? compiledMessages.map((message, index) =>
-              message.role === 'user' &&
-              message.currentFile &&
-              index < compiledMessages.length - 1
-                ? { ...message, currentFile: undefined }
-                : message,
-            )
-          : compiledMessages
-
-      setChatMessages(submittedMessages)
+      setChatMessages(compiledMessages)
       submitChatMutation.mutate({
-        chatMessages: submittedMessages,
+        chatMessages: compiledMessages,
         conversationId: currentConversationId,
       })
     },
