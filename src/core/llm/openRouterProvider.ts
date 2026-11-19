@@ -1,8 +1,13 @@
 import OpenAI from 'openai'
+import {
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
+} from 'openai/resources/chat/completions'
 
 import { ChatModel } from '../../types/chat-model.types'
 import {
   LLMOptions,
+  LLMRequest,
   LLMRequestNonStreaming,
   LLMRequestStreaming,
 } from '../../types/llm/request'
@@ -15,15 +20,44 @@ import { LLMProvider } from '../../types/provider.types'
 import { BaseLLMProvider } from './base'
 import { OpenAIMessageAdapter } from './openaiMessageAdapter'
 
+// OpenRouter's context-compression plugin shortens prompts that exceed the
+// model's context window instead of failing the request.
+class OpenRouterMessageAdapter extends OpenAIMessageAdapter {
+  protected buildChatCompletionCreateParams(params: {
+    request: LLMRequest
+    stream: false
+  }): ChatCompletionCreateParamsNonStreaming
+  protected buildChatCompletionCreateParams(params: {
+    request: LLMRequest
+    stream: true
+  }): ChatCompletionCreateParamsStreaming
+  protected buildChatCompletionCreateParams({
+    request,
+    stream,
+  }: {
+    request: LLMRequest
+    stream: boolean
+  }):
+    | ChatCompletionCreateParamsStreaming
+    | ChatCompletionCreateParamsNonStreaming {
+    const params = stream
+      ? super.buildChatCompletionCreateParams({ request, stream: true })
+      : super.buildChatCompletionCreateParams({ request, stream: false })
+    return Object.assign(params, {
+      plugins: [{ id: 'context-compression' }],
+    })
+  }
+}
+
 export class OpenRouterProvider extends BaseLLMProvider<
   Extract<LLMProvider, { type: 'openrouter' }>
 > {
-  private adapter: OpenAIMessageAdapter
+  private adapter: OpenRouterMessageAdapter
   private client: OpenAI
 
   constructor(provider: Extract<LLMProvider, { type: 'openrouter' }>) {
     super(provider)
-    this.adapter = new OpenAIMessageAdapter()
+    this.adapter = new OpenRouterMessageAdapter()
     this.client = new OpenAI({
       apiKey: provider.apiKey ?? '',
       baseURL: provider.baseUrl

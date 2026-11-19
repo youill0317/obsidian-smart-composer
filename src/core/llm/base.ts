@@ -15,11 +15,38 @@ export type ProviderEmbeddingOptions = {
   purpose?: 'query' | 'document'
 }
 
+const modelLimits = new Map<string, Promise<number | undefined>>()
+
 // TODO: do these really have to be class? why not just function?
 export abstract class BaseLLMProvider<P extends LLMProvider> {
+  protected static readonly MODEL_LIMIT_LOOKUP_TIMEOUT_MS = 3000
+
   protected readonly provider: P
   constructor(provider: P) {
     this.provider = provider
+  }
+
+  // The model's context window from the provider's models API. Providers
+  // without such an API report none.
+  getContextWindow(_model: string): Promise<number | undefined> {
+    return Promise.resolve(undefined)
+  }
+
+  // Looks a model up once per session; a failed lookup reports no window.
+  protected lookupContextWindow(
+    model: string,
+    lookup: () => Promise<unknown>,
+  ): Promise<number | undefined> {
+    const key = `${this.provider.id}/${model}`
+    let value = modelLimits.get(key)
+    if (!value) {
+      value = lookup().then(
+        (found) => (typeof found === 'number' && found > 0 ? found : undefined),
+        () => undefined,
+      )
+      modelLimits.set(key, value)
+    }
+    return value
   }
 
   abstract generateResponse(

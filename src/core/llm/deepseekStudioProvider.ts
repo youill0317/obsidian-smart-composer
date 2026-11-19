@@ -80,6 +80,24 @@ export class DeepSeekStudioProvider extends BaseLLMProvider<
     return this.adapter.streamResponse(this.client, formattedRequest, options)
   }
 
+  override getContextWindow(model: string): Promise<number | undefined> {
+    return this.lookupContextWindow(
+      model,
+      async () => (await this.getModelInfo(model))?.context_window,
+    )
+  }
+
+  private async getModelInfo(model: string) {
+    const { data } = await this.client.models.list({
+      timeout: BaseLLMProvider.MODEL_LIMIT_LOOKUP_TIMEOUT_MS,
+      maxRetries: 0,
+    })
+    // The installed SDK types do not know DeepSeek's `context_window`.
+    return (data as { id: string; context_window?: number }[]).find(
+      (info) => info.id === model,
+    )
+  }
+
   async getEmbedding(
     _model: string,
     _text: string,

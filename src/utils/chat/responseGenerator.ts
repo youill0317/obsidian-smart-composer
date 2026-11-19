@@ -1,14 +1,15 @@
 import { v4 as uuidv4 } from 'uuid'
 
 import { BaseLLMProvider } from '../../core/llm/base'
+import { needsContextWindowLookup } from '../../core/llm/modelCompatibility'
 import { ToolManager } from '../../core/tools/toolManager'
 import { ChatMessage, ChatToolMessage } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
-import { CLI_TOOL_NAME } from '../../types/cli.types'
 import { RequestTool } from '../../types/llm/request'
 import {
   Annotation,
   LLMResponseStreaming,
+  ResponseProviderMetadata,
   ToolCallDelta,
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
@@ -27,12 +28,9 @@ export type ResponseGeneratorParams = {
   conversationId: string
   enableTools: boolean
   maxAutoIterations: number
-  // Rounds of automatically executed MCP calls; defaults to maxAutoIterations.
-  maxMcpAutoIterations?: number
   promptGenerator: PromptGenerator
   toolManager: ToolManager
   abortSignal?: AbortSignal
-  consumeIteration?: () => boolean
 }
 
 export class ResponseGenerator {
@@ -45,10 +43,6 @@ export class ResponseGenerator {
   private readonly abortSignal?: AbortSignal
   private readonly receivedMessages: ChatMessage[]
   private readonly maxAutoIterations: number
-  private readonly maxMcpAutoIterations: number
-
-  public reachedLimit = false
-  private consumeIteration?: () => boolean
 
   private responseMessages: ChatMessage[] = [] // Response messages that are generated after the initial messages
   private subscribers: ((messages: ChatMessage[]) => void)[] = []
@@ -59,13 +53,10 @@ export class ResponseGenerator {
     this.conversationId = params.conversationId
     this.enableTools = params.enableTools
     this.maxAutoIterations = Math.max(1, params.maxAutoIterations) // Ensure maxAutoIterations is at least 1
-    this.maxMcpAutoIterations =
-      params.maxMcpAutoIterations ?? this.maxAutoIterations
     this.receivedMessages = params.messages
     this.promptGenerator = params.promptGenerator
     this.toolManager = params.toolManager
     this.abortSignal = params.abortSignal
-    this.consumeIteration = params.consumeIteration
   }
 
   public subscribe(callback: (messages: ChatMessage[]) => void) {
@@ -77,13 +68,8 @@ export class ResponseGenerator {
   }
 
   public async run() {
-    let mcpAutoRounds = 0
     for (let i = 0; i < this.maxAutoIterations; i++) {
       if (this.abortSignal?.aborted) return
-      if (this.consumeIteration && !this.consumeIteration()) {
-        this.reachedLimit = true
-        return
-      }
       const { toolCallRequests, availableToolNames } =
         await this.streamSingleResponse()
       if (toolCallRequests.length === 0) {
@@ -112,22 +98,6 @@ export class ResponseGenerator {
           })),
         ),
       }
-
-      // A larger CLI budget must not raise the MCP auto-execution limit.
-      const isAutoMcp = (call: ChatToolMessage['toolCalls'][number]) =>
-        call.request.name !== CLI_TOOL_NAME &&
-        call.response.status === ToolCallResponseStatus.Running
-      if (mcpAutoRounds >= this.maxMcpAutoIterations) {
-        toolMessage.toolCalls = toolMessage.toolCalls.map((call) =>
-          isAutoMcp(call)
-            ? {
-                ...call,
-                response: { status: ToolCallResponseStatus.PendingApproval },
-              }
-            : call,
-        )
-      }
-      if (toolMessage.toolCalls.some(isAutoMcp)) mcpAutoRounds++
 
       // Keep a result for every request so Continue can send a valid tool history.
       if (this.abortSignal?.aborted) {
@@ -191,16 +161,23 @@ export class ResponseGenerator {
         return
       }
     }
-    this.reachedLimit = true
   }
 
   private async streamSingleResponse(): Promise<{
     toolCallRequests: ToolCallRequest[]
     availableToolNames: Set<string>
   }> {
-    const requestMessages = await this.promptGenerator.generateRequestMessages({
-      messages: [...this.receivedMessages, ...this.responseMessages],
-    })
+    const { requestMessages, requestStartId } =
+      await this.promptGenerator.generateRequestMessages({
+        messages: [...this.receivedMessages, ...this.responseMessages],
+        model: this.model,
+        contextWindow: needsContextWindowLookup(this.model)
+          ? ((await this.providerClient.getContextWindow(this.model.model)) ??
+            ('contextWindow' in this.model
+              ? this.model.contextWindow
+              : undefined))
+          : undefined,
+      })
 
     const availableTools = this.enableTools
       ? await this.toolManager.listAvailableTools()
@@ -245,6 +222,8 @@ export class ResponseGenerator {
         metadata: {
           model: this.model,
         },
+        // Recorded so later requests leave out at least the same messages
+        requestStartId,
       })
     }
     const lastMessage = this.responseMessages.at(-1)
@@ -353,8 +332,10 @@ export class ResponseGenerator {
                 ...message.metadata,
                 usage: chunk.usage ?? message.metadata?.usage,
               },
-              // Keep the first providerMetadata received (signature is sent once)
-              providerMetadata: message.providerMetadata ?? providerMetadata,
+              providerMetadata: mergeProviderMetadata(
+                message.providerMetadata,
+                providerMetadata,
+              ),
             }
           : message,
       ),
@@ -434,5 +415,20 @@ export class ResponseGenerator {
       }
     }
     return mergedAnnotations
+  }
+}
+
+// Keep the first entry received per provider (signatures are sent once), but
+// the latest compaction, which replaces any earlier one.
+function mergeProviderMetadata(
+  current: ResponseProviderMetadata | undefined,
+  incoming: ResponseProviderMetadata | undefined,
+): ResponseProviderMetadata | undefined {
+  if (!current || !incoming) return current ?? incoming
+  return {
+    ...incoming,
+    ...current,
+    ...(incoming.anthropic && { anthropic: incoming.anthropic }),
+    ...(incoming.openai && { openai: incoming.openai }),
   }
 }

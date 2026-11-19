@@ -9,6 +9,7 @@ import {
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
 } from 'openai/resources/chat/completions'
+import { CompletionUsage } from 'openai/resources/completions'
 
 import {
   LLMOptions,
@@ -20,8 +21,31 @@ import {
 import {
   LLMResponseNonStreaming,
   LLMResponseStreaming,
+  ResponseUsage,
   ToolCall,
 } from '../../types/llm/response'
+
+// prompt_tokens already includes the cached tokens. DeepSeek reports its
+// cache hits as prompt_cache_hit_tokens.
+export function mapChatCompletionUsage(
+  usage: CompletionUsage | null | undefined,
+): ResponseUsage | undefined {
+  if (!usage) return undefined
+  const details = usage.prompt_tokens_details as
+    | { cached_tokens?: number; cache_write_tokens?: number }
+    | undefined
+  const cacheRead =
+    (usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens ??
+    details?.cached_tokens
+  const cacheWrite = details?.cache_write_tokens
+  return {
+    prompt_tokens: usage.prompt_tokens,
+    completion_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens,
+    ...(cacheRead !== undefined && { cache_read_tokens: cacheRead }),
+    ...(cacheWrite !== undefined && { cache_write_tokens: cacheWrite }),
+  }
+}
 
 export class OpenAIMessageAdapter {
   protected normalizeToolCalls(
@@ -204,7 +228,7 @@ export class OpenAIMessageAdapter {
       model: response.model,
       object: 'chat.completion',
       system_fingerprint: response.system_fingerprint,
-      usage: response.usage,
+      usage: mapChatCompletionUsage(response.usage),
     }
   }
 
@@ -225,7 +249,7 @@ export class OpenAIMessageAdapter {
       model: chunk.model,
       object: 'chat.completion.chunk',
       system_fingerprint: chunk.system_fingerprint,
-      usage: chunk.usage ?? undefined,
+      usage: mapChatCompletionUsage(chunk.usage),
     }
   }
 }

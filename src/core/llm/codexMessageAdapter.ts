@@ -16,7 +16,9 @@ import {
   LLMRequest,
   LLMRequestNonStreaming,
   LLMRequestStreaming,
+  OpenAICompactionItem,
   RequestMessage,
+  XaiCompactionItem,
 } from '../../types/llm/request'
 import {
   LLMResponseNonStreaming,
@@ -34,6 +36,9 @@ type CodexAdapterConfig = {
   includeMaxOutputTokens?: boolean
   // Wrap function tools in a namespace (required by ChatGPT plan usage).
   toolNamespace?: string
+  // The caller compacts through /responses/compact and passes the result as
+  // the input head (xAI). Server-side compaction is not requested.
+  clientCompaction?: boolean
 }
 
 /** A Responses stream that failed, was interrupted, or reported an error. */
@@ -67,21 +72,24 @@ export class CodexMessageAdapter {
   private fetchFn?: typeof fetch
   private includeMaxOutputTokens: boolean
   private toolNamespace?: string
+  private clientCompaction: boolean
 
   constructor(config: CodexAdapterConfig = {}) {
     this.endpoint = config.endpoint ?? CODEX_RESPONSES_ENDPOINT
     this.fetchFn = config.fetchFn
     this.includeMaxOutputTokens = config.includeMaxOutputTokens ?? false
     this.toolNamespace = config.toolNamespace
+    this.clientCompaction = config.clientCompaction ?? false
   }
 
   async generateResponse(
     request: LLMRequestNonStreaming,
     options?: LLMOptions,
     headers?: Record<string, string>,
+    head?: XaiCompactionItem,
   ): Promise<LLMResponseNonStreaming> {
     // Codex Responses require stream: true; build a snapshot from the stream.
-    const body = this.buildRequestBody({ request, stream: true })
+    const body = this.buildRequestBody({ request, stream: true, head })
     const stream = await postStream(this.endpoint, body, {
       headers,
       signal: options?.signal,
@@ -90,11 +98,20 @@ export class CodexMessageAdapter {
 
     let summaryText = ''
     let responsePayload: Response | undefined
+    let compaction: OpenAICompactionItem | undefined
     let sawTerminal = false
     for await (const chunk of parseJsonSseStream<ResponseStreamEvent>(stream)) {
       if (chunk.type === 'response.created') {
         responsePayload = chunk.response
         continue
+      }
+
+      if (
+        !this.clientCompaction &&
+        chunk.type === 'response.output_item.done' &&
+        chunk.item.type === 'compaction'
+      ) {
+        compaction = toCompactionItem(chunk.item)
       }
 
       if (chunk.type === 'error') {
@@ -145,6 +162,9 @@ export class CodexMessageAdapter {
     const reasoningSummary =
       extractReasoningSummary(responsePayload) ??
       (summaryText.length ? summaryText : undefined)
+    if (!this.clientCompaction) {
+      compaction = compaction ?? extractCompaction(responsePayload)
+    }
 
     return {
       id: responsePayload.id,
@@ -159,6 +179,7 @@ export class CodexMessageAdapter {
             content,
             ...(reasoningSummary ? { reasoning: reasoningSummary } : {}),
             ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            ...(compaction && { providerMetadata: { openai: { compaction } } }),
           },
         },
       ],
@@ -171,8 +192,9 @@ export class CodexMessageAdapter {
     request: LLMRequestStreaming,
     options?: LLMOptions,
     headers?: Record<string, string>,
+    head?: XaiCompactionItem,
   ): Promise<AsyncIterable<LLMResponseStreaming>> {
-    const body = this.buildRequestBody({ request, stream: true })
+    const body = this.buildRequestBody({ request, stream: true, head })
     const stream = await postStream(this.endpoint, body, {
       headers,
       signal: options?.signal,
@@ -195,6 +217,7 @@ export class CodexMessageAdapter {
       { id?: string; name?: string }
     >()
     const toolCallHasDelta = new Set<number>()
+    let sawCompaction = false
     let sawTerminal = false
 
     const getChunkId = (itemId?: string) =>
@@ -259,6 +282,32 @@ export class CodexMessageAdapter {
               },
             ],
           }
+        }
+        continue
+      }
+
+      if (
+        !this.clientCompaction &&
+        chunk.type === 'response.output_item.done' &&
+        chunk.item.type === 'compaction'
+      ) {
+        sawCompaction = true
+        yield {
+          id: getChunkId(),
+          created,
+          model: resolvedModel,
+          object: 'chat.completion.chunk',
+          system_fingerprint: systemFingerprint,
+          choices: [
+            {
+              finish_reason: null,
+              delta: {
+                providerMetadata: {
+                  openai: { compaction: toCompactionItem(chunk.item) },
+                },
+              },
+            },
+          ],
         }
         continue
       }
@@ -394,6 +443,10 @@ export class CodexMessageAdapter {
 
       if (chunk.type === 'response.completed') {
         sawTerminal = true
+        const compaction =
+          sawCompaction || this.clientCompaction
+            ? undefined
+            : extractCompaction(chunk.response)
         yield {
           id: getChunkId(),
           created,
@@ -403,7 +456,9 @@ export class CodexMessageAdapter {
           choices: [
             {
               finish_reason: 'stop',
-              delta: {},
+              delta: compaction
+                ? { providerMetadata: { openai: { compaction } } }
+                : {},
             },
           ],
           usage: mapUsage(chunk.response.usage),
@@ -445,13 +500,16 @@ export class CodexMessageAdapter {
   private buildRequestBody({
     request,
     stream,
+    head,
   }: {
     request: LLMRequest
     stream: boolean
+    head?: XaiCompactionItem
   }): ResponseCreateParamsBase {
     const { input, instructions } = buildResponsesInput(
       request.messages,
       this.toolNamespace,
+      !this.clientCompaction,
     )
     const functionTools = request.tools?.map(
       (tool): FunctionTool => ({
@@ -488,8 +546,9 @@ export class CodexMessageAdapter {
 
     const body: ResponseCreateParamsBase = {
       model: request.model,
-      input,
-      instructions,
+      // The compaction item heads the input and holds the system prompt.
+      input: head ? [head, ...input] : input,
+      instructions: head ? undefined : instructions,
       store: false,
       stream,
       tools,
@@ -500,14 +559,36 @@ export class CodexMessageAdapter {
       ...(reasoning && {
         reasoning,
       }),
+      // The installed SDK types predate server-side compaction.
+      ...(!this.clientCompaction &&
+        ({
+          context_management: [{ type: 'compaction' }],
+        } as object)),
     }
     return body
   }
 }
 
+/** Input for /responses/compact: the head or else the system prompt, then the messages. */
+export function buildCompactInput(
+  messages: RequestMessage[],
+  head?: XaiCompactionItem,
+): ResponseInput {
+  const { input, instructions } = buildResponsesInput(
+    messages,
+    undefined,
+    false,
+  )
+  if (head) return [head, ...input]
+  return instructions
+    ? [{ role: 'system', content: instructions }, ...input]
+    : input
+}
+
 function buildResponsesInput(
   messages: RequestMessage[],
   toolNamespace?: string,
+  replayCompaction = true,
 ): {
   input: ResponseInput
   instructions?: string
@@ -520,7 +601,19 @@ function buildResponsesInput(
 
   const input: ResponseInputItem[] = []
 
-  for (const message of messages) {
+  // Items before the latest compaction item are not needed with store: false.
+  let start = 0
+  messages.forEach((message, index) => {
+    if (
+      replayCompaction &&
+      message.role === 'assistant' &&
+      message.providerMetadata?.openai?.compaction
+    ) {
+      start = index
+    }
+  })
+
+  for (const message of messages.slice(start)) {
     if (message.role === 'system') {
       continue
     }
@@ -534,6 +627,11 @@ function buildResponsesInput(
     }
 
     if (message.role === 'assistant') {
+      const compaction =
+        replayCompaction && message.providerMetadata?.openai?.compaction
+      if (compaction) {
+        input.push(compaction)
+      }
       input.push({
         role: 'assistant',
         content: message.content,
@@ -646,6 +744,30 @@ function extractReasoningSummary(payload: Response): string | undefined {
   return summaryText.length > 0 ? summaryText : undefined
 }
 
+function toCompactionItem(item: {
+  id?: string | null
+  encrypted_content: string
+}): OpenAICompactionItem {
+  return {
+    type: 'compaction',
+    ...(item.id && { id: item.id }),
+    encrypted_content: item.encrypted_content,
+  }
+}
+
+// The latest compaction item carries the context for the next request.
+function extractCompaction(
+  payload: Response,
+): OpenAICompactionItem | undefined {
+  let compaction: OpenAICompactionItem | undefined
+  for (const item of payload.output ?? []) {
+    if (item.type === 'compaction') {
+      compaction = toCompactionItem(item)
+    }
+  }
+  return compaction
+}
+
 function getSystemFingerprint(payload: Response): string | undefined {
   return (payload as { system_fingerprint?: string }).system_fingerprint
 }
@@ -747,13 +869,23 @@ function accumulateResponseSnapshot(
   return snapshot
 }
 
+// input_tokens already includes the cached tokens and cache writes.
 function mapUsage(usage?: OpenAIResponseUsage): ResponseUsage | undefined {
   if (!usage) {
     return undefined
   }
+  const details = usage.input_tokens_details as
+    | { cached_tokens?: number; cache_write_tokens?: number }
+    | undefined
   return {
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,
     total_tokens: usage.total_tokens,
+    ...(details?.cached_tokens !== undefined && {
+      cache_read_tokens: details.cached_tokens,
+    }),
+    ...(details?.cache_write_tokens !== undefined && {
+      cache_write_tokens: details.cache_write_tokens,
+    }),
   }
 }

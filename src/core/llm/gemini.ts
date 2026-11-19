@@ -23,6 +23,7 @@ import {
 import {
   LLMResponseNonStreaming,
   LLMResponseStreaming,
+  ResponseUsage,
 } from '../../types/llm/response'
 import { LLMProvider } from '../../types/provider.types'
 import { parseImageDataUrl } from '../../utils/llm/image'
@@ -33,6 +34,7 @@ import {
   LLMAPIKeyNotSetException,
   LLMRateLimitExceededException,
 } from './exception'
+import { GEMINI_THINKING_LEVELS } from './modelCompatibility'
 
 /**
  * Note on OpenAI Compatibility API:
@@ -324,13 +326,7 @@ export class GeminiProvider extends BaseLLMProvider<
       created: Date.now(),
       model: model,
       object: 'chat.completion',
-      usage: response.usageMetadata
-        ? {
-            prompt_tokens: response.usageMetadata.promptTokenCount ?? 0,
-            completion_tokens: response.usageMetadata.candidatesTokenCount ?? 0,
-            total_tokens: response.usageMetadata.totalTokenCount ?? 0,
-          }
-        : undefined,
+      usage: GeminiProvider.parseUsage(response.usageMetadata),
     }
   }
 
@@ -363,13 +359,22 @@ export class GeminiProvider extends BaseLLMProvider<
       created: Date.now(),
       model: model,
       object: 'chat.completion.chunk',
-      usage: chunk.usageMetadata
-        ? {
-            prompt_tokens: chunk.usageMetadata.promptTokenCount ?? 0,
-            completion_tokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
-            total_tokens: chunk.usageMetadata.totalTokenCount ?? 0,
-          }
-        : undefined,
+      usage: GeminiProvider.parseUsage(chunk.usageMetadata),
+    }
+  }
+
+  // promptTokenCount already includes the cached tokens.
+  private static parseUsage(
+    usage: GenerateContentResponse['usageMetadata'],
+  ): ResponseUsage | undefined {
+    if (!usage) return undefined
+    return {
+      prompt_tokens: usage.promptTokenCount ?? 0,
+      completion_tokens: usage.candidatesTokenCount ?? 0,
+      total_tokens: usage.totalTokenCount ?? 0,
+      ...(usage.cachedContentTokenCount !== undefined && {
+        cache_read_tokens: usage.cachedContentTokenCount,
+      }),
     }
   }
 
@@ -505,7 +510,6 @@ export class GeminiProvider extends BaseLLMProvider<
   }
 
   private static readonly THINKING_LEVEL_MAP: Record<string, ThinkingLevel> = {
-    minimal: ThinkingLevel.MINIMAL,
     low: ThinkingLevel.LOW,
     medium: ThinkingLevel.MEDIUM,
     high: ThinkingLevel.HIGH,
@@ -513,34 +517,42 @@ export class GeminiProvider extends BaseLLMProvider<
 
   /**
    * Builds the thinking config for Gemini API based on model settings.
-   * - Gemini 3 models use thinkingLevel
-   * - Gemini 2.5 models use thinkingBudget
    */
   static buildThinkingConfig(
-    model: ChatModel & { providerType: 'gemini' | 'gemini-plan' },
+    model: ChatModel & { providerType: 'gemini' },
   ): ThinkingConfig | undefined {
-    if (!model.thinking?.enabled) {
-      return undefined
-    }
-
+    const { thinking_level, include_thoughts } = model.thinking ?? {}
     const config: ThinkingConfig = {}
 
-    if (model.thinking.thinking_level) {
-      const level = this.THINKING_LEVEL_MAP[model.thinking.thinking_level]
-      if (level) {
-        config.thinkingLevel = level
-      }
+    if (
+      thinking_level &&
+      (GEMINI_THINKING_LEVELS as readonly string[]).includes(thinking_level)
+    ) {
+      config.thinkingLevel = this.THINKING_LEVEL_MAP[thinking_level]
     }
 
-    if (model.thinking.thinking_budget !== undefined) {
-      config.thinkingBudget = model.thinking.thinking_budget
+    if (include_thoughts) {
+      config.includeThoughts = true
     }
 
-    if (model.thinking.include_thoughts) {
-      config.includeThoughts = model.thinking.include_thoughts
-    }
+    return Object.keys(config).length > 0 ? config : undefined
+  }
 
-    return config
+  override getContextWindow(model: string): Promise<number | undefined> {
+    return this.lookupContextWindow(
+      model,
+      async () =>
+        (
+          await this.client.models.get({
+            model,
+            config: {
+              httpOptions: {
+                timeout: BaseLLMProvider.MODEL_LIMIT_LOOKUP_TIMEOUT_MS,
+              },
+            },
+          })
+        ).inputTokenLimit,
+    )
   }
 
   async getEmbedding(

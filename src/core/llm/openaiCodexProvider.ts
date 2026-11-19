@@ -25,6 +25,7 @@ import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
 } from './exception'
+import { REASONING_EFFORTS } from './modelCompatibility'
 
 type CodexOAuth = NonNullable<
   Extract<LLMProvider, { type: 'openai-plan' }>['oauth']
@@ -221,9 +222,11 @@ export class OpenAICodexProvider extends BaseLLMProvider<
     const reasoningSummary = model.reasoning?.reasoning_summary
     return {
       ...request,
-      reasoning_effort: reasoningEffort
-        ? (reasoningEffort as ReasoningEffort)
-        : undefined,
+      reasoning_effort:
+        reasoningEffort &&
+        (REASONING_EFFORTS as readonly string[]).includes(reasoningEffort)
+          ? (reasoningEffort as ReasoningEffort)
+          : undefined,
       reasoning_summary: reasoningSummary
         ? (reasoningSummary as Reasoning['summary'])
         : undefined,

@@ -11,7 +11,10 @@ import {
   ResponseProviderMetadata,
 } from '../../types/llm/response'
 
-import { OpenAIMessageAdapter } from './openaiMessageAdapter'
+import {
+  OpenAIMessageAdapter,
+  mapChatCompletionUsage,
+} from './openaiMessageAdapter'
 
 /**
  * Adapter for DeepSeek's API that extends OpenAIMessageAdapter to handle the additional
@@ -49,7 +52,7 @@ export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
       model: response.model,
       object: 'chat.completion',
       system_fingerprint: response.system_fingerprint,
-      usage: response.usage,
+      usage: mapChatCompletionUsage(response.usage),
     }
   }
 
@@ -94,7 +97,7 @@ export class DeepSeekMessageAdapter extends OpenAIMessageAdapter {
       model: chunk.model,
       object: 'chat.completion.chunk',
       system_fingerprint: chunk.system_fingerprint,
-      usage: chunk.usage ?? undefined,
+      usage: mapChatCompletionUsage(chunk.usage),
     }
   }
 
