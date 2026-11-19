@@ -29,7 +29,7 @@ export type UseChatStreamManager = {
   submitChatMutation: UseMutationResult<
     void,
     Error,
-    { chatMessages: ChatMessage[]; conversationId: string; resume?: boolean }
+    { chatMessages: ChatMessage[]; conversationId: string }
   >
 }
 
@@ -42,11 +42,6 @@ export function useChatStreamManager({
   const app = useApp()
   const { settings, setSettings } = useSettings()
   const toolManager = useTools()
-
-  const budgetRef = useRef<{
-    conversationId: string
-    remaining: number
-  } | null>(null)
 
   const activeStreamAbortControllersRef = useRef<AbortController[]>([])
 
@@ -100,11 +95,9 @@ export function useChatStreamManager({
     mutationFn: async ({
       chatMessages,
       conversationId,
-      resume,
     }: {
       chatMessages: ChatMessage[]
       conversationId: string
-      resume?: boolean
     }) => {
       const lastMessage = chatMessages.at(-1)
       if (!lastMessage) {
@@ -119,47 +112,13 @@ export function useChatStreamManager({
       let unsubscribeResponseGenerator: (() => void) | undefined
 
       try {
-        const cliEnabled =
-          settings.chatOptions.enableTools &&
-          toolManager.cli.listAvailableTools().length > 0
-        const maxIterations = cliEnabled
-          ? settings.cli.maxAutoIterations
-          : settings.chatOptions.maxAutoIterations
-        if (cliEnabled) {
-          if (!resume)
-            budgetRef.current = { conversationId, remaining: maxIterations }
-          if (
-            !budgetRef.current ||
-            budgetRef.current.conversationId !== conversationId ||
-            budgetRef.current.remaining <= 0
-          ) {
-            new Notice(
-              'Automatic CLI work paused. Use Continue to start another round.',
-            )
-            return
-          }
-        }
         const responseGenerator = new ResponseGenerator({
           providerClient,
           model,
           messages: chatMessages,
           conversationId,
           enableTools: settings.chatOptions.enableTools,
-          maxAutoIterations: maxIterations,
-          maxMcpAutoIterations: settings.chatOptions.maxAutoIterations,
-          consumeIteration: cliEnabled
-            ? () => {
-                const budget = budgetRef.current
-                if (
-                  !budget ||
-                  budget.conversationId !== conversationId ||
-                  budget.remaining <= 0
-                )
-                  return false
-                budget.remaining--
-                return true
-              }
-            : undefined,
+          maxAutoIterations: settings.chatOptions.maxAutoIterations,
           promptGenerator,
           toolManager,
           abortSignal: abortController.signal,
@@ -188,10 +147,6 @@ export function useChatStreamManager({
         )
 
         await responseGenerator.run()
-        if (cliEnabled && responseGenerator.reachedLimit)
-          new Notice(
-            'Automatic CLI round limit reached. Use Continue if more work is needed.',
-          )
       } catch (error) {
         // Ignore AbortError
         if (error instanceof Error && error.name === 'AbortError') {

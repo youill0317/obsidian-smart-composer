@@ -38,15 +38,37 @@ export const DEFAULT_OBSIDIAN_CLI: CliConnection = {
   timeoutSeconds: 60,
 }
 
+const defaultConnections = () => [{ ...DEFAULT_OBSIDIAN_CLI, args: [] }]
+
+// Keeps what is valid in a broken connection and disables it; null if no
+// valid connection can be built (id, name or command invalid or missing).
+function salvageConnection(raw: unknown): CliConnection | null {
+  const valid = cliConnectionSchema.safeParse(raw)
+  if (valid.success) return valid.data
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  const salvaged: Record<string, unknown> = {}
+  for (const [key, field] of Object.entries(cliConnectionSchema.shape)) {
+    const own = field.safeParse(record[key])
+    const result = own.success ? own : field.safeParse(undefined)
+    if (!result.success) return null
+    salvaged[key] = result.data
+  }
+  const result = cliConnectionSchema.safeParse({ ...salvaged, enabled: false })
+  return result.success ? result.data : null
+}
+
 export const cliSettingsSchema = z
   .object({
-    connections: z.array(cliConnectionSchema).default([DEFAULT_OBSIDIAN_CLI]),
-    maxAutoIterations: z.number().int().min(1).max(50).default(10),
+    connections: z
+      .array(z.unknown())
+      .transform((items) =>
+        items.flatMap((item) => salvageConnection(item) ?? []),
+      )
+      .default(defaultConnections())
+      .catch(defaultConnections),
   })
-  .catch(() => ({
-    connections: [{ ...DEFAULT_OBSIDIAN_CLI, args: [] }],
-    maxAutoIterations: 10,
-  }))
+  .catch(() => ({ connections: defaultConnections() }))
 
 export const cliRequestSchema = z
   .object({
