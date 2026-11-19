@@ -40,11 +40,16 @@ export abstract class BaseLLMProvider<P extends LLMProvider> {
     const key = `${this.provider.id}/${model}`
     let value = modelLimits.get(key)
     if (!value) {
-      value = lookup().then(
+      const pending: Promise<number | undefined> = lookup().then(
         (found) => (typeof found === 'number' && found > 0 ? found : undefined),
         () => undefined,
       )
-      modelLimits.set(key, value)
+      void pending.then((found) => {
+        if (found === undefined && modelLimits.get(key) === pending)
+          modelLimits.delete(key)
+      })
+      modelLimits.set(key, pending)
+      value = pending
     }
     return value
   }

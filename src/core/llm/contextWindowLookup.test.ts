@@ -49,15 +49,20 @@ describe('context window lookup', () => {
     expect(retrieve.mock.calls[0][0]).toBe('mistral-small')
   })
 
-  it('reports no window when the lookup fails', async () => {
+  it('reports no window when the lookup fails and retries later', async () => {
     const provider = new MistralProvider({
       type: 'mistral',
       id: 'mistral-failing',
       apiKey: 'test-key',
     })
-    ;(provider as unknown as Lookup).client.models.retrieve = jest
+    const retrieve = jest
       .fn()
-      .mockRejectedValue(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ max_context_length: 32_768 })
+    ;(provider as unknown as Lookup).client.models.retrieve = retrieve
     expect(await provider.getContextWindow('mistral-small')).toBeUndefined()
+    expect(await provider.getContextWindow('mistral-small')).toBe(32_768)
+    expect(await provider.getContextWindow('mistral-small')).toBe(32_768)
+    expect(retrieve).toHaveBeenCalledTimes(2)
   })
 })
