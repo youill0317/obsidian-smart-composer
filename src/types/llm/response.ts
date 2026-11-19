@@ -49,6 +49,8 @@ export type ResponseProviderMetadata = {
   }
   openai?: {
     compaction?: OpenAICompactionItem
+    // Endpoint that produced the item; another endpoint cannot read it
+    endpoint?: string
   }
   xai?: XaiProviderMetadata
 }

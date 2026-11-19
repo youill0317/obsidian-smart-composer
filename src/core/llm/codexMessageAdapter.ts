@@ -179,7 +179,11 @@ export class CodexMessageAdapter {
             content,
             ...(reasoningSummary ? { reasoning: reasoningSummary } : {}),
             ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-            ...(compaction && { providerMetadata: { openai: { compaction } } }),
+            ...(compaction && {
+              providerMetadata: {
+                openai: { compaction, endpoint: this.endpoint },
+              },
+            }),
           },
         },
       ],
@@ -217,6 +221,7 @@ export class CodexMessageAdapter {
       { id?: string; name?: string }
     >()
     const toolCallHasDelta = new Set<number>()
+    const summaryHasDelta = new Set<string>()
     let sawCompaction = false
     let sawTerminal = false
 
@@ -303,7 +308,10 @@ export class CodexMessageAdapter {
               finish_reason: null,
               delta: {
                 providerMetadata: {
-                  openai: { compaction: toCompactionItem(chunk.item) },
+                  openai: {
+                    compaction: toCompactionItem(chunk.item),
+                    endpoint: this.endpoint,
+                  },
                 },
               },
             },
@@ -335,6 +343,7 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'response.reasoning_summary_text.delta') {
+        summaryHasDelta.add(`${chunk.item_id}/${chunk.summary_index}`)
         yield {
           id: getChunkId(chunk.item_id),
           created,
@@ -354,6 +363,10 @@ export class CodexMessageAdapter {
       }
 
       if (chunk.type === 'response.reasoning_summary_text.done') {
+        // The deltas already carried this text
+        if (summaryHasDelta.has(`${chunk.item_id}/${chunk.summary_index}`)) {
+          continue
+        }
         yield {
           id: getChunkId(chunk.item_id),
           created,
@@ -457,7 +470,11 @@ export class CodexMessageAdapter {
             {
               finish_reason: 'stop',
               delta: compaction
-                ? { providerMetadata: { openai: { compaction } } }
+                ? {
+                    providerMetadata: {
+                      openai: { compaction, endpoint: this.endpoint },
+                    },
+                  }
                 : {},
             },
           ],
@@ -509,7 +526,7 @@ export class CodexMessageAdapter {
     const { input, instructions } = buildResponsesInput(
       request.messages,
       this.toolNamespace,
-      !this.clientCompaction,
+      this.clientCompaction ? undefined : this.endpoint,
     )
     const functionTools = request.tools?.map(
       (tool): FunctionTool => ({
@@ -574,11 +591,7 @@ export function buildCompactInput(
   messages: RequestMessage[],
   head?: XaiCompactionItem,
 ): ResponseInput {
-  const { input, instructions } = buildResponsesInput(
-    messages,
-    undefined,
-    false,
-  )
+  const { input, instructions } = buildResponsesInput(messages)
   if (head) return [head, ...input]
   return instructions
     ? [{ role: 'system', content: instructions }, ...input]
@@ -588,11 +601,21 @@ export function buildCompactInput(
 function buildResponsesInput(
   messages: RequestMessage[],
   toolNamespace?: string,
-  replayCompaction = true,
+  // Endpoint whose compaction items are replayed
+  compactionEndpoint?: string,
 ): {
   input: ResponseInput
   instructions?: string
 } {
+  const getCompaction = (message: RequestMessage) => {
+    const openai =
+      message.role === 'assistant'
+        ? message.providerMetadata?.openai
+        : undefined
+    return compactionEndpoint && openai?.endpoint === compactionEndpoint
+      ? openai.compaction
+      : undefined
+  }
   const systemMessages = messages.filter((msg) => msg.role === 'system')
   const instructions = systemMessages
     .map((msg) => (typeof msg.content === 'string' ? msg.content : ''))
@@ -604,11 +627,7 @@ function buildResponsesInput(
   // Items before the latest compaction item are not needed with store: false.
   let start = 0
   messages.forEach((message, index) => {
-    if (
-      replayCompaction &&
-      message.role === 'assistant' &&
-      message.providerMetadata?.openai?.compaction
-    ) {
+    if (message.role === 'assistant' && getCompaction(message)) {
       start = index
     }
   })
@@ -627,8 +646,7 @@ function buildResponsesInput(
     }
 
     if (message.role === 'assistant') {
-      const compaction =
-        replayCompaction && message.providerMetadata?.openai?.compaction
+      const compaction = getCompaction(message)
       if (compaction) {
         input.push(compaction)
       }
@@ -707,11 +725,9 @@ function extractResponseText(payload: Response): string {
   if (payload.output_text) {
     return payload.output_text
   }
-  const message = payload.output.find((item) => item.type === 'message')
-  if (!message) return ''
-  return message.content
-    .filter((part) => part.type === 'output_text')
-    .map((part) => part.text)
+  return payload.output
+    .flatMap((item) => (item.type === 'message' ? item.content : []))
+    .flatMap((part) => (part.type === 'output_text' ? [part.text] : []))
     .join('')
 }
 

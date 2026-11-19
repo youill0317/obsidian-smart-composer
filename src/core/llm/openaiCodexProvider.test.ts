@@ -303,11 +303,16 @@ describe('Responses compaction and cached tokens', () => {
     },
   ]
 
+  const ENDPOINT = 'https://api.test/responses'
+
   function adapterFor(responseEvents: unknown[]) {
     const fetchFn = jest
       .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockImplementation(async () => sse(responseEvents))
-    return { adapter: new CodexMessageAdapter({ fetchFn }), fetchFn }
+    return {
+      adapter: new CodexMessageAdapter({ fetchFn, endpoint: ENDPOINT }),
+      fetchFn,
+    }
   }
 
   it('enables compaction with the server default threshold', async () => {
@@ -322,7 +327,7 @@ describe('Responses compaction and cached tokens', () => {
     const { adapter } = adapterFor(events)
     const result = await adapter.generateResponse(request)
     expect(result.choices[0].message.providerMetadata).toEqual({
-      openai: { compaction: stored },
+      openai: { compaction: stored, endpoint: ENDPOINT },
     })
     expect(result.usage).toEqual({
       prompt_tokens: 1000,
@@ -344,7 +349,7 @@ describe('Responses compaction and cached tokens', () => {
     }
     expect(
       chunks.map((c) => c.choices[0]?.delta.providerMetadata).filter(Boolean),
-    ).toEqual([{ openai: { compaction: stored } }])
+    ).toEqual([{ openai: { compaction: stored, endpoint: ENDPOINT } }])
     expect(chunks.at(-1)?.usage?.cache_read_tokens).toBe(800)
   })
 
@@ -360,19 +365,20 @@ describe('Responses compaction and cached tokens', () => {
       chunks.push(chunk)
     }
     expect(chunks.at(-1)?.choices[0].delta.providerMetadata).toEqual({
-      openai: { compaction: stored },
+      openai: { compaction: stored, endpoint: ENDPOINT },
     })
   })
 
   it('replays the latest compaction item and drops the items before it', async () => {
     const { adapter, fetchFn } = adapterFor(events)
-    const metadata = (id: string) => ({
+    const metadata = (id: string, endpoint = ENDPOINT) => ({
       openai: {
         compaction: {
           type: 'compaction' as const,
           id,
           encrypted_content: id,
         },
+        endpoint,
       },
     })
     await adapter.generateResponse({
@@ -393,5 +399,89 @@ describe('Responses compaction and cached tokens', () => {
       { role: 'assistant', content: 'A2' },
       { role: 'user', content: [{ type: 'input_text', text: 'New' }] },
     ])
+  })
+
+  it('sends the whole history when the item came from another endpoint', async () => {
+    const { adapter, fetchFn } = adapterFor(events)
+    await adapter.generateResponse({
+      model: 'gpt-6.2-sol',
+      messages: [
+        { role: 'user', content: 'Old' },
+        {
+          role: 'assistant',
+          content: 'A1',
+          providerMetadata: {
+            openai: {
+              compaction: { type: 'compaction', encrypted_content: 'c1' },
+              endpoint: 'https://other.example/responses',
+            },
+          },
+        },
+        { role: 'user', content: 'New' },
+      ],
+    })
+    expect(JSON.parse(fetchFn.mock.calls[0][1]?.body as string).input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'Old' }] },
+      { role: 'assistant', content: 'A1' },
+      { role: 'user', content: [{ type: 'input_text', text: 'New' }] },
+    ])
+  })
+
+  it('joins the text of every message item in a response', async () => {
+    const message = (text: string) => ({
+      type: 'message',
+      content: [{ type: 'output_text', text }],
+    })
+    const { adapter } = adapterFor([
+      created,
+      {
+        type: 'response.completed',
+        response: {
+          id: 'r',
+          created_at: 1,
+          model: 'gpt-6.2-sol',
+          output: [message('First. '), message('Second.')],
+        },
+      },
+    ])
+    const result = await adapter.generateResponse(request)
+    expect(result.choices[0].message.content).toBe('First. Second.')
+  })
+
+  it('does not repeat a streamed reasoning summary when it completes', async () => {
+    const { adapter } = adapterFor([
+      { type: 'response.created', response: { id: 'r', created_at: 1 } },
+      {
+        type: 'response.reasoning_summary_text.delta',
+        item_id: 'rs',
+        summary_index: 0,
+        delta: 'Ab',
+      },
+      {
+        type: 'response.reasoning_summary_text.delta',
+        item_id: 'rs',
+        summary_index: 0,
+        delta: 'c',
+      },
+      {
+        type: 'response.reasoning_summary_text.done',
+        item_id: 'rs',
+        summary_index: 0,
+        text: 'Abc',
+      },
+      ...events.filter(
+        (event) => (event as { type: string }).type === 'response.completed',
+      ),
+    ])
+    const chunks = []
+    for await (const chunk of await adapter.streamResponse({
+      ...request,
+      stream: true,
+    })) {
+      chunks.push(chunk)
+    }
+    expect(
+      chunks.map((c) => c.choices[0]?.delta.reasoning ?? '').join(''),
+    ).toBe('Abc')
   })
 })
