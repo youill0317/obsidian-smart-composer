@@ -67,6 +67,19 @@ type RequestUserMessage = {
   role: 'user'
   content: string | ContentPart[]
 }
+// Server-side compaction results. They are sent back on later requests and
+// replace everything before them.
+export type AnthropicCompactionBlock = {
+  type: 'compaction'
+  content: string
+}
+// Opaque Responses API item, kept verbatim
+export type OpenAICompactionItem = {
+  type: 'compaction'
+  encrypted_content: string
+  id?: string | null
+}
+
 export type RequestProviderMetadata = {
   gemini?: {
     thoughtSignature?: string
@@ -74,6 +87,30 @@ export type RequestProviderMetadata = {
   deepseek?: {
     reasoningContent?: string
   }
+  anthropic?: {
+    compaction?: AnthropicCompactionBlock
+  }
+  openai?: {
+    compaction?: OpenAICompactionItem
+    // Endpoint that produced the item; another endpoint cannot read it
+    endpoint?: string
+  }
+  xai?: XaiProviderMetadata
+}
+
+// Result of xAI's /responses/compact, kept verbatim. It replaces the messages
+// before the last `tailLength` messages ahead of the assistant message that
+// carries it.
+export type XaiCompactionItem = {
+  type: 'compaction'
+  encrypted_content: string
+  id?: string
+}
+export type XaiProviderMetadata = {
+  compaction?: XaiCompactionItem
+  tailLength?: number
+  // Input plus output tokens reported for this response
+  contextTokens?: number
 }
 
 type RequestAssistantMessage = {

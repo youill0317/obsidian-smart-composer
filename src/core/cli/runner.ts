@@ -7,7 +7,7 @@ import { CliExecution } from '../../types/cli.types'
 // cross-spawn is also used by the existing MCP SDK. Keep Windows quoting there.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const spawn: typeof nodeSpawn = require('cross-spawn')
-const OUTPUT_LIMIT = 64 * 1024
+const OUTPUT_LIMIT = 1024 * 1024
 
 export type CliResult = {
   stdout: string

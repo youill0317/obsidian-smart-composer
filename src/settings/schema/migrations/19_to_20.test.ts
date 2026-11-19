@@ -1,6 +1,4 @@
-import { DEFAULT_OBSIDIAN_CLI } from '../../../types/cli.types'
-
-import { migrateFrom19To20 } from './19_to_20'
+import { CLI_DEFAULTS_ADDED_IN_V20, migrateFrom19To20 } from './19_to_20'
 
 it('adds disabled CLI defaults while preserving existing settings', () => {
   const previous = {
@@ -13,7 +11,7 @@ it('adds disabled CLI defaults while preserving existing settings', () => {
   expect(next).toEqual({
     ...previous,
     version: 20,
-    cli: { connections: [DEFAULT_OBSIDIAN_CLI], maxAutoIterations: 10 },
+    cli: CLI_DEFAULTS_ADDED_IN_V20,
   })
   expect(previous.version).toBe(19)
   expect(migrateFrom19To20(next)).toEqual(next)

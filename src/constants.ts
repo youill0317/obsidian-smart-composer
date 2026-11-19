@@ -20,83 +20,27 @@ export const CODEX_PLAN_USAGE_SCOPE = 'chatgpt.tokens.use.direct'
 export const CODEX_RESPONSES_ENDPOINT = `${CODEX_RESOURCE}/responses`
 export const CODEX_USAGE_URL = 'https://chatgpt.com/settings/usage'
 
-export const CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
-export const CLAUDE_CODE_AUTHORIZE_BASE_URL = 'https://claude.ai'
-export const CLAUDE_CODE_CONSOLE_BASE_URL = 'https://console.anthropic.com'
-export const CLAUDE_CODE_OAUTH_TOKEN_ENDPOINT =
-  'https://console.anthropic.com/v1/oauth/token'
-export const CLAUDE_CODE_REDIRECT_URI =
-  'https://console.anthropic.com/oauth/code/callback'
-export const CLAUDE_CODE_MESSAGES_ENDPOINT =
-  'https://api.anthropic.com/v1/messages'
-export const CLAUDE_CODE_DEFAULT_BETAS = [
-  'oauth-2025-04-20',
-  'interleaved-thinking-2025-05-14',
-  'claude-code-20250219',
-]
-export const CLAUDE_CODE_SYSTEM_MESSAGE =
-  "You are Claude Code, Anthropic's official CLI for Claude."
-export const CLAUDE_CODE_USER_AGENT = 'claude-cli/2.1.2 (external, cli)'
-
-// Keep in sync with opencode-gemini-auth constants.
-export const GEMINI_OAUTH_CLIENT_ID =
-  '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com'
-export const GEMINI_OAUTH_CLIENT_SECRET = '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'
-export const GEMINI_OAUTH_REDIRECT_URI = 'http://localhost:8085/oauth2callback'
-export const GEMINI_OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/cloud-platform',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-] as const
-export const GEMINI_CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com'
-export const GEMINI_CODE_ASSIST_HEADERS = {
-  'User-Agent': 'google-api-nodejs-client/9.15.1',
-  'X-Goog-Api-Client': 'gl-node/22.17.0',
-  'Client-Metadata':
-    'ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI',
-} as const
-
 // Default model ids
 export const DEFAULT_CHAT_MODEL_ID = 'claude-opus-5-5'
 // Keep the API-backed apply default. Plan models require a separate OAuth
 // connection and must never be selected implicitly.
-export const DEFAULT_APPLY_MODEL_ID = 'gpt-6-luna'
+export const DEFAULT_APPLY_MODEL_ID = 'gpt-6.2-sol'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5-5', 'gpt-6.1-sol']
-export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-6-luna']
+export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-opus-5-5', 'gpt-6.2-sol']
+export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-6.2-sol']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'voyage/voyage-4',
   'openai/text-embedding-3-small',
 ]
 
 export const PLAN_PROVIDER_TYPES: readonly LLMProviderType[] = [
-  'anthropic-plan',
   'openai-plan',
-  'gemini-plan',
 ] as const
 export const PROVIDER_TYPES_INFO = {
-  'anthropic-plan': {
-    label: 'Claude Plan',
-    defaultProviderId: 'anthropic-plan',
-    requireApiKey: false,
-    requireBaseUrl: false,
-    supportChat: true,
-    supportEmbedding: false,
-    additionalSettings: [],
-  },
   'openai-plan': {
     label: 'OpenAI Plan',
     defaultProviderId: 'openai-plan',
-    requireApiKey: false,
-    requireBaseUrl: false,
-    supportChat: true,
-    supportEmbedding: false,
-    additionalSettings: [],
-  },
-  'gemini-plan': {
-    label: 'Gemini Plan',
-    defaultProviderId: 'gemini-plan',
     requireApiKey: false,
     requireBaseUrl: false,
     supportChat: true,
@@ -271,16 +215,8 @@ export const PROVIDER_TYPES_INFO = {
  */
 export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
   {
-    type: 'anthropic-plan',
-    id: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
-  },
-  {
     type: 'openai-plan',
     id: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-  },
-  {
-    type: 'gemini-plan',
-    id: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
   },
   {
     type: 'anthropic',
@@ -337,39 +273,15 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'openai-plan',
     providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-6.1-sol (plan)',
-    model: 'gpt-6.1-sol',
+    id: 'gpt-6.2-sol (plan)',
+    model: 'gpt-6.2-sol',
   },
   {
     providerType: 'openai',
     providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-6.1-sol',
-    model: 'gpt-6.1-sol',
-    reasoning: { enabled: true, reasoning_effort: 'medium' },
-  },
-  {
-    providerType: 'openai-plan',
-    providerId: PROVIDER_TYPES_INFO['openai-plan'].defaultProviderId,
-    id: 'gpt-6-luna (plan)',
-    model: 'gpt-6-luna',
-  },
-  {
-    providerType: 'openai',
-    providerId: PROVIDER_TYPES_INFO.openai.defaultProviderId,
-    id: 'gpt-6-luna',
-    model: 'gpt-6-luna',
-  },
-  {
-    providerType: 'anthropic-plan',
-    providerId: PROVIDER_TYPES_INFO['anthropic-plan'].defaultProviderId,
-    id: 'claude-opus-5-5 (plan)',
-    model: 'claude-opus-5-5',
-  },
-  {
-    providerType: 'gemini-plan',
-    providerId: PROVIDER_TYPES_INFO['gemini-plan'].defaultProviderId,
-    id: 'gemini-3.8-flash (plan)',
-    model: 'gemini-3.8-flash',
+    id: 'gpt-6.2-sol',
+    model: 'gpt-6.2-sol',
+    reasoning: { reasoning_effort: 'medium' },
   },
   {
     providerType: 'anthropic',
@@ -380,8 +292,8 @@ export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
   {
     providerType: 'gemini',
     providerId: PROVIDER_TYPES_INFO.gemini.defaultProviderId,
-    id: 'gemini-3.8-flash',
-    model: 'gemini-3.8-flash',
+    id: 'gemini-4-carbon',
+    model: 'gemini-4-carbon',
   },
   {
     providerType: 'deepseek',
@@ -472,6 +384,9 @@ export const DEFAULT_EMBEDDING_MODELS: readonly EmbeddingModel[] = [
 export type ModelPricing = {
   input: number
   output: number
+  // Cache reads and (5-minute) cache writes, where the provider lists them
+  cachedInput?: number
+  cacheWrite?: number
 }
 
 export type LongContextPricingRule = {
@@ -481,53 +396,19 @@ export type LongContextPricingRule = {
 }
 
 export const OPENAI_PRICES: Record<string, ModelPricing> = {
-  'gpt-6.1-sol': { input: 2, output: 10 },
-  'gpt-6-luna': { input: 0.1, output: 0.5 },
-  'gpt-6-astra': { input: 10, output: 50 },
-  'gpt-5.6-sol': { input: 4, output: 20 },
-  'gpt-5.6-luna': { input: 0.2, output: 1.2 },
-  'gpt-5.2': { input: 1.75, output: 14 },
-  'gpt-5.1': { input: 1.25, output: 10 },
-  'gpt-5': { input: 1.25, output: 10 },
-  'gpt-5-mini': { input: 0.25, output: 2 },
-  'gpt-5-nano': { input: 0.05, output: 0.4 },
-  'gpt-4.1': { input: 2.0, output: 8.0 },
-  'gpt-4.1-mini': { input: 0.4, output: 1.6 },
-  'gpt-4.1-nano': { input: 0.1, output: 0.4 },
-  'gpt-4o': { input: 2.5, output: 10 },
-  'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  o3: { input: 10, output: 40 },
-  o1: { input: 15, output: 60 },
-  'o4-mini': { input: 1.1, output: 4.4 },
-  'o3-mini': { input: 1.1, output: 4.4 },
-  'o1-mini': { input: 1.1, output: 4.4 },
+  'gpt-6.2-sol': { input: 2, output: 10, cachedInput: 0.1 },
 }
 
 export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
-  'claude-opus-5-5': { input: 4, output: 20 },
-  'claude-opus-5': { input: 5, output: 25 },
-  'claude-opus-4-5': { input: 5, output: 25 },
-  'claude-opus-4-1': { input: 15, output: 75 },
-  'claude-opus-4-0': { input: 15, output: 75 },
-  'claude-sonnet-4-5': { input: 3, output: 15 },
-  'claude-sonnet-4-0': { input: 3, output: 15 },
-  'claude-3-5-sonnet-latest': { input: 3, output: 15 },
-  'claude-3-7-sonnet-latest': { input: 3, output: 15 },
-  'claude-haiku-4-5': { input: 1, output: 5 },
-  'claude-3-5-haiku-latest': { input: 1, output: 5 },
+  'claude-opus-5-5': { input: 4, output: 20, cachedInput: 0.2, cacheWrite: 5 },
 }
 
 export const GEMINI_PRICES: Record<string, ModelPricing> = {
-  // Introductory rates through 2026-12-31; standard rates become $1.50/$7.50.
-  'gemini-3.8-flash': { input: 0.75, output: 3.75 },
-  'gemini-3.1-pro-preview': { input: 2, output: 12 },
+  'gemini-4-carbon': { input: 4, output: 20, cachedInput: 0.2 },
 }
 
 export const XAI_PRICES: Record<string, ModelPricing> = {
   'grok-4.7': { input: 2, output: 6 },
-  'grok-4.6': { input: 2, output: 6 },
-  'grok-4-1-fast': { input: 0.2, output: 0.5 },
-  'grok-4-1-fast-non-reasoning': { input: 0.2, output: 0.5 },
 }
 
 export const DEEPSEEK_PRICES: Record<string, ModelPricing> = {
@@ -539,37 +420,12 @@ export const LONG_CONTEXT_PRICING_RULES: Record<
   string,
   LongContextPricingRule
 > = {
-  'openai/gpt-6.1-sol': {
+  'openai/gpt-6.2-sol': {
     thresholdPromptTokens: 272_000,
     thresholdInclusive: false,
-    pricing: { input: 4, output: 15 },
-  },
-  'openai/gpt-6-luna': {
-    thresholdPromptTokens: 272_000,
-    thresholdInclusive: false,
-    pricing: { input: 0.2, output: 0.75 },
-  },
-  'openai/gpt-6-astra': {
-    thresholdPromptTokens: 272_000,
-    thresholdInclusive: false,
-    pricing: { input: 20, output: 75 },
-  },
-  'openai/gpt-5.6-sol': {
-    thresholdPromptTokens: 272_000,
-    thresholdInclusive: false,
-    pricing: { input: 8, output: 30 },
-  },
-  'gemini/gemini-3.1-pro-preview': {
-    thresholdPromptTokens: 200_000,
-    thresholdInclusive: false,
-    pricing: { input: 4, output: 18 },
+    pricing: { input: 4, output: 15, cachedInput: 0.2 },
   },
   'xai/grok-4.7': {
-    thresholdPromptTokens: 200_000,
-    thresholdInclusive: true,
-    pricing: { input: 4, output: 12 },
-  },
-  'xai/grok-4.6': {
     thresholdPromptTokens: 200_000,
     thresholdInclusive: true,
     pricing: { input: 4, output: 12 },

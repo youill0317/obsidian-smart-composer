@@ -204,9 +204,7 @@ function ConnectOpenAIPlanModalComponent({
     if (hasCodexPlanUsageScope(scopes)) {
       new Notice('ChatGPT subscription connected')
     } else {
-      new Notice(
-        'Signed in, but ChatGPT plan usage was not allowed. Use "Allow plan usage" in settings to enable it.',
-      )
+      new Notice('Signed in, but ChatGPT plan usage was not allowed.')
     }
     onClose()
   }
@@ -216,9 +214,7 @@ function ConnectOpenAIPlanModalComponent({
     setAutoError('')
     setManualError('')
     if (!plugin.hasKeychain) {
-      setAutoError(
-        'ChatGPT sign-in requires Obsidian Keychain (Obsidian 1.11.5 or later).',
-      )
+      setAutoError('ChatGPT sign-in requires Obsidian Keychain.')
       return
     }
 
@@ -233,7 +229,7 @@ function ConnectOpenAIPlanModalComponent({
       await completeAuthorization(attempt, result.code, result.clientId)
     } catch (error) {
       setAutoError(
-        `${error instanceof Error ? error.message : 'Automatic connect failed.'} If the browser shows the redirect URL, paste it below and click "Connect with URL".`,
+        error instanceof Error ? error.message : 'Automatic connect failed.',
       )
     } finally {
       setIsWaitingForCallback(false)
@@ -278,7 +274,7 @@ function ConnectOpenAIPlanModalComponent({
       )
     } catch (error) {
       setManualError(
-        `${error instanceof Error ? error.message : 'Manual connect failed.'} Start login again and paste the newest redirect URL.`,
+        error instanceof Error ? error.message : 'Manual connect failed.',
       )
     } finally {
       setIsManualConnecting(false)
@@ -290,7 +286,7 @@ function ConnectOpenAIPlanModalComponent({
       <div className="smtcmp-plan-connect-steps">
         <div className="smtcmp-plan-connect-steps-title">How it works</div>
         <ol>
-          <li>Sign in to ChatGPT in your browser and allow plan usage</li>
+          <li>Sign in to ChatGPT in your browser</li>
           <li>Smart Composer connects automatically when you return</li>
           <li>
             If automatic connect fails, paste the full redirect URL below and

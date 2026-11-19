@@ -56,6 +56,20 @@ export class MistralProvider extends BaseLLMProvider<
     return this.adapter.streamResponse(this.client, request, options)
   }
 
+  override getContextWindow(model: string): Promise<number | undefined> {
+    return this.lookupContextWindow(
+      model,
+      async () =>
+        // The installed SDK types do not know Mistral's `max_context_length`.
+        (
+          (await this.client.models.retrieve(model, {
+            timeout: BaseLLMProvider.MODEL_LIMIT_LOOKUP_TIMEOUT_MS,
+            maxRetries: 0,
+          })) as { max_context_length?: number }
+        ).max_context_length,
+    )
+  }
+
   async getEmbedding(
     _model: string,
     _text: string,

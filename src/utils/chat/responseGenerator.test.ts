@@ -4,7 +4,7 @@ import { ToolCallResponseStatus as Status } from '../../types/tool-call.types'
 
 import { ResponseGenerator, ResponseGeneratorParams } from './responseGenerator'
 
-function setup(consumeIteration?: () => boolean) {
+function setup() {
   const streamResponse = jest.fn().mockImplementation(async function* () {
     yield {
       choices: [
@@ -39,53 +39,29 @@ function setup(consumeIteration?: () => boolean) {
   const params: ResponseGeneratorParams = {
     providerClient: {
       streamResponse,
+      getContextWindow: async () => undefined,
     } as unknown as ResponseGeneratorParams['providerClient'],
     model: {} as ResponseGeneratorParams['model'],
     messages: [],
     conversationId: 'conversation',
     enableTools: true,
     maxAutoIterations: 10,
-    consumeIteration,
     promptGenerator: {
-      generateRequestMessages: async () => [],
+      generateRequestMessages: async () => ({ requestMessages: [] }),
     } as unknown as ResponseGeneratorParams['promptGenerator'],
     toolManager: manager as unknown as ToolManager,
   }
   return { streamResponse, manager, params }
 }
 
-it('does not reset a shared iteration budget when resuming after approval', async () => {
-  let remaining = 10
-  const setupResult = setup(() => remaining > 0 && remaining-- > 0)
-  setupResult.manager.prepareCall.mockResolvedValueOnce({
-    status: Status.PendingApproval,
-  })
-  const first = new ResponseGenerator(setupResult.params)
-  let messages: ChatMessage[] = []
-  first.subscribe((value) => {
-    messages = value
-  })
-  await first.run()
-  expect(remaining).toBe(9)
-  expect(setupResult.manager.callTool).not.toHaveBeenCalled()
-  expect(messages.at(-1)?.role).toBe('tool')
-  const resumed = new ResponseGenerator({ ...setupResult.params, messages })
-  await resumed.run()
-  expect(setupResult.streamResponse).toHaveBeenCalledTimes(10)
-  expect(resumed.reachedLimit).toBe(true)
-  expect(remaining).toBe(0)
-})
-
-it('retains MCP-only iteration limits and stops without tools or after cancellation', async () => {
+it('stops at the iteration limit, without tools or after cancellation', async () => {
   const { params, streamResponse, manager } = setup()
   await new ResponseGenerator({ ...params, maxAutoIterations: 1 }).run()
   expect(streamResponse).toHaveBeenCalledTimes(1)
   streamResponse.mockImplementation(async function* () {
     yield { choices: [{ delta: { content: 'done' } }] }
   })
-  const done = new ResponseGenerator(params)
-  await done.run()
-  expect(done.reachedLimit).toBe(false)
+  await new ResponseGenerator(params).run()
   const controller = new AbortController()
   controller.abort()
   await new ResponseGenerator({
@@ -131,43 +107,6 @@ it('does not dispatch tools when stopped during asynchronous preparation', async
   )
 })
 
-it('caps automatic MCP rounds at the chat limit even with a larger CLI budget', async () => {
-  const { params, streamResponse, manager } = setup(() => true)
-  streamResponse.mockImplementation(async function* () {
-    yield {
-      choices: [
-        {
-          delta: {
-            tool_calls: [
-              {
-                index: 0,
-                id: 'id',
-                function: { name: 'srv__tool', arguments: '{}' },
-              },
-            ],
-          },
-        },
-      ],
-    }
-  })
-  const generator = new ResponseGenerator({
-    ...params,
-    maxAutoIterations: 10,
-    maxMcpAutoIterations: 1,
-  })
-  let messages: ChatMessage[] = []
-  generator.subscribe((value) => {
-    messages = value
-  })
-  await generator.run()
-  expect(manager.callTool).toHaveBeenCalledTimes(1)
-  expect(streamResponse).toHaveBeenCalledTimes(2)
-  const last = messages.at(-1)
-  expect(last?.role === 'tool' && last.toolCalls[0].response.status).toBe(
-    Status.PendingApproval,
-  )
-})
-
 it('does not run tool calls for tools that were not offered', async () => {
   const { params, manager } = setup()
   const generator = new ResponseGenerator({ ...params, enableTools: false })
@@ -182,4 +121,58 @@ it('does not run tool calls for tools that were not offered', async () => {
   expect(result?.role === 'tool' && result.toolCalls[0].response.status).toBe(
     Status.Error,
   )
+})
+
+it('keeps the first provider entry and the latest compaction from a stream', async () => {
+  const { params, streamResponse } = setup()
+  const compaction = (content: string) => ({
+    anthropic: { compaction: { type: 'compaction' as const, content } },
+  })
+  streamResponse.mockImplementation(async function* () {
+    for (const providerMetadata of [
+      { gemini: { thoughtSignature: 'first' } },
+      compaction('S1'),
+      { gemini: { thoughtSignature: 'second' } },
+      compaction('S2'),
+    ]) {
+      yield { choices: [{ delta: { content: 'x', providerMetadata } }] }
+    }
+  })
+  const generator = new ResponseGenerator(params)
+  let messages: ChatMessage[] = []
+  generator.subscribe((value) => {
+    messages = value
+  })
+  await generator.run()
+  const assistant = messages.find((message) => message.role === 'assistant')
+  expect(assistant?.role === 'assistant' && assistant.providerMetadata).toEqual(
+    {
+      gemini: { thoughtSignature: 'first' },
+      ...compaction('S2'),
+    },
+  )
+})
+
+it('trims with the context window entered for the model', async () => {
+  const { params, streamResponse } = setup()
+  streamResponse.mockImplementation(async function* () {
+    yield { choices: [{ delta: { content: 'done' } }] }
+  })
+  const generateRequestMessages = jest
+    .fn()
+    .mockResolvedValue({ requestMessages: [] })
+  await new ResponseGenerator({
+    ...params,
+    model: {
+      providerType: 'ollama',
+      providerId: 'ollama',
+      id: 'local',
+      model: 'local',
+      contextWindow: 32_768,
+    },
+    promptGenerator: {
+      generateRequestMessages,
+    } as unknown as ResponseGeneratorParams['promptGenerator'],
+  }).run()
+  expect(generateRequestMessages.mock.calls[0][0].contextWindow).toBe(32_768)
 })

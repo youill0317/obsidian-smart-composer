@@ -5,14 +5,18 @@ import {
   Base64ImageSource,
   ContentBlockParam,
   ImageBlockParam,
+  MessageCreateParamsBase,
   MessageParam,
   MessageStreamEvent,
   TextBlockParam,
+  ThinkingConfigParam,
 } from '@anthropic-ai/sdk/resources/messages'
 
 import { ChatModel } from '../../types/chat-model.types'
 import {
+  AnthropicCompactionBlock,
   LLMOptions,
+  LLMRequest,
   LLMRequestNonStreaming,
   LLMRequestStreaming,
   RequestMessage,
@@ -33,6 +37,18 @@ import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
 } from './exception'
+import {
+  REASONING_EFFORTS,
+  getClaudeMaxOutputTokens,
+} from './modelCompatibility'
+
+type UsageIteration = {
+  type?: string
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}
 
 export class AnthropicProvider extends BaseLLMProvider<
   Extract<LLMProvider, { type: 'anthropic' }>
@@ -40,6 +56,15 @@ export class AnthropicProvider extends BaseLLMProvider<
   private client: Anthropic
 
   private static readonly DEFAULT_MAX_TOKENS = 8192
+  private static readonly COMPACTION_BETA = 'compact-2026-01-12'
+  private static readonly COMPACTION_INSTRUCTIONS =
+    'Summarize the transcript inside <summary></summary> tags. Include relevant information in the summary for continuing the task in the next context window. Do not call any tools while writing this summary; respond with text only.'
+  private static readonly MODEL_LOOKUP_TIMEOUT_MS = 3000
+  // Max output per provider and model from the Models API (null: unknown)
+  private static readonly maxOutputTokensCache = new Map<
+    string,
+    number | null
+  >()
 
   constructor(provider: Extract<LLMProvider, { type: 'anthropic' }>) {
     super(provider)
@@ -67,45 +92,20 @@ export class AnthropicProvider extends BaseLLMProvider<
       )
     }
 
-    const systemMessage = AnthropicProvider.validateSystemMessages(
-      request.messages,
+    const { body, headers } = AnthropicProvider.buildRequest(
+      model,
+      request,
+      await this.getMaxTokens(model, request, options),
     )
 
     try {
-      const response = await this.client.messages.create(
-        {
-          model: request.model,
-          messages: AnthropicProvider.addCacheBreakpoint(
-            request.messages
-              .map((m) => AnthropicProvider.parseRequestMessage(m))
-              .filter((m) => m !== null),
-          ),
-          system: systemMessage,
-          thinking: model.thinking?.enabled
-            ? {
-                type: 'enabled',
-                budget_tokens: model.thinking.budget_tokens,
-              }
-            : undefined,
-          tools: request.tools?.map((t) =>
-            AnthropicProvider.parseRequestTool(t),
-          ),
-          tool_choice: request.tool_choice
-            ? AnthropicProvider.parseRequestToolChoice(request.tool_choice)
-            : undefined,
-          max_tokens:
-            request.max_tokens ??
-            (model.thinking?.enabled
-              ? model.thinking?.budget_tokens +
-                AnthropicProvider.DEFAULT_MAX_TOKENS
-              : AnthropicProvider.DEFAULT_MAX_TOKENS),
-          temperature: request.temperature,
-          top_p: request.top_p,
-        },
-        {
-          signal: options?.signal,
-        },
+      // Streamed even here: the SDK rejects non-streaming requests whose
+      // max_tokens could take longer than ten minutes.
+      const stream = await this.client.messages.create(
+        { ...body, stream: true },
+        { signal: options?.signal, headers },
       )
+      const response = await AnthropicProvider.collectMessage(stream)
 
       return AnthropicProvider.parseNonStreamingResponse(response)
     } catch (error) {
@@ -163,45 +163,16 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       )
     }
 
-    const systemMessage = AnthropicProvider.validateSystemMessages(
-      request.messages,
+    const { body, headers } = AnthropicProvider.buildRequest(
+      model,
+      request,
+      await this.getMaxTokens(model, request, options),
     )
 
     try {
       const stream = await this.client.messages.create(
-        {
-          model: request.model,
-          messages: AnthropicProvider.addCacheBreakpoint(
-            request.messages
-              .map((m) => AnthropicProvider.parseRequestMessage(m))
-              .filter((m) => m !== null),
-          ),
-          system: systemMessage,
-          thinking: model.thinking?.enabled
-            ? {
-                type: 'enabled',
-                budget_tokens: model.thinking.budget_tokens,
-              }
-            : undefined,
-          tools: request.tools?.map((t) =>
-            AnthropicProvider.parseRequestTool(t),
-          ),
-          tool_choice: request.tool_choice
-            ? AnthropicProvider.parseRequestToolChoice(request.tool_choice)
-            : undefined,
-          max_tokens:
-            request.max_tokens ??
-            (model.thinking?.enabled
-              ? model.thinking?.budget_tokens +
-                AnthropicProvider.DEFAULT_MAX_TOKENS
-              : AnthropicProvider.DEFAULT_MAX_TOKENS),
-          temperature: request.temperature,
-          top_p: request.top_p,
-          stream: true,
-        },
-        {
-          signal: options?.signal,
-        },
+        { ...body, stream: true },
+        { signal: options?.signal, headers },
       )
 
       return AnthropicProvider.streamResponseGenerator(stream)
@@ -245,22 +216,147 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
     }
   }
 
+  static buildRequest(
+    model: ChatModel & { providerType: 'anthropic' },
+    request: LLMRequest,
+    maxTokens: number,
+  ): { body: MessageCreateParamsBase; headers: Record<string, string> } {
+    const systemMessage = AnthropicProvider.validateSystemMessages(
+      request.messages,
+    )
+
+    const body: MessageCreateParamsBase = {
+      model: request.model,
+      messages: AnthropicProvider.addCacheBreakpoints(
+        AnthropicProvider.buildMessages(request.messages),
+      ),
+      system: systemMessage
+        ? [
+            {
+              type: 'text',
+              text: systemMessage,
+              cache_control: { type: 'ephemeral' },
+            },
+          ]
+        : undefined,
+      // The installed SDK has no types for adaptive thinking and
+      // `output_config`, so they are typed as the legacy thinking param.
+      ...(AnthropicProvider.buildThinkingParams(model) as {
+        thinking?: ThinkingConfigParam
+      }),
+      tools: request.tools?.map((t) => AnthropicProvider.parseRequestTool(t)),
+      tool_choice: request.tool_choice
+        ? AnthropicProvider.parseRequestToolChoice(request.tool_choice)
+        : undefined,
+      max_tokens: maxTokens,
+      temperature: request.temperature,
+      top_p: request.top_p,
+      // The installed SDK has no types for `context_management`.
+      ...({
+        context_management: {
+          edits: [
+            {
+              type: 'compact_20260112',
+              // With tools defined, the model may call one instead of
+              // summarizing, which yields a compaction block without content.
+              ...(!!request.tools?.length && {
+                instructions: AnthropicProvider.COMPACTION_INSTRUCTIONS,
+              }),
+            },
+          ],
+        },
+      } as object),
+    }
+    return {
+      body,
+      headers: { 'anthropic-beta': AnthropicProvider.COMPACTION_BETA },
+    }
+  }
+
+  // The model's maximum output, from the known models or else the Models API.
+  // If neither knows it, the previous default is kept, since asking for more
+  // than a model allows is rejected.
+  private async getMaxTokens(
+    model: ChatModel & { providerType: 'anthropic' },
+    request: LLMRequest,
+    options?: LLMOptions,
+  ): Promise<number> {
+    if (request.max_tokens) return request.max_tokens
+    const known = getClaudeMaxOutputTokens(model.model)
+    if (known) return known
+
+    const key = `${this.provider.id}/${model.model}`
+    if (!AnthropicProvider.maxOutputTokensCache.has(key)) {
+      try {
+        const info = await this.client.models.retrieve(
+          encodeURIComponent(model.model),
+          {
+            signal: options?.signal,
+            timeout: AnthropicProvider.MODEL_LOOKUP_TIMEOUT_MS,
+            maxRetries: 0,
+          },
+        )
+        // The installed SDK types predate `max_tokens` on model info.
+        const max = (info as { max_tokens?: number | null }).max_tokens
+        AnthropicProvider.maxOutputTokensCache.set(
+          key,
+          typeof max === 'number' && max > 0 ? max : null,
+        )
+      } catch {
+        if (!options?.signal?.aborted) {
+          AnthropicProvider.maxOutputTokensCache.set(key, null)
+        }
+      }
+    }
+    return (
+      AnthropicProvider.maxOutputTokensCache.get(key) ??
+      AnthropicProvider.DEFAULT_MAX_TOKENS
+    )
+  }
+
+  // Thinking is adaptive and always on. It takes `output_config.effort` and
+  // an optional summary display.
+  static buildThinkingParams(
+    model: ChatModel & { providerType: 'anthropic' },
+  ): Record<string, unknown> {
+    const { effort, show_summaries } = model.adaptive_thinking ?? {}
+    return {
+      ...(show_summaries && {
+        thinking: { type: 'adaptive', display: 'summarized' },
+      }),
+      ...(effort &&
+        (REASONING_EFFORTS as readonly string[]).includes(effort) && {
+          output_config: { effort },
+        }),
+    }
+  }
+
   static async *streamResponseGenerator(
     stream: AsyncIterable<MessageStreamEvent>,
   ): AsyncIterable<LLMResponseStreaming> {
     let messageId = ''
     let model = ''
-    let usage: ResponseUsage = {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    }
+    let usage: Anthropic.Usage | undefined
+    // Compaction blocks by index. The SDK types do not know them.
+    const compactions = new Map<number, string | null>()
 
     for await (const chunk of stream) {
       if (chunk.type === 'message_start') {
         messageId = chunk.message.id
         model = chunk.message.model
-        usage = AnthropicProvider.parseUsage(chunk.message.usage)
+        usage = chunk.message.usage
+      } else if (
+        chunk.type === 'content_block_start' &&
+        (chunk.content_block as { type: string }).type === 'compaction'
+      ) {
+        const block = chunk.content_block as { content?: string | null }
+        compactions.set(chunk.index, block.content ?? null)
+      } else if (
+        chunk.type === 'content_block_delta' &&
+        (chunk.delta as { type: string }).type === 'compaction_delta'
+      ) {
+        const delta = chunk.delta as { content?: string | null }
+        compactions.set(chunk.index, delta.content ?? null)
       } else if (
         chunk.type === 'content_block_start' ||
         chunk.type === 'content_block_delta'
@@ -273,13 +369,27 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
         if (parsedChunk !== null) {
           yield parsedChunk
         }
-      } else if (chunk.type === 'message_delta') {
-        usage = {
-          ...usage,
-          completion_tokens:
-            usage.completion_tokens + chunk.usage.output_tokens,
-          total_tokens: usage.total_tokens + chunk.usage.output_tokens,
+      } else if (chunk.type === 'content_block_stop') {
+        const content = compactions.get(chunk.index)
+        if (typeof content === 'string') {
+          yield {
+            id: messageId,
+            choices: [
+              {
+                finish_reason: null,
+                delta: {
+                  providerMetadata: {
+                    anthropic: { compaction: { type: 'compaction', content } },
+                  },
+                },
+              },
+            ],
+            object: 'chat.completion.chunk',
+            model: model,
+          }
         }
+      } else if (chunk.type === 'message_delta') {
+        usage = AnthropicProvider.mergeUsage(usage, chunk.usage)
       }
     }
 
@@ -289,8 +399,107 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
       choices: [],
       object: 'chat.completion.chunk',
       model: model,
-      usage: usage,
+      usage: usage
+        ? AnthropicProvider.parseUsage(usage)
+        : { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     }
+  }
+
+  // Rebuilds the final message from a stream, keeping block types the SDK
+  // types do not know (compaction).
+  static async collectMessage(
+    stream: AsyncIterable<MessageStreamEvent>,
+  ): Promise<Anthropic.Message> {
+    let message: Anthropic.Message | undefined
+    const blocks: {
+      type: string
+      text?: string
+      thinking?: string
+      input?: unknown
+      content?: string | null
+    }[] = []
+    const toolInputs = new Map<number, string>()
+
+    for await (const event of stream) {
+      if (event.type === 'message_start') {
+        message = event.message
+      } else if (event.type === 'content_block_start') {
+        blocks[event.index] = { ...event.content_block }
+      } else if (event.type === 'content_block_delta') {
+        const block = blocks[event.index]
+        const delta = event.delta as {
+          type: string
+          text?: string
+          thinking?: string
+          partial_json?: string
+          content?: string | null
+        }
+        if (!block) continue
+        if (delta.type === 'text_delta') {
+          block.text = (block.text ?? '') + (delta.text ?? '')
+        } else if (delta.type === 'thinking_delta') {
+          block.thinking = (block.thinking ?? '') + (delta.thinking ?? '')
+        } else if (delta.type === 'input_json_delta') {
+          toolInputs.set(
+            event.index,
+            (toolInputs.get(event.index) ?? '') + (delta.partial_json ?? ''),
+          )
+        } else if (delta.type === 'compaction_delta') {
+          block.content = delta.content ?? null
+        }
+      } else if (event.type === 'content_block_stop') {
+        const json = toolInputs.get(event.index)
+        if (json && blocks[event.index]) {
+          blocks[event.index].input = JSON.parse(json) as unknown
+        }
+      } else if (event.type === 'message_delta' && message) {
+        message = {
+          ...message,
+          stop_reason: event.delta.stop_reason,
+          usage:
+            AnthropicProvider.mergeUsage(message.usage, event.usage) ??
+            message.usage,
+        }
+      }
+    }
+
+    if (!message) {
+      throw new Error('Anthropic stream ended without a message')
+    }
+    return {
+      ...message,
+      content: blocks.filter(Boolean) as unknown as Anthropic.ContentBlock[],
+    }
+  }
+
+  // message_delta usage is cumulative, so its counts replace earlier ones.
+  private static mergeUsage(
+    usage: Anthropic.Usage | undefined,
+    delta: Partial<Anthropic.Usage> | null | undefined,
+  ): Anthropic.Usage | undefined {
+    if (!delta) return usage
+    const defined = Object.fromEntries(
+      Object.entries(delta).filter(([, value]) => value != null),
+    )
+    return { ...usage, ...defined } as Anthropic.Usage
+  }
+
+  // The latest compaction block replaces everything before its assistant
+  // message, so the earlier messages are not sent.
+  static buildMessages(messages: RequestMessage[]): MessageParam[] {
+    let start = 0
+    messages.forEach((message, index) => {
+      if (
+        message.role === 'assistant' &&
+        message.providerMetadata?.anthropic?.compaction
+      ) {
+        start = index
+      }
+    })
+    return messages
+      .slice(start)
+      .map((m) => AnthropicProvider.parseRequestMessage(m))
+      .filter((m) => m !== null)
   }
 
   static parseRequestMessage(message: RequestMessage): MessageParam | null {
@@ -346,7 +555,11 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
           },
         )
 
+        const compaction = message.providerMetadata?.anthropic?.compaction
+
         const messageContent = [
+          // The installed SDK has no type for compaction blocks.
+          ...(compaction ? [compaction as unknown as ContentBlockParam] : []),
           ...(message.content.trim() === ''
             ? []
             : [
@@ -411,6 +624,16 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
         }
       })
 
+    // The last compaction block reflects the final prompt state. A block
+    // without a summary compacted nothing and is not kept.
+    let compaction: AnthropicCompactionBlock | undefined
+    for (const block of response.content as { type: string }[]) {
+      const content = (block as { content?: unknown }).content
+      if (block.type === 'compaction' && typeof content === 'string') {
+        compaction = { type: 'compaction', content }
+      }
+    }
+
     return {
       id: response.id,
       choices: [
@@ -421,6 +644,9 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
             reasoning: reasoningContent,
             tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
             role: response.role,
+            providerMetadata: compaction
+              ? { anthropic: { compaction } }
+              : undefined,
           },
         },
       ],
@@ -525,41 +751,89 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
     return null
   }
 
-  // Cache the prompt up to the last message. The next request reads this
-  // prefix from the cache and only the new messages are written.
-  static addCacheBreakpoint(messages: MessageParam[]): MessageParam[] {
-    const last = messages[messages.length - 1]
-    if (!last) return messages
-    const content: ContentBlockParam[] =
-      typeof last.content === 'string'
-        ? [{ type: 'text', text: last.content }]
-        : last.content
-    const block = content[content.length - 1]
-    if (!block || (block.type === 'text' && !block.text)) return messages
-    return [
-      ...messages.slice(0, -1),
-      {
-        ...last,
-        content: [
-          ...content.slice(0, -1),
-          {
-            ...block,
-            cache_control: { type: 'ephemeral' },
-          } as ContentBlockParam,
-        ],
-      },
-    ]
+  // Message breakpoints, next to the one on the system prompt: the compaction
+  // block, the end of the history before the newest user turn (so a change
+  // inside that turn only rewrites what follows), and the last block. A
+  // breakpoint already set is not counted twice, so at most four are sent.
+  static addCacheBreakpoints(messages: MessageParam[]): MessageParam[] {
+    const result = [...messages]
+    const mark = (messageIndex: number, blockIndex?: number) => {
+      const message = result[messageIndex]
+      if (!message) return
+      const content: ContentBlockParam[] =
+        typeof message.content === 'string'
+          ? [{ type: 'text', text: message.content }]
+          : message.content
+      const index = blockIndex ?? content.length - 1
+      const block = content[index]
+      if (!block || (block.type === 'text' && !block.text)) return
+      result[messageIndex] = {
+        ...message,
+        content: content.map((b, i) =>
+          i === index
+            ? ({
+                ...b,
+                cache_control: { type: 'ephemeral' },
+              } as ContentBlockParam)
+            : b,
+        ),
+      }
+    }
+
+    result.forEach((message, messageIndex) => {
+      if (typeof message.content === 'string') return
+      message.content.forEach((block, blockIndex) => {
+        if ((block as { type: string }).type === 'compaction') {
+          mark(messageIndex, blockIndex)
+        }
+      })
+    })
+
+    // Tool results are sent as user messages but belong to the current turn.
+    let newestUserTurn = -1
+    result.forEach((message, index) => {
+      if (
+        message.role === 'user' &&
+        (typeof message.content === 'string' ||
+          message.content.some((block) => block.type !== 'tool_result'))
+      ) {
+        newestUserTurn = index
+      }
+    })
+    if (newestUserTurn > 0) {
+      mark(newestUserTurn - 1)
+    }
+
+    mark(result.length - 1)
+    return result
   }
 
-  // input_tokens excludes the tokens read from or written to the cache.
+  // input_tokens excludes the tokens read from or written to the cache. With
+  // compaction, the top-level counts leave out the compaction pass, which is
+  // billed too and is only listed in `iterations`.
   private static parseUsage(usage: Anthropic.Usage): ResponseUsage {
-    const cacheRead = usage.cache_read_input_tokens ?? 0
-    const cacheWrite = usage.cache_creation_input_tokens ?? 0
-    const promptTokens = usage.input_tokens + cacheRead + cacheWrite
+    const iterations =
+      (usage as { iterations?: UsageIteration[] }).iterations ?? []
+    const parts: UsageIteration[] = [
+      usage,
+      ...iterations.filter((iteration) => iteration.type === 'compaction'),
+    ]
+    let promptTokens = 0
+    let completionTokens = 0
+    let cacheRead = 0
+    let cacheWrite = 0
+    for (const part of parts) {
+      const read = part.cache_read_input_tokens ?? 0
+      const write = part.cache_creation_input_tokens ?? 0
+      promptTokens += (part.input_tokens ?? 0) + read + write
+      completionTokens += part.output_tokens ?? 0
+      cacheRead += read
+      cacheWrite += write
+    }
     return {
       prompt_tokens: promptTokens,
-      completion_tokens: usage.output_tokens,
-      total_tokens: promptTokens + usage.output_tokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
       cache_read_tokens: cacheRead,
       cache_write_tokens: cacheWrite,
     }

@@ -1,6 +1,12 @@
 // These types are based on the OpenRouter API specification
 // https://openrouter.ai/docs/api-reference/overview#responses
 
+import {
+  AnthropicCompactionBlock,
+  OpenAICompactionItem,
+  XaiProviderMetadata,
+} from './request'
+
 export type LLMResponseBase = {
   id: string
   created?: number
@@ -22,6 +28,7 @@ export type LLMResponseStreaming = LLMResponseBase & {
 export type LLMResponse = LLMResponseNonStreaming | LLMResponseStreaming
 
 export type ResponseUsage = {
+  // All input tokens of the request, including cached ones
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
@@ -37,6 +44,15 @@ export type ResponseProviderMetadata = {
   deepseek?: {
     reasoningContent?: string
   }
+  anthropic?: {
+    compaction?: AnthropicCompactionBlock
+  }
+  openai?: {
+    compaction?: OpenAICompactionItem
+    // Endpoint that produced the item; another endpoint cannot read it
+    endpoint?: string
+  }
+  xai?: XaiProviderMetadata
 }
 
 type NonStreamingChoice = {

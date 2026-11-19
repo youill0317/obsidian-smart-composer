@@ -66,17 +66,22 @@ function holdsPayload(provider: LLMProvider, id: string) {
   )
 }
 
-// Only the openai-plan references removed by the v20 -> v21 migration.
+// Only the references removed by the v20 -> v21 (openai-plan) and v24 -> v25
+// (anthropic-plan, gemini-plan) migrations.
 function legacyReferences(data: unknown): string[] {
   const { providers, version } =
     (data as { providers?: unknown; version?: unknown } | null) ?? {}
-  if (!Array.isArray(providers) || typeof version !== 'number' || version >= 21)
+  if (!Array.isArray(providers) || typeof version !== 'number' || version >= 25)
     return []
   return providers
-    .filter(
-      (provider) =>
-        (provider as { type?: unknown } | null)?.type === 'openai-plan',
-    )
+    .filter((provider) => {
+      const type = (provider as { type?: unknown } | null)?.type
+      return (
+        (type === 'openai-plan' && version < 21) ||
+        type === 'anthropic-plan' ||
+        type === 'gemini-plan'
+      )
+    })
     .map(
       (provider) =>
         (provider as { credentialsSecretId?: unknown } | null)
@@ -150,9 +155,7 @@ export class CredentialSettingsStore {
     try {
       await this.persist(this.settings, true)
     } catch {
-      this.notify(
-        'Smart Composer settings could not be saved. Existing credentials were not removed.',
-      )
+      this.notify('Smart Composer settings could not be saved.')
       return
     }
     // Remove entries earlier versions emptied because they could not delete.
@@ -219,8 +222,7 @@ export class CredentialSettingsStore {
           provider.credentialsSecretId
             ? {
                 label: 'Needs attention',
-                detail:
-                  'Keychain credentials are unavailable on this device. Re-enter the API key or reconnect the subscription.',
+                detail: 'Keychain credentials are unavailable on this device.',
               }
             : { label: 'Not configured', detail: 'No credentials configured.' },
         )
@@ -244,7 +246,7 @@ export class CredentialSettingsStore {
           if ('oauth' in stored) delete stored.oauth
           statuses.set(provider.id, {
             label: 'Keychain',
-            detail: `Stored by Obsidian Keychain as "${id}". Encryption depends on your operating system.`,
+            detail: `Stored by Obsidian Keychain as "${id}".`,
           })
           migrated ||= migrating && !provider.credentialsSecretId
           return stored
@@ -311,8 +313,7 @@ export class CredentialSettingsStore {
       this.settings.providers.forEach((provider) => {
         this.statuses.set(provider.id, {
           label: 'Needs attention',
-          detail:
-            'Settings could not be saved. Please retry before closing Obsidian.',
+          detail: 'Settings could not be saved.',
         })
       })
       throw new Error('Smart Composer settings could not be saved.')
@@ -322,14 +323,13 @@ export class CredentialSettingsStore {
     this.knownRefs = refs
     this.settings = {
       ...next,
-      providers: providers.map(
-        (stored, index) =>
-          (rejected.has(index)
-            ? stored
-            : {
-                ...stored,
-                ...credentials(next.providers[index]),
-              }) as LLMProvider,
+      providers: providers.map((stored, index) =>
+        rejected.has(index)
+          ? stored
+          : {
+              ...stored,
+              ...credentials(next.providers[index]),
+            },
       ),
     }
     this.statuses = statuses
@@ -345,14 +345,12 @@ export class CredentialSettingsStore {
       } catch {
         this.warnOnce(
           'cleanup-' + id,
-          'Smart Composer disconnected the credentials, but could not clear an old Keychain entry. Remove it in Obsidian Keychain settings.',
+          'Smart Composer disconnected the credentials, but could not clear an old Keychain entry.',
         )
       }
     }
     if (migrated) {
-      this.notify(
-        'Smart Composer moved credentials to Keychain. Other devices may need API keys or subscription sign-in again.',
-      )
+      this.notify('Smart Composer moved credentials to Keychain.')
     }
   }
 }

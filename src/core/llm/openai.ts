@@ -20,12 +20,11 @@ import {
   LLMAPIKeyNotSetException,
   LLMRateLimitExceededException,
 } from './exception'
-import { OpenAIMessageAdapter } from './openaiMessageAdapter'
+import { REASONING_EFFORTS } from './modelCompatibility'
 
 export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
   Extract<LLMProvider, { type: 'openai' }>
 > {
-  private adapter: OpenAIMessageAdapter
   private client: OpenAI
   private responsesAdapter: CodexMessageAdapter
 
@@ -38,7 +37,6 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
         : undefined, // use default
       dangerouslyAllowBrowser: true,
     })
-    this.adapter = new OpenAIMessageAdapter()
     this.responsesAdapter = new CodexMessageAdapter({
       endpoint: `${this.client.baseURL.replace(/\/+$/, '')}/responses`,
       includeMaxOutputTokens: true,
@@ -72,52 +70,14 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
-      if (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(model.model)) {
-        return await this.responsesAdapter.generateResponse(
-          {
-            ...request,
-            reasoning_effort: model.reasoning?.enabled
-              ? (model.reasoning.reasoning_effort as ReasoningEffort)
-              : undefined,
-          },
-          options,
-          { Authorization: `Bearer ${this.client.apiKey}` },
-        )
-      }
-      const response = await this.adapter.generateResponse(
-        this.client,
+      return await this.responsesAdapter.generateResponse(
         {
           ...request,
-          reasoning_effort: model.reasoning?.enabled
-            ? (model.reasoning.reasoning_effort as ReasoningEffort)
-            : undefined,
+          reasoning_effort: getReasoningEffort(model),
         },
         options,
+        { Authorization: `Bearer ${this.client.apiKey}` },
       )
-
-      // Ensure choices exist and have at least one choice
-      if (!response.choices || response.choices.length === 0) {
-        console.error('No response choices available')
-        throw new Error('No response choices available')
-      }
-
-      // Ensure the first choice has a message with content
-      const firstChoice = response.choices[0]
-      if (
-        !firstChoice.message ||
-        firstChoice.message.content === null ||
-        firstChoice.message.content === undefined
-      ) {
-        console.error('No content in the first response choice')
-        throw new Error('No content in the first response choice')
-      }
-
-      const finalResponse = {
-        ...response,
-        content: firstChoice.message.content,
-      }
-
-      return finalResponse
     } catch (error) {
       console.error('Error in generateResponse:', error)
       if (error instanceof OpenAI.AuthenticationError) {
@@ -145,27 +105,13 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       )
     }
     try {
-      if (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(model.model)) {
-        return await this.responsesAdapter.streamResponse(
-          {
-            ...request,
-            reasoning_effort: model.reasoning?.enabled
-              ? (model.reasoning.reasoning_effort as ReasoningEffort)
-              : undefined,
-          },
-          options,
-          { Authorization: `Bearer ${this.client.apiKey}` },
-        )
-      }
-      return await this.adapter.streamResponse(
-        this.client,
+      return await this.responsesAdapter.streamResponse(
         {
           ...request,
-          reasoning_effort: model.reasoning?.enabled
-            ? (model.reasoning.reasoning_effort as ReasoningEffort)
-            : undefined,
+          reasoning_effort: getReasoningEffort(model),
         },
         options,
+        { Authorization: `Bearer ${this.client.apiKey}` },
       )
     } catch (error) {
       console.error('Error in streamResponse:', error)
@@ -206,4 +152,13 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
       throw error
     }
   }
+}
+
+function getReasoningEffort(
+  model: ChatModel & { providerType: 'openai' },
+): ReasoningEffort | undefined {
+  const effort = model.reasoning?.reasoning_effort
+  return effort && (REASONING_EFFORTS as readonly string[]).includes(effort)
+    ? (effort as ReasoningEffort)
+    : undefined
 }

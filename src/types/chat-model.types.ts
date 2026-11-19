@@ -25,17 +25,10 @@ const baseChatModelSchema = z.object({
   enable: z.boolean().default(true).optional(),
 })
 
+// Entered by the user for providers whose API does not report it
+const contextWindow = z.number().int().positive().optional()
+
 export const chatModelSchema = z.discriminatedUnion('providerType', [
-  z.object({
-    providerType: z.literal('anthropic-plan'),
-    ...baseChatModelSchema.shape,
-    thinking: z
-      .object({
-        enabled: z.boolean(),
-        budget_tokens: z.number(),
-      })
-      .optional(),
-  }),
   z.object({
     providerType: z.literal('openai-plan'),
     ...baseChatModelSchema.shape,
@@ -47,29 +40,12 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
       .optional(),
   }),
   z.object({
-    providerType: z.literal('gemini-plan'),
-    ...baseChatModelSchema.shape,
-    thinking: z
-      .object({
-        enabled: z.boolean(),
-        // 'level' for Gemini 3 models, 'budget' for Gemini 2.5 models
-        control_mode: z.enum(['level', 'budget']).optional(),
-        // For Gemini 3 models
-        thinking_level: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
-        // For Gemini 2.5 models: -1 for dynamic, 0 to disable, or specific token count
-        thinking_budget: z.number().optional(),
-        // Return thought summaries in response
-        include_thoughts: z.boolean().optional(),
-      })
-      .optional(),
-  }),
-  z.object({
     providerType: z.literal('anthropic'),
     ...baseChatModelSchema.shape,
-    thinking: z
+    adaptive_thinking: z
       .object({
-        enabled: z.boolean(),
-        budget_tokens: z.number(),
+        effort: z.string().optional(),
+        show_summaries: z.boolean().optional(),
       })
       .optional(),
   }),
@@ -78,7 +54,6 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     ...baseChatModelSchema.shape,
     reasoning: z
       .object({
-        enabled: z.boolean(),
         reasoning_effort: z.string().optional(),
       })
       .optional(),
@@ -88,13 +63,7 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     ...baseChatModelSchema.shape,
     thinking: z
       .object({
-        enabled: z.boolean(),
-        // 'level' for Gemini 3 models, 'budget' for Gemini 2.5 models
-        control_mode: z.enum(['level', 'budget']).optional(),
-        // For Gemini 3 models
-        thinking_level: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
-        // For Gemini 2.5 models: -1 for dynamic, 0 to disable, or specific token count
-        thinking_budget: z.number().optional(),
+        thinking_level: z.string().optional(),
         // Return thought summaries in response
         include_thoughts: z.boolean().optional(),
       })
@@ -120,6 +89,7 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
         search_context_size: z.string(),
       })
       .optional(),
+    contextWindow,
   }),
   z.object({
     providerType: z.literal('openrouter'),
@@ -128,18 +98,22 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
   z.object({
     providerType: z.literal('ollama'),
     ...baseChatModelSchema.shape,
+    contextWindow,
   }),
   z.object({
     providerType: z.literal('lm-studio'),
     ...baseChatModelSchema.shape,
+    contextWindow,
   }),
   z.object({
     providerType: z.literal('azure-openai'),
     ...baseChatModelSchema.shape,
+    contextWindow,
   }),
   z.object({
     providerType: z.literal('openai-compatible'),
     ...baseChatModelSchema.shape,
+    contextWindow,
   }),
 ])
 

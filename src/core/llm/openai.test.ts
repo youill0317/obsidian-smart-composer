@@ -1,3 +1,5 @@
+import { CompletionUsage } from 'openai/resources/completions'
+
 import { ChatModel } from '../../types/chat-model.types'
 import { LLMRequestNonStreaming } from '../../types/llm/request'
 
@@ -7,7 +9,7 @@ import {
   LLMAPIKeyNotSetException,
 } from './exception'
 import { OpenAIAuthenticatedProvider } from './openai'
-import { OpenAIMessageAdapter } from './openaiMessageAdapter'
+import { mapChatCompletionUsage } from './openaiMessageAdapter'
 
 jest.mock('obsidian', () => ({ Platform: { isDesktop: false } }), {
   virtual: true,
@@ -16,9 +18,9 @@ jest.mock('obsidian', () => ({ Platform: { isDesktop: false } }), {
 const model: ChatModel = {
   providerType: 'openai',
   providerId: 'openai',
-  id: 'gpt-6.1-sol',
-  model: 'gpt-6.1-sol',
-  reasoning: { enabled: true, reasoning_effort: 'high' },
+  id: 'gpt-6.2-sol',
+  model: 'gpt-6.2-sol',
+  reasoning: { reasoning_effort: 'high' },
 }
 const request: LLMRequestNonStreaming = {
   model: model.model,
@@ -217,7 +219,57 @@ describe('OpenAI Sol Responses transport', () => {
     ).rejects.toBeInstanceOf(LLMAPIKeyInvalidException)
   })
 
-  it.each(['gpt-6-luna', 'gpt-6-astra'])(
+  it('sends Sol 6.2 reasoning effort through Responses', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => responseStream())
+    const provider = new OpenAIAuthenticatedProvider({
+      type: 'openai',
+      id: 'openai',
+      apiKey: 'test-key',
+    })
+    const sol = {
+      ...model,
+      id: 'gpt-6.2-sol',
+      model: 'gpt-6.2-sol',
+      reasoning: { reasoning_effort: 'max' },
+    }
+    await provider.generateResponse(sol, { ...request, model: sol.model })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.openai.com/v1/responses')
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      model: 'gpt-6.2-sol',
+      reasoning: { effort: 'max' },
+    })
+  })
+
+  it.each([
+    ['max', { effort: 'max' }],
+    ['none', undefined],
+  ])('sends Astra 6.2 effort %s as %p', async (effort, expected) => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => responseStream())
+    const provider = new OpenAIAuthenticatedProvider({
+      type: 'openai',
+      id: 'openai',
+      apiKey: 'test-key',
+    })
+    await provider.generateResponse(
+      {
+        ...model,
+        id: 'gpt-6.2-astra',
+        model: 'gpt-6.2-astra',
+        reasoning: { reasoning_effort: effort },
+      },
+      { ...request, model: 'gpt-6.2-astra' },
+    )
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.openai.com/v1/responses')
+    expect(JSON.parse(init?.body as string).reasoning).toEqual(expected)
+  })
+
+  it.each(['gpt-6.2-sol', 'any-other-model'])(
     'uses Responses in both modes for %s',
     async (name) => {
       const fetchMock = jest
@@ -244,24 +296,6 @@ describe('OpenAI Sol Responses transport', () => {
     },
   )
 
-  it('keeps other OpenAI models on the existing adapter', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch')
-    const adapter = jest
-      .spyOn(OpenAIMessageAdapter.prototype, 'streamResponse')
-      .mockResolvedValue((async function* () {})())
-    const provider = new OpenAIAuthenticatedProvider({
-      type: 'openai',
-      id: 'openai',
-      apiKey: 'api-test-key',
-    })
-    await provider.streamResponse(
-      { ...model, model: 'gpt-5.6-sol' },
-      { ...request, model: 'gpt-5.6-sol', stream: true },
-    )
-    expect(adapter).toHaveBeenCalledTimes(1)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
   it('keeps output token limits out of the existing plan adapter contract', async () => {
     const fetchMock = jest
       .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
@@ -271,5 +305,56 @@ describe('OpenAI Sol Responses transport', () => {
     expect(
       JSON.parse(fetchMock.mock.calls[0][1]?.body as string),
     ).not.toHaveProperty('max_output_tokens')
+  })
+})
+
+describe('OpenAI compaction and cached tokens', () => {
+  afterEach(() => jest.restoreAllMocks())
+
+  it('enables compaction on the API-key Responses path', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => responseStream())
+    const provider = new OpenAIAuthenticatedProvider({
+      type: 'openai',
+      id: 'openai',
+      apiKey: 'api-test-key',
+    })
+    await provider.generateResponse(model, request)
+    expect(
+      JSON.parse(fetchMock.mock.calls[0][1]?.body as string).context_management,
+    ).toEqual([{ type: 'compaction' }])
+  })
+
+  it('maps cached tokens reported by Chat Completions and DeepSeek', () => {
+    expect(
+      mapChatCompletionUsage({
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        total_tokens: 105,
+        prompt_tokens_details: { cached_tokens: 60 },
+      }),
+    ).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 5,
+      total_tokens: 105,
+      cache_read_tokens: 60,
+    })
+    expect(
+      mapChatCompletionUsage({
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        total_tokens: 105,
+        prompt_cache_hit_tokens: 70,
+        prompt_cache_miss_tokens: 30,
+      } as CompletionUsage),
+    ).toMatchObject({ prompt_tokens: 100, cache_read_tokens: 70 })
+    expect(
+      mapChatCompletionUsage({
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        total_tokens: 105,
+      }),
+    ).toEqual({ prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 })
   })
 })

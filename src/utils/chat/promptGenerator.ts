@@ -1,7 +1,8 @@
-import { App, TFile, htmlToMarkdown } from 'obsidian'
+import { App, htmlToMarkdown } from 'obsidian'
 
 import { editorStateToPlainText } from '../../components/chat-view/chat-input/utils/editor-state-to-plain-text'
 import { QueryProgressState } from '../../components/chat-view/QueryProgress'
+import { getClientHistoryLimit } from '../../core/llm/modelCompatibility'
 import { RAGEngine } from '../../core/rag/ragEngine'
 import { SelectEmbedding } from '../../database/schema'
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
@@ -10,7 +11,9 @@ import {
   ChatMessage,
   ChatToolMessage,
   ChatUserMessage,
+  CurrentFileCapture,
 } from '../../types/chat'
+import { ChatModel } from '../../types/chat-model.types'
 import { ContentPart, RequestMessage } from '../../types/llm/request'
 import {
   MentionableBlock,
@@ -53,9 +56,20 @@ export class PromptGenerator {
 
   public async generateRequestMessages({
     messages,
+    model,
+    contextWindow,
   }: {
     messages: ChatMessage[]
-  }): Promise<RequestMessage[]> {
+    model: Pick<ChatModel, 'providerType' | 'model'>
+    // The model's context window, when the provider reported one
+    contextWindow?: number
+  }): Promise<{
+    requestMessages: RequestMessage[]
+    // Characters of the request as the provider's adapter sends it
+    requestChars: number
+    // Id of the first chat message sent, when older ones were left out
+    requestStartId?: string
+  }> {
     if (messages.length === 0) {
       throw new Error('No messages provided')
     }
@@ -79,48 +93,167 @@ export class PromptGenerator {
       }),
     )
 
-    // find last user message
-    let lastUserMessage: ChatUserMessage | undefined = undefined
-    for (let i = compiledMessages.length - 1; i >= 0; --i) {
-      if (compiledMessages[i].role === 'user') {
-        lastUserMessage = compiledMessages[i] as ChatUserMessage
-        break
-      }
-    }
-    if (!lastUserMessage) {
+    if (!compiledMessages.some((message) => message.role === 'user')) {
       throw new Error('No user messages found')
     }
-    const shouldUseRAG = lastUserMessage.similaritySearchResults !== undefined
 
-    const systemMessage = this.getSystemMessage(shouldUseRAG)
+    // Everything before the newest message must stay byte-identical between
+    // requests so provider prompt caches can match the prefix
+    const systemMessage = this.getSystemMessage()
 
     const customInstructionMessage = this.getCustomInstructionMessage()
 
-    const currentFile = lastUserMessage.mentionables.find(
-      (m) => m.type === 'current-file',
-    )?.file
-    const currentFileMessage =
-      currentFile && this.settings.chatOptions.includeCurrentFileContent
-        ? await this.getCurrentFileMessage(currentFile)
+    // Only the latest current-file capture is rendered
+    const capturingMessage = compiledMessages
+      .filter((m): m is ChatUserMessage => m.role === 'user' && !!m.currentFile)
+      .pop()
+    const build = (start: number) =>
+      this.buildRequest({
+        messages: compiledMessages.slice(start),
+        model,
+        systemMessage,
+        customInstructionMessage,
+        capturingMessage,
+      })
+    const start = this.getHistoryStart({
+      messages: compiledMessages,
+      model,
+      contextWindow,
+      getRequestChars: (from) => build(from).requestChars,
+    })
+
+    return {
+      ...build(start),
+      requestStartId: start > 0 ? compiledMessages[start].id : undefined,
+    }
+  }
+
+  // Builds the request for a history. A provider's adapter sends nothing
+  // before the provider's latest compaction, so the custom instructions and a
+  // current file captured before it follow the compacted turn instead.
+  // `requestChars` counts what the adapter sends.
+  private buildRequest({
+    messages,
+    model,
+    systemMessage,
+    customInstructionMessage,
+    capturingMessage,
+  }: {
+    messages: ChatMessage[]
+    model: Pick<ChatModel, 'providerType' | 'model'>
+    systemMessage: RequestMessage
+    customInstructionMessage: RequestMessage | null
+    capturingMessage?: ChatUserMessage
+  }): { requestMessages: RequestMessage[]; requestChars: number } {
+    let cut = -1
+    messages.forEach((message, index) => {
+      if (getProviderCompaction(message, model.providerType)) cut = index
+    })
+    let anchor = cut + 1
+    while (cut >= 0 && messages[anchor]?.role === 'tool') anchor++
+
+    const capture = capturingMessage?.currentFile
+    const sendsCapturingMessage =
+      !!capturingMessage && messages.indexOf(capturingMessage) >= anchor
+    const history = (slice: ChatMessage[]) =>
+      this.getChatHistoryMessages({
+        messages: slice,
+        currentFile:
+          capture && sendsCapturingMessage
+            ? { message: capturingMessage, capture }
+            : undefined,
+      })
+    const sent: RequestMessage[] = [
+      ...(cut >= 0 ? history(messages.slice(cut, anchor)) : []),
+      ...(customInstructionMessage ? [customInstructionMessage] : []),
+      ...(capture && !sendsCapturingMessage
+        ? [
+            {
+              role: 'user' as const,
+              content: this.getCurrentFilePrompt(capture),
+            },
+          ]
+        : []),
+      ...history(messages.slice(anchor)),
+    ]
+    const compaction =
+      cut >= 0
+        ? getProviderCompaction(messages[cut], model.providerType)
         : undefined
 
-    const requestMessages: RequestMessage[] = [
-      systemMessage,
-      ...(customInstructionMessage ? [customInstructionMessage] : []),
-      ...(currentFileMessage ? [currentFileMessage] : []),
-      ...this.getChatHistoryMessages({ messages: compiledMessages }),
-      ...(shouldUseRAG && this.getModelPromptLevel() == PromptLevel.Default
-        ? [this.getRagInstructionMessage()]
-        : []),
-    ]
+    return {
+      requestMessages: [
+        systemMessage,
+        ...(cut > 0 ? history(messages.slice(0, cut)) : []),
+        ...sent,
+      ],
+      requestChars:
+        [systemMessage, ...sent].reduce(
+          (sum, message) => sum + getRequestMessageChars(message),
+          0,
+        ) +
+        (compaction && 'content' in compaction ? compaction.content.length : 0),
+    }
+  }
 
-    return requestMessages
+  // Index of the first chat message to send. Whole turns are dropped from the
+  // start so the request fits the model's context window: a cut recorded on an
+  // earlier reply is kept, and it moves forward once the request would reach
+  // the limit. Requests are sized from the provider-reported input tokens of
+  // the last request and its character count.
+  private getHistoryStart({
+    messages,
+    model,
+    contextWindow,
+    getRequestChars,
+  }: {
+    messages: ChatMessage[]
+    model: Pick<ChatModel, 'providerType' | 'model'>
+    contextWindow?: number
+    getRequestChars: (start: number) => number
+  }): number {
+    let currentTurn = 0
+    messages.forEach((message, index) => {
+      if (message.role === 'user') currentTurn = index
+    })
+    // A cut must name a user message that still exists up to the current turn
+    const cutIndex = (id: string | undefined, before: number) => {
+      const index = id ? messages.findIndex((m) => m.id === id) : -1
+      return index > 0 && index <= before && messages[index].role === 'user'
+        ? index
+        : 0
+    }
+
+    let start = 0
+    let tokensPerChar = 0
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue
+      start = Math.max(start, cutIndex(message.requestStartId, currentTurn))
+      const promptTokens = message.metadata?.usage?.prompt_tokens
+      if (promptTokens && message.requestChars) {
+        tokensPerChar = promptTokens / message.requestChars
+      }
+    }
+
+    const historyLimit = getClientHistoryLimit(model, contextWindow)
+    if (!historyLimit || tokensPerChar <= 0) return start
+
+    const estimate = (from: number) => tokensPerChar * getRequestChars(from)
+    if (estimate(start) < historyLimit.limit) return start
+    for (let i = start + 1; i < currentTurn; i++) {
+      if (messages[i].role === 'user' && estimate(i) <= historyLimit.target) {
+        return i
+      }
+    }
+    return currentTurn
   }
 
   private getChatHistoryMessages({
     messages,
+    currentFile,
   }: {
     messages: ChatMessage[]
+    currentFile?: { message: ChatMessage; capture: CurrentFileCapture }
   }): RequestMessage[] {
     // Send the whole conversation so the original request stays in context
     // during long tool runs and the prompt prefix stays cacheable
@@ -128,10 +261,28 @@ export class PromptGenerator {
       (message): RequestMessage[] => {
         if (message.role === 'user') {
           // We assume that all user messages have been compiled
+          const promptContent = message.promptContent ?? ''
+          if (message !== currentFile?.message) {
+            return [{ role: 'user', content: promptContent }]
+          }
+          const currentFilePrompt = this.getCurrentFilePrompt(
+            currentFile.capture,
+          )
+          const textIndex =
+            typeof promptContent === 'string'
+              ? -1
+              : promptContent.findIndex((part) => part.type === 'text')
           return [
             {
               role: 'user',
-              content: message.promptContent ?? '',
+              content:
+                typeof promptContent === 'string'
+                  ? `${currentFilePrompt}${promptContent}`
+                  : promptContent.map((part, index) =>
+                      index === textIndex && part.type === 'text'
+                        ? { ...part, text: `${currentFilePrompt}${part.text}` }
+                        : part,
+                    ),
             },
           ]
         } else if (message.role === 'assistant') {
@@ -341,7 +492,11 @@ ${similaritySearchResults
         : content
     return `\`\`\`${path}\n${newContent}\n\`\`\`\n`
   })
-  .join('')}\n`
+  .join('')}\n${
+          this.getModelPromptLevel() == PromptLevel.Default
+            ? this.getRagInstructionPrompt()
+            : ''
+        }`
       } else {
         filePrompt = allFiles
           .map((file, index) => {
@@ -416,7 +571,7 @@ ${await this.getWebsiteContent(url)}
     }
   }
 
-  private getSystemMessage(shouldUseRAG: boolean): RequestMessage {
+  private getSystemMessage(): RequestMessage {
     const modelPromptLevel = this.getModelPromptLevel()
     const systemPrompt = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}.
 
@@ -456,38 +611,9 @@ The user has full access to the file, so they prefer seeing only the changes in 
     : ''
 }`
 
-    const systemPromptRAG = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}. You will be given your conversation history with them and potentially relevant blocks of markdown content from the current vault.
-      
-1. Do not lie or make up facts.
-
-2. Format your response in markdown.
-
-${
-  modelPromptLevel == PromptLevel.Default
-    ? `3. Respond in the same language as the user's message.
-
-4. When referencing markdown blocks in your answer, keep the following guidelines in mind:
-
-  a. Never include line numbers in the output markdown.
-
-  b. Wrap the markdown block with <smtcmp_block> tags. Include language attribute. For example:
-  <smtcmp_block language="markdown">
-  {{ content }}
-  </smtcmp_block>
-
-  c. When providing markdown blocks for an existing file, also include the filename attribute to the <smtcmp_block> tags. For example:
-  <smtcmp_block filename="path/to/file.md" language="markdown">
-  {{ content }}
-  </smtcmp_block>
-
-  d. When referencing a markdown block the user gives you, only add the startLine and endLine attributes to the <smtcmp_block> tags. Write related content outside of the <smtcmp_block> tags. The content inside the <smtcmp_block> tags will be ignored and replaced with the actual content of the markdown block. For example:
-  <smtcmp_block filename="path/to/file.md" language="markdown" startLine="2" endLine="30"></smtcmp_block>`
-    : ''
-}`
-
     return {
       role: 'system',
-      content: shouldUseRAG ? systemPromptRAG : systemPrompt,
+      content: systemPrompt,
     }
   }
 
@@ -505,29 +631,47 @@ ${customInstruction}
     }
   }
 
-  private async getCurrentFileMessage(
-    currentFile: TFile,
-  ): Promise<RequestMessage> {
-    const fileContent = await readTFileContent(currentFile, this.app.vault)
-    return {
-      role: 'user',
-      content: `# Inputs
-## Current File
-Here is the file I'm looking at.
-\`\`\`${currentFile.path}
-${fileContent}
-\`\`\`\n\n`,
+  public async captureCurrentFile({
+    message,
+    previousMessages,
+  }: {
+    message: ChatUserMessage
+    previousMessages: ChatMessage[]
+  }): Promise<CurrentFileCapture | undefined> {
+    const currentFile = message.mentionables.find(
+      (m) => m.type === 'current-file',
+    )?.file
+    if (!currentFile || !this.settings.chatOptions.includeCurrentFileContent) {
+      return undefined
     }
+    const content = await readTFileContent(currentFile, this.app.vault)
+    const liveCapture = previousMessages
+      .filter((m): m is ChatUserMessage => m.role === 'user' && !!m.currentFile)
+      .pop()?.currentFile
+    if (
+      liveCapture?.path === currentFile.path &&
+      liveCapture.content === content
+    ) {
+      return undefined
+    }
+    return { path: currentFile.path, content }
   }
 
-  private getRagInstructionMessage(): RequestMessage {
-    return {
-      role: 'user',
-      content: `If you need to reference any of the markdown blocks I gave you, add the startLine and endLine attributes to the <smtcmp_block> tags without any content inside. For example:
+  private getCurrentFilePrompt({ path, content }: CurrentFileCapture): string {
+    return `# Inputs
+## Current File
+Here is the file I'm looking at.
+\`\`\`${path}
+${content}
+\`\`\`\n\n`
+  }
+
+  private getRagInstructionPrompt(): string {
+    return `If you need to reference any of the markdown blocks I gave you, add the startLine and endLine attributes to the <smtcmp_block> tags without any content inside. Write related content outside of the <smtcmp_block> tags. The content inside the <smtcmp_block> tags will be ignored and replaced with the actual content of the markdown block. For example:
 <smtcmp_block filename="path/to/file.md" language="markdown" startLine="200" endLine="310"></smtcmp_block>
 
-When writing out new markdown blocks, remember not to include "line_number|" at the beginning of each line.`,
-    }
+Never include line numbers in the output markdown. When writing out new markdown blocks, remember not to include "line_number|" at the beginning of each line.
+`
   }
 
   private addLineNumbersToContent({
@@ -580,4 +724,41 @@ ${transcript
     )
     return chatModel?.promptLevel ?? PromptLevel.Default
   }
+}
+
+// The compaction the provider's adapter resumes from, if the message has one
+function getProviderCompaction(
+  message: ChatMessage,
+  providerType: ChatModel['providerType'],
+) {
+  if (message.role !== 'assistant') return undefined
+  switch (providerType) {
+    case 'anthropic':
+      return message.providerMetadata?.anthropic?.compaction
+    case 'openai':
+    case 'openai-plan':
+      return message.providerMetadata?.openai?.compaction
+    case 'xai':
+      return message.providerMetadata?.xai?.compaction
+    default:
+      return undefined
+  }
+}
+
+// Characters of the text sent for a message; images are not counted
+function getRequestMessageChars(message: RequestMessage): number {
+  let chars =
+    typeof message.content === 'string'
+      ? message.content.length
+      : message.content.reduce(
+          (sum, part) => sum + (part.type === 'text' ? part.text.length : 0),
+          0,
+        )
+  if (message.role === 'assistant') {
+    chars += message.providerMetadata?.deepseek?.reasoningContent?.length ?? 0
+    for (const toolCall of message.tool_calls ?? []) {
+      chars += toolCall.name.length + (toolCall.arguments?.length ?? 0)
+    }
+  }
+  return chars
 }

@@ -130,6 +130,20 @@ function ToolCallItem({
       throw error
     }
   }, [request.name])
+  // What a CLI call does, as the model put it
+  const description = useMemo(() => {
+    if (request.name !== CLI_TOOL_NAME || !request.arguments) return null
+    try {
+      const { description } = JSON.parse(request.arguments) as {
+        description?: unknown
+      }
+      return typeof description === 'string' && description.trim()
+        ? description
+        : null
+    } catch {
+      return null
+    }
+  }, [request.name, request.arguments])
   const parameters = useMemo(() => {
     if (!request.arguments) {
       return 'No parameters'
@@ -153,9 +167,13 @@ function ToolCallItem({
         <div className="smtcmp-toolcall-header-content">
           <span>{STATUS_LABELS[response.status] || 'Unknown'}</span>
           <span>&nbsp;&nbsp;</span>
-          <span className="smtcmp-toolcall-header-tool-name">
-            {serverName ? `${serverName}:${toolName}` : toolName}
-          </span>
+          {description ? (
+            <span>{description}</span>
+          ) : (
+            <span className="smtcmp-toolcall-header-tool-name">
+              {serverName ? `${serverName}:${toolName}` : toolName}
+            </span>
+          )}
         </div>
         <div className="smtcmp-toolcall-header-icon smtcmp-toolcall-header-icon--status">
           <StatusIcon status={response.status} />
@@ -207,7 +225,7 @@ function ToolCallItem({
                     setIsOpen(false)
                   }}
                 >
-                  Allow this execution
+                  Allow
                 </button>
               ) : (
                 <SplitButton
@@ -279,13 +297,12 @@ function useToolCall(
   const handleToolCall = useCallback(async () => {
     if (running.current) return
     running.current = true
-    const manager = toolManager
     onResponseUpdate({
       status: ToolCallResponseStatus.Running,
       execution: approved,
     })
     try {
-      const toolCallResponse = await manager.callTool({
+      const toolCallResponse = await toolManager.callTool({
         name: request.name,
         args: request.arguments,
         id: request.id,
@@ -305,8 +322,7 @@ function useToolCall(
   }, [request, onResponseUpdate, toolManager, approved, conversationId])
 
   const handleAllowForConversation = useCallback(async () => {
-    const manager = toolManager
-    manager.allowToolForConversation(request.name, conversationId)
+    toolManager.allowToolForConversation(request.name, conversationId)
   }, [request, conversationId, toolManager])
 
   const handleAllowAutoExecution = useCallback(async () => {
@@ -351,8 +367,7 @@ function useToolCall(
   }, [onResponseUpdate])
 
   const handleAbort = useCallback(async () => {
-    const manager = toolManager
-    manager.abortToolCall(request.id)
+    toolManager.abortToolCall(request.id)
     onResponseUpdate({
       status: ToolCallResponseStatus.Aborted,
     })

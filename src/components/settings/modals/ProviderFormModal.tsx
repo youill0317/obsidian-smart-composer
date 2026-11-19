@@ -15,6 +15,8 @@ import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../common/ObsidianToggle'
 import { ReactModal } from '../../common/ReactModal'
 
+import { OpenAIPlanSetting } from './OpenAIPlanSetting'
+
 type ProviderFormComponentProps = {
   plugin: SmartComposerPlugin
   provider: LLMProvider | null // null for new provider
@@ -255,6 +257,10 @@ function ProviderFormComponent({
           )}
         </ObsidianSetting>
       ))}
+
+      {provider?.id === PROVIDER_TYPES_INFO.openai.defaultProviderId && (
+        <OpenAIPlanSetting plugin={plugin} />
+      )}
 
       <ObsidianSetting>
         <ObsidianButton

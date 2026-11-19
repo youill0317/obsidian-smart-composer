@@ -133,11 +133,14 @@ describe('Migration from v17 to v18', () => {
     expect(migrateFrom17To18(first)).toEqual(first)
     const settings = parseSmartComposerSettings(initial)
     expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
-    expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
+    expect(settings.chatModels).toHaveLength(
+      // The superseded v25 defaults stay after v26.
+      DEFAULT_CHAT_MODELS.length + 5,
+    )
     expect(settings.chatModels).toEqual(
       expect.arrayContaining(DEFAULT_CHAT_MODELS),
     )
-    expect(settings.chatModelId).toBe('gpt-6.1-sol (plan)')
+    expect(settings.chatModelId).toBe('gpt-6.2-sol (plan)')
     expect(settings.applyModelId).toBe('gpt-6-luna')
     expect(parseSmartComposerSettings(settings)).toEqual(settings)
   })
@@ -151,11 +154,14 @@ describe('Migration from v17 to v18', () => {
         chatModelId: 'gpt-5.2 (plan)',
         applyModelId: apiModel.id,
       })
-      expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
+      expect(settings.chatModels).toHaveLength(
+        // The superseded v25 defaults stay after v26.
+        DEFAULT_CHAT_MODELS.length + 5,
+      )
       expect(settings.chatModels).toEqual(
         expect.arrayContaining(DEFAULT_CHAT_MODELS),
       )
-      expect(settings.chatModelId).toBe('gpt-6.1-sol (plan)')
+      expect(settings.chatModelId).toBe('gpt-6.2-sol (plan)')
       expect(settings.applyModelId).toBe('gpt-6-luna')
     },
   )

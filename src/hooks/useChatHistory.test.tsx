@@ -2,7 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { useApp } from '../contexts/app-context'
 import { ChatManager } from '../database/json/chat/ChatManager'
-import { ChatToolMessage } from '../types/chat'
+import {
+  ChatAssistantMessage,
+  ChatToolMessage,
+  ChatUserMessage,
+} from '../types/chat'
 import { ToolCallResponseStatus as Status } from '../types/tool-call.types'
 
 import { useChatHistory } from './useChatHistory'
@@ -119,6 +123,50 @@ it('does not recreate a chat deleted while its save was pending', async () => {
     await history.deleteConversation('deleted')
     await jest.advanceTimersByTimeAsync(300)
     expect(manager.createChat).not.toHaveBeenCalled()
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+it('round-trips the current file capture and the request start', async () => {
+  jest.useFakeTimers()
+  try {
+    const manager = {
+      findById: jest.fn().mockResolvedValue({ id: 'chat', messages: [] }),
+      updateChat: jest.fn().mockResolvedValue(null),
+      listChats: jest.fn().mockResolvedValue([]),
+    }
+    jest.mocked(useApp).mockReturnValue({} as ReturnType<typeof useApp>)
+    jest
+      .mocked(useChatManager)
+      .mockReturnValue(manager as unknown as ChatManager)
+    let history!: ReturnType<typeof useChatHistory>
+    const Harness = () => {
+      history = useChatHistory()
+      return null
+    }
+    renderToStaticMarkup(<Harness />)
+    const message: ChatUserMessage = {
+      role: 'user',
+      content: null,
+      promptContent: 'prompt',
+      id: 'message',
+      mentionables: [],
+      currentFile: { path: 'note.md', content: 'note' },
+    }
+    const reply: ChatAssistantMessage = {
+      role: 'assistant',
+      content: 'answer',
+      id: 'reply',
+      requestStartId: 'message',
+    }
+    history.createOrUpdateConversation('chat', [message, reply])
+    await jest.advanceTimersByTimeAsync(300)
+    const saved = JSON.parse(
+      JSON.stringify(manager.updateChat.mock.calls[0][1].messages),
+    )
+    manager.findById.mockResolvedValue({ id: 'chat', messages: saved })
+    expect(await history.getChatMessagesById('chat')).toEqual([message, reply])
   } finally {
     jest.useRealTimers()
   }

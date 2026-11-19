@@ -33,26 +33,50 @@ export const DEFAULT_OBSIDIAN_CLI: CliConnection = {
   batchArgumentMode: 'direct',
   cwd: '',
   instructions:
-    'Use help <command> to check syntax. Search with a limit, read relevant notes, and use exact vault-relative path= targets. The current vault is fixed. Verify changes by reading the result; exit code alone is not proof. Do not automatically retry a timed-out write. For content parameters use literal \\n and \\t as documented by Obsidian.',
+    'Controls this Obsidian vault: search, read, create and edit notes, and run Obsidian commands. Use it when a request needs notes outside the conversation or a change in the vault. Run help <command> for syntax.',
   enabled: false,
   timeoutSeconds: 60,
 }
 
+const defaultConnections = () => [{ ...DEFAULT_OBSIDIAN_CLI, args: [] }]
+
+// Keeps what is valid in a broken connection and disables it; null if no
+// valid connection can be built (id, name or command invalid or missing).
+function salvageConnection(raw: unknown): CliConnection | null {
+  const valid = cliConnectionSchema.safeParse(raw)
+  if (valid.success) return valid.data
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  const salvaged: Record<string, unknown> = {}
+  for (const [key, field] of Object.entries(cliConnectionSchema.shape)) {
+    const own = field.safeParse(record[key])
+    const result = own.success ? own : field.safeParse(undefined)
+    if (!result.success) return null
+    salvaged[key] = result.data
+  }
+  const result = cliConnectionSchema.safeParse({ ...salvaged, enabled: false })
+  return result.success ? result.data : null
+}
+
 export const cliSettingsSchema = z
   .object({
-    connections: z.array(cliConnectionSchema).default([DEFAULT_OBSIDIAN_CLI]),
-    maxAutoIterations: z.number().int().min(1).max(50).default(10),
+    connections: z
+      .array(z.unknown())
+      .transform((items) =>
+        items.flatMap((item) => salvageConnection(item) ?? []),
+      )
+      .default(defaultConnections())
+      .catch(defaultConnections),
   })
-  .catch(() => ({
-    connections: [{ ...DEFAULT_OBSIDIAN_CLI, args: [] }],
-    maxAutoIterations: 10,
-  }))
+  .catch(() => ({ connections: defaultConnections() }))
 
 export const cliRequestSchema = z
   .object({
     cliId: z.string(),
     args: z.array(text),
     stdin: text.optional(),
+    // Shown to the user in place of the tool name
+    description: z.string().optional(),
   })
   .strict()
 

@@ -2,17 +2,22 @@ import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
 import {
-  SOL_REASONING_EFFORTS,
-  normalizeModelCompatibility,
+  GEMINI_THINKING_LEVELS,
+  MANUAL_CONTEXT_WINDOW_PROVIDERS,
+  REASONING_EFFORTS,
 } from '../../../../core/llm/modelCompatibility'
 import SmartComposerPlugin from '../../../../main'
 import { ChatModel, chatModelSchema } from '../../../../types/chat-model.types'
 import { ObsidianButton } from '../../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../../common/ObsidianSetting'
-import { ObsidianTextInput } from '../../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../../common/ObsidianToggle'
 import { ReactModal } from '../../../common/ReactModal'
+
+import {
+  ContextWindowSetting,
+  parseContextWindow,
+} from './ContextWindowSetting'
 
 type SettingsComponentProps = {
   model: ChatModel
@@ -56,34 +61,21 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
-        providerType: 'openai'
-      }
-      const requiresReasoning = ['gpt-6-astra', 'gpt-6.1-sol'].includes(
-        model.model,
-      )
-      const efforts: readonly string[] = requiresReasoning
-        ? SOL_REASONING_EFFORTS
-        : ['low', 'medium', 'high']
-      const [reasoningEnabled, setReasoningEnabled] = useState<boolean>(
-        requiresReasoning || (typedModel.reasoning?.enabled ?? false),
-      )
+      const typedModel = model as ChatModel & { providerType: 'openai' }
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        typedModel.reasoning?.reasoning_effort ?? 'medium',
+        (REASONING_EFFORTS as readonly string[]).includes(
+          typedModel.reasoning?.reasoning_effort ?? '',
+        )
+          ? (typedModel.reasoning?.reasoning_effort ?? '')
+          : '',
       )
 
       const handleSubmit = async () => {
-        if (!efforts.includes(reasoningEffort)) {
-          new Notice(`Reasoning effort must be one of: ${efforts.join(', ')}`)
-          return
-        }
-
         const updatedModel = {
           ...typedModel,
-          reasoning: {
-            enabled: reasoningEnabled,
-            reasoning_effort: reasoningEffort,
-          },
+          reasoning: reasoningEffort
+            ? { reasoning_effort: reasoningEffort }
+            : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -105,33 +97,18 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          {!requiresReasoning && (
-            <ObsidianSetting
-              name="Reasoning"
-              desc="Enable reasoning for the model. Available for o-series models (e.g., o3, o4-mini) and GPT-5 models."
-            >
-              <ObsidianToggle
-                value={reasoningEnabled}
-                onChange={(value: boolean) => setReasoningEnabled(value)}
-              />
-            </ObsidianSetting>
-          )}
-          {reasoningEnabled && (
-            <ObsidianSetting
-              name="Reasoning Effort"
-              desc={`Controls how much thinking the model does before responding. Default is "medium".`}
-              className="smtcmp-setting-item--nested"
-              required
-            >
-              <ObsidianDropdown
-                value={reasoningEffort}
-                options={Object.fromEntries(
-                  efforts.map((effort) => [effort, effort]),
-                )}
-                onChange={(value: string) => setReasoningEffort(value)}
-              />
-            </ObsidianSetting>
-          )}
+          <ObsidianSetting name="Reasoning Effort">
+            <ObsidianDropdown
+              value={reasoningEffort}
+              options={{
+                '': 'Not set (OpenAI default)',
+                ...Object.fromEntries(
+                  REASONING_EFFORTS.map((effort) => [effort, effort]),
+                ),
+              }}
+              onChange={(value: string) => setReasoningEffort(value)}
+            />
+          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />
@@ -150,14 +127,13 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
-        providerType: 'openai-plan'
-      }
-      const requiresReasoning = ['gpt-6-astra', 'gpt-6.1-sol'].includes(
-        model.model,
-      )
+      const typedModel = model as ChatModel & { providerType: 'openai-plan' }
       const [reasoningEffort, setReasoningEffort] = useState<string>(
-        typedModel.reasoning?.reasoning_effort ?? '',
+        (REASONING_EFFORTS as readonly string[]).includes(
+          typedModel.reasoning?.reasoning_effort ?? '',
+        )
+          ? (typedModel.reasoning?.reasoning_effort ?? '')
+          : '',
       )
       const [reasoningSummary, setReasoningSummary] = useState<string>(
         typedModel.reasoning?.reasoning_summary ?? '',
@@ -204,12 +180,9 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               value={reasoningEffort}
               options={{
                 '': 'Not set (OpenAI default)',
-                ...(!requiresReasoning && { none: 'none', minimal: 'minimal' }),
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-                xhigh: 'xhigh',
-                ...(requiresReasoning && { max: 'max' }),
+                ...Object.fromEntries(
+                  REASONING_EFFORTS.map((effort) => [effort, effort]),
+                ),
               }}
               onChange={(value: string) => setReasoningEffort(value)}
             />
@@ -246,41 +219,31 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
    * @see https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
    */
   {
-    check: (model) =>
-      model.providerType === 'anthropic' ||
-      model.providerType === 'anthropic-plan',
+    check: (model) => model.providerType === 'anthropic',
     SettingsComponent: (props: SettingsComponentProps) => {
-      const DEFAULT_THINKING_BUDGET_TOKENS = 8192
-
       const { model, plugin, onClose } = props
       const typedModel = model as ChatModel & { providerType: 'anthropic' }
-      const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
-        typedModel.thinking?.enabled ?? false,
+      const [effort, setEffort] = useState<string>(
+        (REASONING_EFFORTS as readonly string[]).includes(
+          typedModel.adaptive_thinking?.effort ?? '',
+        )
+          ? (typedModel.adaptive_thinking?.effort ?? '')
+          : '',
       )
-      const [budgetTokens, setBudgetTokens] = useState(
-        (
-          typedModel.thinking?.budget_tokens ?? DEFAULT_THINKING_BUDGET_TOKENS
-        ).toString(),
+      const [showSummaries, setShowSummaries] = useState<boolean>(
+        typedModel.adaptive_thinking?.show_summaries ?? false,
       )
 
       const handleSubmit = async () => {
-        const parsedTokens = parseInt(budgetTokens, 10)
-        if (isNaN(parsedTokens)) {
-          new Notice('Please enter a valid number')
-          return
-        }
-
-        if (parsedTokens < 1024) {
-          new Notice('Budget tokens must be at least 1024')
-          return
-        }
-
         const updatedModel = {
           ...typedModel,
-          thinking: {
-            enabled: thinkingEnabled,
-            budget_tokens: parsedTokens,
-          },
+          adaptive_thinking:
+            effort || showSummaries
+              ? {
+                  effort: effort || undefined,
+                  show_summaries: showSummaries || undefined,
+                }
+              : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -302,30 +265,24 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          <ObsidianSetting
-            name="Extended Thinking"
-            desc="Enable extended thinking for Claude. Available for Claude Sonnet 3.7+ and Claude Opus 4.0+."
-          >
-            <ObsidianToggle
-              value={thinkingEnabled}
-              onChange={(value: boolean) => setThinkingEnabled(value)}
+          <ObsidianSetting name="Reasoning Effort">
+            <ObsidianDropdown
+              value={effort}
+              options={{
+                '': 'Not set (Anthropic default)',
+                ...Object.fromEntries(
+                  REASONING_EFFORTS.map((value) => [value, value]),
+                ),
+              }}
+              onChange={(value: string) => setEffort(value)}
             />
           </ObsidianSetting>
-          {thinkingEnabled && (
-            <ObsidianSetting
-              name="Budget Tokens"
-              desc="The maximum number of tokens that Claude can use for thinking. Must be at least 1024."
-              className="smtcmp-setting-item--nested"
-              required
-            >
-              <ObsidianTextInput
-                value={budgetTokens}
-                placeholder="Number of tokens"
-                onChange={(value: string) => setBudgetTokens(value)}
-                type="number"
-              />
-            </ObsidianSetting>
-          )}
+          <ObsidianSetting name="Include Thought Summaries">
+            <ObsidianToggle
+              value={showSummaries}
+              onChange={(value: boolean) => setShowSummaries(value)}
+            />
+          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />
@@ -343,56 +300,31 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
    * @see https://ai.google.dev/gemini-api/docs/thinking
    */
   {
-    check: (model) =>
-      model.providerType === 'gemini' || model.providerType === 'gemini-plan',
+    check: (model) => model.providerType === 'gemini',
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const isGemini38Flash = model.model === 'gemini-3.8-flash'
-      const typedModel = normalizeModelCompatibility(model) as ChatModel & {
-        providerType: 'gemini' | 'gemini-plan'
-      }
-      const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
-        typedModel.thinking?.enabled ?? false,
-      )
-      const [controlMode, setControlMode] = useState<'level' | 'budget'>(
-        typedModel.thinking?.control_mode ?? 'level',
-      )
+      const typedModel = model as ChatModel & { providerType: 'gemini' }
       const [thinkingLevel, setThinkingLevel] = useState<string>(
-        String(
-          typedModel.thinking?.thinking_level ??
-            (isGemini38Flash ? 'medium' : 'high'),
-        ),
-      )
-      const [thinkingBudget, setThinkingBudget] = useState<string>(
-        String(typedModel.thinking?.thinking_budget ?? -1),
+        (GEMINI_THINKING_LEVELS as readonly string[]).includes(
+          typedModel.thinking?.thinking_level ?? '',
+        )
+          ? (typedModel.thinking?.thinking_level ?? '')
+          : '',
       )
       const [includeThoughts, setIncludeThoughts] = useState<boolean>(
         Boolean(typedModel.thinking?.include_thoughts ?? false),
       )
 
       const handleSubmit = async () => {
-        let parsedBudget: number | undefined
-        if (controlMode === 'budget') {
-          parsedBudget = parseInt(thinkingBudget, 10)
-          if (isNaN(parsedBudget)) {
-            new Notice('Please enter a valid number for thinking budget')
-            return
-          }
-        }
-
         const updatedModel = {
           ...typedModel,
-          thinking: {
-            enabled: thinkingEnabled,
-            control_mode: controlMode,
-            thinking_level:
-              controlMode === 'level'
-                ? (thinkingLevel as 'minimal' | 'low' | 'medium' | 'high')
-                : undefined,
-            thinking_budget:
-              controlMode === 'budget' ? parsedBudget : undefined,
-            include_thoughts: includeThoughts,
-          },
+          thinking:
+            thinkingLevel || includeThoughts
+              ? {
+                  thinking_level: thinkingLevel || undefined,
+                  include_thoughts: includeThoughts || undefined,
+                }
+              : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -414,81 +346,27 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          <ObsidianSetting
-            name="Thinking Settings"
-            desc="Customize thinking level or budget. When disabled, the model follows its default behavior (dynamic thinking for most Gemini 2.5 and 3 models)."
-          >
-            <ObsidianToggle
-              value={thinkingEnabled}
-              onChange={(value: boolean) => setThinkingEnabled(value)}
+          <ObsidianSetting name="Thinking Level">
+            <ObsidianDropdown
+              value={thinkingLevel}
+              options={{
+                '': 'Not set (Gemini default)',
+                ...Object.fromEntries(
+                  GEMINI_THINKING_LEVELS.map((level) => [level, level]),
+                ),
+              }}
+              onChange={(value: string) => setThinkingLevel(value)}
             />
           </ObsidianSetting>
-          {thinkingEnabled && (
-            <>
-              <ObsidianSetting
-                name="Control Mode"
-                desc="Use 'Level' for Gemini 3 models, 'Budget' for Gemini 2.5 models."
-                className="smtcmp-setting-item--nested"
-              >
-                <ObsidianDropdown
-                  value={controlMode}
-                  options={{
-                    level: 'Level (Gemini 3)',
-                    ...(!isGemini38Flash && { budget: 'Budget (Gemini 2.5)' }),
-                  }}
-                  onChange={(value: string) =>
-                    setControlMode(value as 'level' | 'budget')
-                  }
-                />
-              </ObsidianSetting>
-              {controlMode === 'level' && (
-                <ObsidianSetting
-                  name="Thinking Level"
-                  desc={
-                    isGemini38Flash
-                      ? "Controls reasoning depth. 'medium' is default for Gemini 3.8 Flash."
-                      : "Controls reasoning depth. 'high' is default for Gemini 3."
-                  }
-                  className="smtcmp-setting-item--nested"
-                >
-                  <ObsidianDropdown
-                    value={thinkingLevel}
-                    options={{
-                      ...(!isGemini38Flash && { minimal: 'minimal' }),
-                      low: 'low',
-                      medium: 'medium',
-                      high: 'high',
-                    }}
-                    onChange={(value: string) => setThinkingLevel(value)}
-                  />
-                </ObsidianSetting>
-              )}
-              {controlMode === 'budget' && (
-                <ObsidianSetting
-                  name="Thinking Budget"
-                  desc="Token budget for thinking. Use -1 for dynamic, 0 to disable."
-                  className="smtcmp-setting-item--nested"
-                >
-                  <ObsidianTextInput
-                    value={thinkingBudget}
-                    placeholder="-1 for dynamic"
-                    onChange={(value: string) => setThinkingBudget(value)}
-                    type="number"
-                  />
-                </ObsidianSetting>
-              )}
-              <ObsidianSetting
-                name="Include Thought Summaries"
-                desc="Shows a summary of the model's reasoning process. Enabling this can increase token usage."
-                className="smtcmp-setting-item--nested"
-              >
-                <ObsidianToggle
-                  value={includeThoughts}
-                  onChange={(value: boolean) => setIncludeThoughts(value)}
-                />
-              </ObsidianSetting>
-            </>
-          )}
+          <ObsidianSetting
+            name="Include Thought Summaries"
+            desc="Shows a summary of the model's reasoning process. Enabling this can increase token usage."
+          >
+            <ObsidianToggle
+              value={includeThoughts}
+              onChange={(value: boolean) => setIncludeThoughts(value)}
+            />
+          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />
@@ -499,23 +377,37 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
     },
   },
 
-  // Perplexity settings
+  // Settings of providers whose API does not report a context window
   {
     check: (model) =>
-      model.providerType === 'perplexity' &&
-      [
-        'sonar',
-        'sonar-pro',
-        'sonar-deep-research',
-        'sonar-reasoning',
-        'sonar-reasoning-pro',
-      ].includes(model.model),
+      MANUAL_CONTEXT_WINDOW_PROVIDERS.includes(model.providerType),
 
     SettingsComponent: (props: SettingsComponentProps) => {
       const { model, plugin, onClose } = props
-      const typedModel = model as ChatModel & { providerType: 'perplexity' }
+      const typedModel = model as ChatModel & {
+        providerType:
+          | 'perplexity'
+          | 'ollama'
+          | 'lm-studio'
+          | 'azure-openai'
+          | 'openai-compatible'
+      }
+      const hasSearchContext =
+        typedModel.providerType === 'perplexity' &&
+        [
+          'sonar',
+          'sonar-pro',
+          'sonar-deep-research',
+          'sonar-reasoning',
+          'sonar-reasoning-pro',
+        ].includes(typedModel.model)
       const [searchContextSize, setSearchContextSize] = useState(
-        typedModel.web_search_options?.search_context_size ?? 'low',
+        (typedModel.providerType === 'perplexity'
+          ? typedModel.web_search_options?.search_context_size
+          : undefined) ?? 'low',
+      )
+      const [contextWindow, setContextWindow] = useState(
+        String(typedModel.contextWindow ?? ''),
       )
 
       const handleSubmit = async () => {
@@ -525,14 +417,32 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           )
           return
         }
+        const parsedContextWindow = parseContextWindow(contextWindow)
+        if (contextWindow !== '' && !parsedContextWindow) {
+          new Notice('Context window must be a positive integer')
+          return
+        }
 
         const updatedModel = {
           ...typedModel,
-          web_search_options: {
-            ...typedModel.web_search_options,
-            search_context_size: searchContextSize,
-          },
+          ...(typedModel.providerType === 'perplexity' &&
+            hasSearchContext && {
+              web_search_options: {
+                ...typedModel.web_search_options,
+                search_context_size: searchContextSize,
+              },
+            }),
+          contextWindow: parsedContextWindow,
         }
+
+        const validationResult = chatModelSchema.safeParse(updatedModel)
+        if (!validationResult.success) {
+          new Notice(
+            validationResult.error.issues.map((v) => v.message).join('\n'),
+          )
+          return
+        }
+
         await plugin.setSettings((current) => ({
           ...current,
           chatModels: current.chatModels.map((m) =>
@@ -544,20 +454,27 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
 
       return (
         <>
-          <ObsidianSetting
-            name="Search Context Size"
-            desc={`Determines how much search context is retrieved for the model. Choose "low" for minimal context and lower costs, "medium" for a balanced approach, or "high" for maximum context at higher cost. Default is "low".`}
-          >
-            <ObsidianDropdown
-              value={searchContextSize}
-              options={{
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-              }}
-              onChange={(value: string) => setSearchContextSize(value)}
-            />
-          </ObsidianSetting>
+          {hasSearchContext && (
+            <ObsidianSetting
+              name="Search Context Size"
+              desc={`Determines how much search context is retrieved for the model. Choose "low" for minimal context and lower costs, "medium" for a balanced approach, or "high" for maximum context at higher cost. Default is "low".`}
+            >
+              <ObsidianDropdown
+                value={searchContextSize}
+                options={{
+                  low: 'low',
+                  medium: 'medium',
+                  high: 'high',
+                }}
+                onChange={(value: string) => setSearchContextSize(value)}
+              />
+            </ObsidianSetting>
+          )}
+
+          <ContextWindowSetting
+            value={contextWindow}
+            onChange={setContextWindow}
+          />
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />

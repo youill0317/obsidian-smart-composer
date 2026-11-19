@@ -43,6 +43,11 @@ export class CliManager {
           type: 'object',
           properties: {
             cliId: { type: 'string', enum: connections.map((c) => c.id) },
+            description: {
+              type: 'string',
+              description:
+                "One short sentence in the user's language saying what this command does.",
+            },
             args: { type: 'array', items: { type: 'string' } },
             stdin: {
               type: 'string',
@@ -50,7 +55,7 @@ export class CliManager {
                 'Optional input, closed after writing. No interactive terminal.',
             },
           },
-          required: ['cliId', 'args'],
+          required: ['cliId', 'description', 'args'],
           additionalProperties: false,
         },
       },
@@ -237,7 +242,7 @@ export class CliManager {
         }
       }
     }
-    // ponytail: one queue for all CLIs; per-connection queues if measured latency warrants it.
+    // One queue for all CLIs; per-connection queues if measured latency warrants it.
     const promise = this.queue.then(work, work).finally(() => {
       signal?.removeEventListener('abort', abort)
       this.active.delete(id)

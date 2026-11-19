@@ -9,6 +9,7 @@ const oauth = {
   refreshToken: 'test-refresh-secret',
   expiresAt: 1000,
 }
+const planOauth = { ...oauth, idToken: 'id', scopes: [] }
 const secretId = 'smart-composer-12345678-1234-1234-1234-123456789012'
 
 function fixture(providers: LLMProvider[], available = true) {
@@ -44,41 +45,31 @@ function fixture(providers: LLMProvider[], available = true) {
 }
 
 describe('Keychain credential settings', () => {
-  it.each(['anthropic-plan', 'gemini-plan'] as const)(
-    'migrates and reloads API and %s credentials without plaintext copies',
-    async (type) => {
-      const auth = {
-        ...oauth,
-        accountId: 'account',
-        projectId: 'project',
-        managedProjectId: 'managed',
-        email: 'test@example.com',
-      }
-      const f = fixture([api, { id: type, type, oauth: auth }])
-      const store = f.createStore()
-      await store.load(f.disk())
-      expect(store.settings.version).toBe(SETTINGS_SCHEMA_VERSION)
-      expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
-      expect(store.getStatus(api.id).label).toBe('Keychain')
-      const disk = JSON.stringify(f.disk())
-      for (const secret of [api.apiKey, oauth.accessToken, oauth.refreshToken])
-        expect(disk).not.toContain(secret)
-      expect(disk).not.toContain('"oauth"')
-      expect(f.secrets.size).toBe(2)
-      const reloaded = f.createStore()
-      await reloaded.load(f.disk())
-      expect(reloaded.settings).toEqual(store.settings)
-      expect(f.secrets.size).toBe(2)
-      const restored = reloaded.settings.providers[1]
-      if (restored.type === 'gemini-plan')
-        expect(restored.oauth).toEqual({
-          ...oauth,
-          projectId: 'project',
-          managedProjectId: 'managed',
-          email: 'test@example.com',
-        })
-    },
-  )
+  it('migrates and reloads API and subscription credentials without plaintext copies', async () => {
+    const f = fixture([
+      api,
+      { id: 'openai-plan', type: 'openai-plan', oauth: planOauth },
+    ])
+    const store = f.createStore()
+    await store.load({
+      ...(f.disk() as object),
+      version: SETTINGS_SCHEMA_VERSION,
+    })
+    expect(store.settings.version).toBe(SETTINGS_SCHEMA_VERSION)
+    expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
+    expect(store.getStatus(api.id).label).toBe('Keychain')
+    const disk = JSON.stringify(f.disk())
+    for (const secret of [api.apiKey, oauth.accessToken, oauth.refreshToken])
+      expect(disk).not.toContain(secret)
+    expect(disk).not.toContain('"oauth"')
+    expect(f.secrets.size).toBe(2)
+    const reloaded = f.createStore()
+    await reloaded.load(f.disk())
+    expect(reloaded.settings).toEqual(store.settings)
+    expect(f.secrets.size).toBe(2)
+    const restored = reloaded.settings.providers[1]
+    expect(restored.type === 'openai-plan' && restored.oauth).toEqual(planOauth)
+  })
 
   it('keeps legacy storage when the API is unavailable and warns once per provider', async () => {
     const f = fixture([api], false),
@@ -205,16 +196,19 @@ describe('Keychain credential settings', () => {
   })
 
   it('serializes functional changes without losing a rotated token or general settings', async () => {
-    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth: planOauth }]),
       store = f.createStore()
-    await store.load(f.disk())
+    await store.load({
+      ...(f.disk() as object),
+      version: SETTINGS_SCHEMA_VERSION,
+    })
     await Promise.all([
       store.update((s) => ({ ...s, systemPrompt: 'keep this' })),
       store.update((s) => ({
         ...s,
         providers: s.providers.map((p) =>
-          p.type === 'anthropic-plan'
-            ? { ...p, oauth: { ...oauth, refreshToken: 'rotated-secret' } }
+          p.type === 'openai-plan'
+            ? { ...p, oauth: { ...planOauth, refreshToken: 'rotated-secret' } }
             : p,
         ),
       })),
@@ -227,18 +221,21 @@ describe('Keychain credential settings', () => {
   })
 
   it('retains rotated credentials for retry after the settings file write fails', async () => {
-    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth: planOauth }]),
       store = f.createStore()
-    await store.load(f.disk())
+    await store.load({
+      ...(f.disk() as object),
+      version: SETTINGS_SCHEMA_VERSION,
+    })
     f.save.mockRejectedValueOnce(new Error('disk full'))
     await expect(
       store.update((s) => ({
         ...s,
         providers: s.providers.map((p) =>
-          p.type === 'anthropic-plan'
+          p.type === 'openai-plan'
             ? {
                 ...p,
-                oauth: { ...oauth, refreshToken: 'rotated-after-failure' },
+                oauth: { ...planOauth, refreshToken: 'rotated-after-failure' },
               }
             : p,
         ),
@@ -252,15 +249,18 @@ describe('Keychain credential settings', () => {
   })
 
   it('clears explicitly disconnected credentials without touching other secrets', async () => {
-    const f = fixture([{ id: 'plan', type: 'anthropic-plan', oauth }]),
+    const f = fixture([{ id: 'plan', type: 'openai-plan', oauth: planOauth }]),
       store = f.createStore()
     f.secrets.set('another-plugin', 'untouched')
-    await store.load(f.disk())
+    await store.load({
+      ...(f.disk() as object),
+      version: SETTINGS_SCHEMA_VERSION,
+    })
     const id = store.settings.providers[0].credentialsSecretId
     if (!id) throw new Error('Missing test credential reference')
     await store.update((s) => ({
       ...s,
-      providers: [{ id: 'plan', type: 'anthropic-plan' }],
+      providers: [{ id: 'plan', type: 'openai-plan' }],
     }))
     expect(f.secrets.get(id)).toBe('')
     expect(f.secrets.get('another-plugin')).toBe('untouched')
@@ -281,10 +281,43 @@ describe('Keychain credential settings', () => {
     expect(store.settings.providers[0].credentialsSecretId).toBeUndefined()
   })
 
+  it('clears removed Claude and Gemini plan secrets after migration drops them', async () => {
+    const claudeId = 'smart-composer-anthropic-plan'
+    const geminiId = 'smart-composer-gemini-plan'
+    const f = fixture([
+      { id: api.id, type: api.type, credentialsSecretId: secretId },
+    ])
+    f.secrets.set(secretId, JSON.stringify({ apiKey: api.apiKey }))
+    f.secrets.set(claudeId, JSON.stringify({ oauth }))
+    f.secrets.set(geminiId, JSON.stringify({ oauth }))
+    const store = f.createStore()
+    await store.load({
+      version: 24,
+      providers: [
+        {
+          id: 'anthropic-plan',
+          type: 'anthropic-plan',
+          credentialsSecretId: claudeId,
+        },
+        {
+          id: 'gemini-plan',
+          type: 'gemini-plan',
+          credentialsSecretId: geminiId,
+        },
+        { id: api.id, type: api.type, credentialsSecretId: secretId },
+      ],
+    })
+    expect(f.secrets.get(claudeId)).toBe('')
+    expect(f.secrets.get(geminiId)).toBe('')
+    expect(store.settings.providers.map((p) => p.id)).toEqual([api.id])
+    expect(store.settings.providers[0].apiKey).toBe(api.apiKey)
+    expect(f.secrets.get('smart-composer-openai')).toBe(api.apiKey)
+  })
+
   it('stores API keys as is and subscriptions as JSON under the provider ID', async () => {
     const f = fixture([
       api,
-      { id: 'anthropic-plan', type: 'anthropic-plan', oauth },
+      { id: 'openai-plan', type: 'openai-plan', oauth: planOauth },
       {
         id: 'My Provider',
         type: 'openai-compatible',
@@ -299,12 +332,15 @@ describe('Keychain credential settings', () => {
       },
     ])
     const store = f.createStore()
-    await store.load(f.disk())
+    await store.load({
+      ...(f.disk() as object),
+      version: SETTINGS_SCHEMA_VERSION,
+    })
     expect(f.secrets.get('smart-composer-openai')).toBe(api.apiKey)
     expect(
-      JSON.parse(f.secrets.get('smart-composer-anthropic-plan') ?? ''),
+      JSON.parse(f.secrets.get('smart-composer-openai-plan') ?? ''),
     ).toEqual({
-      oauth,
+      oauth: planOauth,
     })
     expect(f.secrets.get('smart-composer-my-provider')).toBe('a')
     expect(f.secrets.get('smart-composer-my-provider-2')).toBe('b')

@@ -1,105 +1,56 @@
 import { ChatModel } from '../../types/chat-model.types'
 
-import { GeminiProvider } from './gemini'
-import { normalizeModelCompatibility } from './modelCompatibility'
+import {
+  getClientHistoryLimit,
+  needsContextWindowLookup,
+} from './modelCompatibility'
 
-describe('normalizeModelCompatibility', () => {
-  it.each(['gemini', 'gemini-plan'] as const)(
-    'uses valid Gemini 3.8 Flash thinking on %s without changing saved settings',
-    (providerType) => {
-      const model = {
-        providerType,
-        providerId: providerType,
-        id: 'custom-flash',
-        model: 'gemini-3.8-flash',
-        thinking: {
-          enabled: true,
-          control_mode: 'budget' as const,
-          thinking_budget: 1024,
-          include_thoughts: true,
-        },
-      }
-      const normalized = normalizeModelCompatibility(model) as typeof model
-      expect(GeminiProvider.buildThinkingConfig(normalized)).toEqual({
-        thinkingLevel: 'MEDIUM',
-        includeThoughts: true,
-      })
-      expect(model.thinking).toEqual({
-        enabled: true,
-        control_mode: 'budget',
-        thinking_budget: 1024,
-        include_thoughts: true,
-      })
-      for (const level of ['minimal', 'low', 'medium', 'high'] as const) {
-        const withLevel = {
-          ...model,
-          thinking: { ...model.thinking, thinking_level: level },
-        }
-        expect(normalizeModelCompatibility(withLevel)).toHaveProperty(
-          'thinking.thinking_level',
-          level === 'minimal' ? 'low' : level,
-        )
-      }
-      const disabled = {
-        ...model,
-        thinking: { ...model.thinking, enabled: false },
-      }
-      expect(
-        GeminiProvider.buildThinkingConfig(
-          normalizeModelCompatibility(disabled) as typeof disabled,
-        ),
-      ).toBeUndefined()
-      const previous = { ...model, model: 'gemini-3-flash-preview' }
-      expect(normalizeModelCompatibility(previous)).toBe(previous)
-      const defaultModel = { ...model, thinking: undefined }
-      expect(normalizeModelCompatibility(defaultModel)).toBe(defaultModel)
-    },
-  )
-  it.each(['openai', 'openai-plan'] as const)(
-    'maps unsupported Sol efforts without changing saved %s settings',
-    (providerType) => {
-      for (const effort of ['none', 'minimal']) {
-        const model = {
-          providerType,
-          providerId: providerType,
-          id: 'custom-sol',
-          model: 'gpt-6.1-sol',
-          reasoning: { enabled: true, reasoning_effort: effort },
-        } as ChatModel
-        expect(normalizeModelCompatibility(model)).toHaveProperty(
-          'reasoning.reasoning_effort',
-          'low',
-        )
-        expect(model).toHaveProperty('reasoning.reasoning_effort', effort)
-        const legacyModel = { ...model, model: 'gpt-5.2' }
-        expect(normalizeModelCompatibility(legacyModel)).toBe(legacyModel)
-      }
-    },
-  )
-  it.each(['anthropic', 'anthropic-plan'] as const)(
-    'removes legacy thinking budgets from Opus 5.5 on %s',
-    (providerType) => {
-      const model = {
-        providerType,
-        providerId: providerType,
-        id: `claude-opus-5-5-${providerType}`,
-        model: 'claude-opus-5-5',
-        thinking: { enabled: true, budget_tokens: 8192 },
-      } as ChatModel
-      const normalized = normalizeModelCompatibility(model)
-      expect('thinking' in normalized && normalized.thinking).toBeUndefined()
-      expect(model).toHaveProperty('thinking.budget_tokens', 8192)
+const chatModel = (providerType: string, model: string) =>
+  ({ providerType, providerId: providerType, id: model, model }) as ChatModel
+
+describe('getClientHistoryLimit', () => {
+  it.each(['gpt-6.2-sol', 'any-other-model'])(
+    'leaves %s to Responses API compaction',
+    (model) => {
+      expect(getClientHistoryLimit(chatModel('openai', model))).toBeNull()
     },
   )
 
-  it('keeps legacy thinking for models that still use it', () => {
-    const model = {
-      providerType: 'anthropic',
-      providerId: 'anthropic',
-      id: 'claude-opus-4.5',
-      model: 'claude-opus-4-5',
-      thinking: { enabled: true, budget_tokens: 8192 },
-    } as ChatModel
-    expect(normalizeModelCompatibility(model)).toBe(model)
+  it('leaves every Claude model to server-side compaction', () => {
+    expect(
+      getClientHistoryLimit(chatModel('anthropic', 'claude-opus-6')),
+    ).toBeNull()
+  })
+
+  it('trims at the default window for models without compaction', () => {
+    expect(getClientHistoryLimit(chatModel('mistral', 'any'))).toEqual({
+      limit: 272_000,
+      target: 190_400,
+    })
+  })
+
+  it('uses the window the provider reported for models outside the table', () => {
+    const added = chatModel('gemini', 'gemini-4-argon')
+    expect(needsContextWindowLookup(added)).toBe(true)
+    expect(getClientHistoryLimit(added, 2_000_000)).toEqual({
+      limit: 2_000_000,
+      target: 1_400_000,
+    })
+  })
+
+  it('uses the window entered for providers without a models API', () => {
+    const local = chatModel('ollama', 'local')
+    expect(needsContextWindowLookup(local)).toBe(true)
+    expect(getClientHistoryLimit(local, 32_768)).toEqual({
+      limit: 32_768,
+      target: 32_768 * 0.7,
+    })
+  })
+
+  it('skips the lookup for table models and for provider compaction', () => {
+    const carbon = chatModel('gemini', 'gemini-4-carbon')
+    expect(needsContextWindowLookup(carbon)).toBe(false)
+    expect(getClientHistoryLimit(carbon, 5)?.limit).toBe(1_048_576)
+    expect(needsContextWindowLookup(chatModel('openai', 'any'))).toBe(false)
   })
 })

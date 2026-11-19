@@ -2,6 +2,7 @@ import { App, Notice } from 'obsidian'
 import { useState } from 'react'
 
 import { DEFAULT_PROVIDERS, PROVIDER_TYPES_INFO } from '../../../constants'
+import { MANUAL_CONTEXT_WINDOW_PROVIDERS } from '../../../core/llm/modelCompatibility'
 import SmartComposerPlugin from '../../../main'
 import { ChatModel, chatModelSchema } from '../../../types/chat-model.types'
 import { PromptLevel } from '../../../types/prompt-level.types'
@@ -10,6 +11,10 @@ import { ObsidianDropdown } from '../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../common/ObsidianSetting'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ReactModal } from '../../common/ReactModal'
+import {
+  ContextWindowSetting,
+  parseContextWindow,
+} from '../sections/models/ContextWindowSetting'
 
 type AddChatModelModalComponentProps = {
   plugin: SmartComposerPlugin
@@ -40,6 +45,10 @@ function AddChatModelModalComponent({
     model: '',
     promptLevel: PromptLevel.Default,
   })
+  const [contextWindow, setContextWindow] = useState('')
+  const entersContextWindow = MANUAL_CONTEXT_WINDOW_PROVIDERS.includes(
+    formData.providerType,
+  )
 
   const handleSubmit = async () => {
     if (plugin.settings.chatModels.some((p) => p.id === formData.id)) {
@@ -56,7 +65,17 @@ function AddChatModelModalComponent({
       return
     }
 
-    const validationResult = chatModelSchema.safeParse(formData)
+    const parsedContextWindow = parseContextWindow(contextWindow)
+    if (entersContextWindow && !parsedContextWindow) {
+      new Notice('Context window must be a positive integer')
+      return
+    }
+
+    const validationResult = chatModelSchema.safeParse(
+      entersContextWindow
+        ? { ...formData, contextWindow: parsedContextWindow }
+        : formData,
+    )
     if (!validationResult.success) {
       new Notice(validationResult.error.issues.map((v) => v.message).join('\n'))
       return
@@ -64,7 +83,7 @@ function AddChatModelModalComponent({
 
     await plugin.setSettings((current) => ({
       ...current,
-      chatModels: [...current.chatModels, formData],
+      chatModels: [...current.chatModels, validationResult.data],
     }))
 
     onClose()
@@ -126,6 +145,14 @@ function AddChatModelModalComponent({
           }
         />
       </ObsidianSetting>
+
+      {entersContextWindow && (
+        <ContextWindowSetting
+          value={contextWindow}
+          onChange={setContextWindow}
+          required
+        />
+      )}
 
       <ObsidianSetting
         name="Prompt Level"

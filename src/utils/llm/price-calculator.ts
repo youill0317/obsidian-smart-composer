@@ -63,19 +63,18 @@ export const calculateLLMCost = ({
         )
       : usage.completion_tokens
 
-  // Only Anthropic reports cache tokens: reads cost 0.1x and 5-minute writes
-  // 1.25x the input price.
+  // prompt_tokens includes the cached tokens. Without listed cache rates,
+  // reads cost 0.1x and writes 1.25x the input price.
   const cacheRead = usage.cache_read_tokens ?? 0
   const cacheWrite = usage.cache_write_tokens ?? 0
-  const promptTokens =
-    usage.prompt_tokens -
-    cacheRead -
-    cacheWrite +
-    cacheRead * 0.1 +
-    cacheWrite * 1.25
+  const uncachedTokens = usage.prompt_tokens - cacheRead - cacheWrite
+  const cachedInputPrice = modelPricing.cachedInput ?? modelPricing.input * 0.1
+  const cacheWritePrice = modelPricing.cacheWrite ?? modelPricing.input * 1.25
 
   return (
-    (promptTokens * modelPricing.input +
+    (uncachedTokens * modelPricing.input +
+      cacheRead * cachedInputPrice +
+      cacheWrite * cacheWritePrice +
       completionTokens * modelPricing.output) /
     1_000_000
   )
