@@ -1,5 +1,6 @@
 import { parseSmartComposerSettings } from '../settings'
 
+import { CHAT_MODELS_ADDED_IN_V22 } from './21_to_22'
 import { migrateFrom24To25 } from './24_to_25'
 import { CHAT_MODELS_ADDED_IN_V26 } from './25_to_26'
 
@@ -115,6 +116,18 @@ describe('migrateFrom24To25', () => {
     })
     expect(next.chatModelId).toBe('my-model')
     expect(next.applyModelId).toBe('my-model')
+  })
+
+  it('does not fall back to a plan model', () => {
+    const next = migrateFrom24To25({
+      version: 24,
+      chatModels: CHAT_MODELS_ADDED_IN_V22.filter(
+        (model) => model.id !== 'gpt-6-luna',
+      ),
+      chatModelId: 'claude-opus-5-5',
+      applyModelId: 'claude-opus-5-5 (plan)',
+    })
+    expect(next.applyModelId).toBe('gpt-6.1-sol')
   })
 
   it('only bumps the version when nothing was removed', () => {

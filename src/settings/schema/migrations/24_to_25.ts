@@ -39,10 +39,14 @@ export const migrateFrom24To25: SettingMigration['migrate'] = (data) => {
       typeof id === 'string' && retained.some((model) => model?.id === id)
     for (const key of selections) {
       if (!removedIds.includes(data[key]) || hasModel(data[key])) continue
-      // Prefer the default if it still exists, then any remaining model.
+      // Prefer the default if it still exists, then any remaining model that
+      // is not a plan model.
       newData[key] =
-        [FALLBACK_MODEL_IDS[key], retained[0]?.id].find(hasModel) ??
-        FALLBACK_MODEL_IDS[key]
+        [
+          FALLBACK_MODEL_IDS[key],
+          retained.find((model) => model?.providerType !== 'openai-plan')?.id,
+          retained[0]?.id,
+        ].find(hasModel) ?? FALLBACK_MODEL_IDS[key]
     }
   }
   return newData
