@@ -1,4 +1,5 @@
 import { CredentialSettingsStore } from '../../settings/credentialSettingsStore'
+import { SETTINGS_SCHEMA_VERSION } from '../../settings/schema/migrations'
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
 import { LLMProvider } from '../../types/provider.types'
 
@@ -12,23 +13,19 @@ jest.mock('./openaiCodexProvider', () => ({
     .fn()
     .mockImplementation((provider, onUpdate) => ({ provider, onUpdate })),
 }))
-jest.mock('./anthropicClaudeCodeProvider', () => ({
-  AnthropicClaudeCodeProvider: jest
-    .fn()
-    .mockImplementation((provider, onUpdate) => ({ provider, onUpdate })),
-}))
-jest.mock('./geminiPlanProvider', () => ({
-  GeminiPlanProvider: jest
-    .fn()
-    .mockImplementation((provider, onUpdate) => ({ provider, onUpdate })),
-}))
 
-type PlanType = 'openai-plan' | 'anthropic-plan' | 'gemini-plan'
+type PlanType = 'openai-plan'
 type Client = {
   provider: Extract<LLMProvider, { type: PlanType }>
   onUpdate: (id: string, update: Partial<LLMProvider>) => Promise<void>
 }
-const oauth = { accessToken: 'access', refreshToken: 'refresh', expiresAt: 1 }
+const oauth = {
+  accessToken: 'access',
+  refreshToken: 'refresh',
+  expiresAt: 1,
+  idToken: 'id',
+  scopes: [],
+}
 
 async function setup(type: PlanType) {
   const values = new Map<string, string>()
@@ -45,7 +42,10 @@ async function setup(type: PlanType) {
     },
     () => {},
   )
-  await store.load({ version: 18, providers: [{ id: 'plan', type, oauth }] })
+  await store.load({
+    version: SETTINGS_SCHEMA_VERSION,
+    providers: [{ id: 'plan', type, oauth }],
+  })
   const client = getProviderClient({
     providerId: 'plan',
     settings: store.settings,
@@ -55,7 +55,7 @@ async function setup(type: PlanType) {
 }
 
 describe('OAuth credential updates', () => {
-  it.each(['anthropic-plan', 'gemini-plan'] as const)(
+  it.each(['openai-plan'] as const)(
     '%s updates Keychain through the shared settings path without mutating a snapshot',
     async (type) => {
       const { client, store, values, disk } = await setup(type)
@@ -83,7 +83,7 @@ describe('OAuth credential updates', () => {
   it.each(['disconnect', 'reconnect', 'delete', 'reset'] as const)(
     'rejects a late token update after %s',
     async (action) => {
-      const { client, store, disk } = await setup('anthropic-plan')
+      const { client, store, disk } = await setup('openai-plan')
       await store.update((s) => ({
         ...s,
         providers:
@@ -92,7 +92,7 @@ describe('OAuth credential updates', () => {
             : [
                 {
                   id: 'plan',
-                  type: 'anthropic-plan',
+                  type: 'openai-plan',
                   ...(action === 'reconnect'
                     ? { oauth: { ...oauth, refreshToken: 'new-login' } }
                     : {}),
@@ -108,7 +108,7 @@ describe('OAuth credential updates', () => {
   )
 
   it('lets a stale client adopt tokens another client saved, then refresh', async () => {
-    const { client: saver, store } = await setup('anthropic-plan')
+    const { client: saver, store } = await setup('openai-plan')
     const stale = getProviderClient({
       providerId: 'plan',
       settings: store.settings,
