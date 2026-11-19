@@ -491,6 +491,27 @@ describe('xAI compaction', () => {
     ])
   })
 
+  it('splits a long first turn before its latest round despite custom instructions', async () => {
+    const fetchMock = mockFetch()
+    const secondCall = { ...toolCall, id: 'call-2' }
+    await newProvider().generateResponse(
+      model,
+      request([
+        system,
+        { role: 'user', content: 'Custom instructions' },
+        { role: 'user', content: 'Read everything' },
+        { ...reported(510_000, ''), tool_calls: [toolCall] },
+        { role: 'tool', tool_call: toolCall, content: 'first' },
+        { role: 'assistant', content: '', tool_calls: [secondCall] },
+        { role: 'tool', tool_call: secondCall, content: 'second' },
+      ]),
+    )
+    expect(
+      bodyOf(callsTo(fetchMock, '/responses/compact')[0]).input,
+    ).toHaveLength(6)
+    expect(bodyOf(callsTo(fetchMock, '/responses')[0]).input).toHaveLength(4)
+  })
+
   it('replays the stored item in place of the messages it replaced', async () => {
     const fetchMock = mockFetch()
     await newProvider().generateResponse(

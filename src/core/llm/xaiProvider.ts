@@ -183,7 +183,7 @@ export class XaiProvider extends BaseLLMProvider<
     if (estimateContextTokens(system, tail) < contextWindow) {
       return uncompacted
     }
-    const split = findCompactionSplit(tail)
+    const split = findCompactionSplit(tail, contextWindow)
     if (split <= 0) {
       return uncompacted
     }
@@ -276,12 +276,25 @@ function replayCompaction(conversation: RequestMessage[]): {
 }
 
 // Compacts what precedes the latest user message, which is then sent as it
-// is. A tool run longer than that is split before its latest round.
-function findCompactionSplit(tail: RequestMessage[]): number {
+// is. When no earlier turn precedes it, or the turn alone still fills the
+// window, the tool run is split before its latest round.
+function findCompactionSplit(
+  tail: RequestMessage[],
+  contextWindow: number,
+): number {
   let lastToolRound = -1
   for (let i = tail.length - 1; i > 0; i--) {
     const message = tail[i]
-    if (message.role === 'user') return i
+    if (message.role === 'user') {
+      const followsTurn = tail.slice(0, i).some((m) => m.role === 'assistant')
+      if (
+        followsTurn &&
+        (lastToolRound < 0 || estimateTokens(tail.slice(i)) < contextWindow)
+      ) {
+        return i
+      }
+      break
+    }
     if (
       lastToolRound < 0 &&
       message.role === 'assistant' &&
