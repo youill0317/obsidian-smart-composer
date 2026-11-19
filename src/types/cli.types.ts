@@ -33,7 +33,7 @@ export const DEFAULT_OBSIDIAN_CLI: CliConnection = {
   batchArgumentMode: 'direct',
   cwd: '',
   instructions:
-    'Use help <command> to check syntax. Search with a limit, read relevant notes, and use exact vault-relative path= targets. The current vault is fixed. Verify changes by reading the result; exit code alone is not proof. Do not automatically retry a timed-out write. For content parameters use literal \\n and \\t as documented by Obsidian.',
+    'Controls this Obsidian vault: search, read, create and edit notes, and run Obsidian commands. Use it when a request needs notes outside the conversation or a change in the vault. Run help <command> for syntax.',
   enabled: false,
   timeoutSeconds: 60,
 }
