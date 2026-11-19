@@ -102,13 +102,13 @@ it('accepts empty success, preserves failure and limits output while draining', 
   expect(failed.stderr).toContain('failure')
   const large = await runCli(
     execution(
-      'process.stdout.write("x".repeat(200000));process.stderr.write("y".repeat(200000))',
+      'process.stdout.write("x".repeat(2000000));process.stderr.write("y".repeat(2000000))',
     ),
     new AbortController().signal,
   )
   expect(large.exitCode).toBe(0)
-  expect(large.stdout.length).toBe(65536)
-  expect(large.stderr.length).toBe(65536)
+  expect(large.stdout.length).toBe(1024 * 1024)
+  expect(large.stderr.length).toBe(1024 * 1024)
   expect(large.truncated).toBe(true)
 })
 
