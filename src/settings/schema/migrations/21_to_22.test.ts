@@ -6,6 +6,8 @@ import { parseSmartComposerSettings } from '../settings'
 
 import { CHAT_MODELS_ADDED_IN_V18 } from './17_to_18'
 import { migrateFrom21To22 } from './21_to_22'
+import { migrateFrom24To25 } from './24_to_25'
+import { migrateFrom25To26 } from './25_to_26'
 
 import { SETTINGS_SCHEMA_VERSION } from '.'
 
@@ -21,10 +23,11 @@ const oldModels = CHAT_MODELS_ADDED_IN_V18.filter(
 )
 
 it.each([
-  ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'],
-  ['gpt-6-astra (plan)', 'gpt-6.1-sol (plan)', 'gpt-6-luna (plan)'],
+  ['gpt-6-astra', 'gpt-6.2-sol', 'gpt-6-luna'],
+  ['gpt-6-astra (plan)', 'gpt-6.2-sol (plan)', 'gpt-6-luna (plan)'],
   ['claude-opus-5', 'claude-opus-5-5', 'claude-opus-5-5'],
-  ['claude-opus-5 (plan)', 'claude-opus-5-5 (plan)', 'claude-opus-5-5 (plan)'],
+  // The Claude plan was removed in v25.
+  ['claude-opus-5 (plan)', 'claude-opus-5-5', 'gpt-6-luna'],
   ['grok-4.6', 'grok-4.7', 'grok-4.7'],
 ])('replaces %s and preserves authentication paths', (old, chat, apply) => {
   const initial = {
@@ -41,7 +44,10 @@ it.each([
   const before = JSON.stringify(initial)
   const settings = parseSmartComposerSettings(initial)
   expect(settings.version).toBe(SETTINGS_SCHEMA_VERSION)
-  expect(settings.chatModels).toHaveLength(DEFAULT_CHAT_MODELS.length)
+  expect(settings.chatModels).toHaveLength(
+    // The superseded v25 defaults stay after v26.
+    DEFAULT_CHAT_MODELS.length + 5,
+  )
   expect(settings.chatModels).toEqual(
     expect.arrayContaining(DEFAULT_CHAT_MODELS),
   )
@@ -54,7 +60,9 @@ it.each([
   expect(settings.embeddingModelId).toBe('gemini/gemini-embedding-2')
   expect(JSON.stringify(initial)).toBe(before)
   expect(parseSmartComposerSettings(settings)).toEqual(settings)
-  expect(migrateFrom21To22(settings)).toEqual({ ...settings, version: 22 })
+  expect(
+    migrateFrom25To26(migrateFrom24To25(migrateFrom21To22(settings))),
+  ).toEqual(settings)
 })
 
 it.each([
@@ -148,7 +156,7 @@ it.each([undefined, { invalid: true }])(
     })
     expect(settings.chatModels).toEqual(DEFAULT_CHAT_MODELS)
     expect(settings.embeddingModels).toEqual(DEFAULT_EMBEDDING_MODELS)
-    expect(settings.chatModelId).toBe('gpt-6.1-sol')
+    expect(settings.chatModelId).toBe('gpt-6.2-sol')
     expect(settings.applyModelId).toBe('gpt-6-luna (plan)')
     expect(settings.embeddingModelId).toBe('gemini/gemini-embedding-2')
   },
