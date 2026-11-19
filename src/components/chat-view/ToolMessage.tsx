@@ -207,7 +207,7 @@ function ToolCallItem({
                     setIsOpen(false)
                   }}
                 >
-                  Allow this execution
+                  Allow
                 </button>
               ) : (
                 <SplitButton
@@ -279,13 +279,12 @@ function useToolCall(
   const handleToolCall = useCallback(async () => {
     if (running.current) return
     running.current = true
-    const manager = toolManager
     onResponseUpdate({
       status: ToolCallResponseStatus.Running,
       execution: approved,
     })
     try {
-      const toolCallResponse = await manager.callTool({
+      const toolCallResponse = await toolManager.callTool({
         name: request.name,
         args: request.arguments,
         id: request.id,
@@ -305,8 +304,7 @@ function useToolCall(
   }, [request, onResponseUpdate, toolManager, approved, conversationId])
 
   const handleAllowForConversation = useCallback(async () => {
-    const manager = toolManager
-    manager.allowToolForConversation(request.name, conversationId)
+    toolManager.allowToolForConversation(request.name, conversationId)
   }, [request, conversationId, toolManager])
 
   const handleAllowAutoExecution = useCallback(async () => {
@@ -351,8 +349,7 @@ function useToolCall(
   }, [onResponseUpdate])
 
   const handleAbort = useCallback(async () => {
-    const manager = toolManager
-    manager.abortToolCall(request.id)
+    toolManager.abortToolCall(request.id)
     onResponseUpdate({
       status: ToolCallResponseStatus.Aborted,
     })

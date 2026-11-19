@@ -15,21 +15,11 @@
 > 
 > **💻 CLI Tools** — Run CLI tools from chat with per-run approval, including an Obsidian CLI preset
 > 
-> **v1.2.8** — Connect your Gemini account
-> 
-> **v1.2.7** — Connect your Claude or OpenAI account directly (no API key required)
+> **v1.2.7** — Connect your OpenAI account directly (no API key required)
 > 
 > **v1.2.6** — Support for GPT-5.2, Opus 4.5, Gemini 3, and Grok 4.1
 > 
 > **🔌 MCP Support** — Connect Smart Composer to external tools and data sources via the [Model Context Protocol](https://modelcontextprotocol.io)
-
-> ### Risks of connecting a Claude subscription
-> 
-> As of January 2026, Anthropic has restricted third-party OAuth access, citing Terms of Service violations.
-> 
-> Smart Composer's subscription connect uses the same OAuth-style flow that tools like OpenCode have used. There are reports of **Claude accounts being banned or restricted** when subscription OAuth is used via third-party clients (example: [https://github.com/anomalyco/opencode/issues/6930](https://github.com/anomalyco/opencode/issues/6930)). For **OpenAI (ChatGPT)** and **Google (Gemini)**, I have not seen comparable ban reports so far, but this is still not the same as official API access, and enforcement can change at any time.
-> 
-> **Use at your own risk.** Keep usage limited to personal, interactive sessions and avoid any automation.
 
 ![SC1_Title.gif](https://github.com/user-attachments/assets/a50a1f80-39ff-4eba-8090-e3d75e7be98c)
 
@@ -140,7 +130,7 @@ Convert PDFs to Markdown with [Mistral OCR](https://mistral.ai/news/mistral-ocr)
 3. Search for "Smart Composer" and click Install
 4. Enable the plugin in Community plugins
 5. Set up Smart Composer in plugin settings:
-   - **Connect subscription (no API key)**: Connect your Claude/OpenAI account in `Settings > Smart Composer > Connect your subscription`
+   - **Connect subscription (no API key)**: Connect your OpenAI account in `Settings > Smart Composer > Providers > openai`
    - **API Providers (usage-based billing)**: Add an API key in `Settings > Smart Composer > Providers`
      - OpenAI: [ChatGPT API Keys](https://platform.openai.com/api-keys)
      - Anthropic: [Claude API Keys](https://console.anthropic.com/settings/keys)

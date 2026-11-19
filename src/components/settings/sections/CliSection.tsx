@@ -1,3 +1,12 @@
+import {
+  Check,
+  CircleMinus,
+  Edit,
+  Loader2,
+  Play,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { App, Notice } from 'obsidian'
 import { useEffect, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
@@ -13,9 +22,15 @@ import { ToolCallResponseStatus } from '../../../types/tool-call.types'
 import { ObsidianButton } from '../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../common/ObsidianSetting'
+import { ObsidianTextArea } from '../../common/ObsidianTextArea'
 import { ObsidianTextInput } from '../../common/ObsidianTextInput'
 import { ObsidianToggle } from '../../common/ObsidianToggle'
 import { ReactModal } from '../../common/ReactModal'
+
+type CliTestResult =
+  | { state: 'testing' }
+  | { state: 'passed' }
+  | { state: 'error'; message: string }
 
 export function CliSection({
   app,
@@ -25,7 +40,7 @@ export function CliSection({
   plugin: SmartComposerPlugin
 }) {
   const { settings, setSettings } = useSettings()
-  const [status, setStatus] = useState<Record<string, string>>({})
+  const [status, setStatus] = useState<Record<string, CliTestResult>>({})
   useEffect(() => setStatus({}), [settings.cli.connections])
   const disabled = plugin.toolManager.cli.disabled
   const saveConnections = (
@@ -43,7 +58,7 @@ export function CliSection({
       options: { title: connection ? 'Edit CLI' : 'Add CLI' },
     }).open()
   const test = async (connection: CliConnection) => {
-    setStatus((s) => ({ ...s, [connection.id]: 'Testing…' }))
+    setStatus((s) => ({ ...s, [connection.id]: { state: 'testing' } }))
     try {
       const requests =
         connection.preset === 'obsidian'
@@ -67,9 +82,7 @@ export function CliSection({
           )
         const result = JSON.parse(response.data.text) as { stdout: string }
         if (connection.preset === 'obsidian' && !result.stdout.trim())
-          throw new Error(
-            'Obsidian CLI returned no output. Check installer 1.12.7+ and CLI activation.',
-          )
+          throw new Error('Obsidian CLI returned no output.')
         if (args[0] === 'vault') {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const { win32 } = require('path') as typeof import('path')
@@ -80,101 +93,162 @@ export function CliSection({
             throw new Error('CLI selected a different vault.')
         }
       }
-      setStatus((s) => ({ ...s, [connection.id]: 'Test passed' }))
+      setStatus((s) => ({ ...s, [connection.id]: { state: 'passed' } }))
     } catch (error) {
       setStatus((s) => ({
         ...s,
-        [connection.id]: error instanceof Error ? error.message : String(error),
+        [connection.id]: {
+          state: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        },
       }))
     }
   }
   return (
     <div className="smtcmp-settings-section">
-      <div className="smtcmp-settings-header">CLI connections</div>
-      <div className="smtcmp-settings-desc">
-        Use installed command-line tools directly. Install and sign in from your
-        terminal first. Reviewed Obsidian queries run automatically; other
-        commands require approval. Enabling the Obsidian preset lets the model
-        search and read any note in this vault, and sends the results to your
-        selected model provider. A test runs help (and checks the vault for
-        Obsidian).
-      </div>
+      <div className="smtcmp-settings-header">CLI</div>
       {disabled ? (
-        <p>
-          CLI execution is currently supported on Windows desktop only. Saved
-          connections are preserved.
-        </p>
+        <div className="smtcmp-settings-sub-header-container">
+          <div className="smtcmp-settings-sub-header">
+            CLI is supported on Windows desktop only
+          </div>
+        </div>
       ) : (
         <>
-          <ObsidianSetting
-            name="CLI automatic rounds"
-            desc="Model responses per task, including approval resumptions. Continue starts a new round budget."
-          >
-            <ObsidianTextInput
-              type="number"
-              value={String(settings.cli.maxAutoIterations)}
-              onChange={(value) => {
-                const n = Number(value)
-                if (Number.isInteger(n) && n >= 1 && n <= 50)
-                  void setSettings((current) => ({
-                    ...current,
-                    cli: { ...current.cli, maxAutoIterations: n },
-                  }))
-              }}
-            />
-          </ObsidianSetting>
-          <ObsidianSetting>
-            <ObsidianButton text="Add CLI" onClick={() => edit()} />
-            {!settings.cli.connections.some((c) => c.preset === 'obsidian') && (
-              <ObsidianButton
-                text="Add Obsidian preset"
-                onClick={() => {
-                  void saveConnections((connections) =>
-                    connections.some((c) => c.preset === 'obsidian')
-                      ? connections
-                      : [
-                          ...connections,
-                          { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
-                        ],
-                  )
-                }}
-              />
-            )}
-          </ObsidianSetting>
-          {settings.cli.connections.map((connection) => (
-            <div key={connection.id}>
-              <ObsidianSetting name={connection.name} desc={connection.command}>
-                <ObsidianToggle
-                  value={connection.enabled}
-                  onChange={(enabled) => {
+          <div className="smtcmp-settings-sub-header-container">
+            <div className="smtcmp-settings-sub-header">CLI connections</div>
+            <div className="smtcmp-settings-actions">
+              {!settings.cli.connections.some(
+                (c) => c.preset === 'obsidian',
+              ) && (
+                <ObsidianButton
+                  text="Add Obsidian preset"
+                  onClick={() => {
                     void saveConnections((connections) =>
-                      connections.map((c) =>
-                        c.id === connection.id ? { ...c, enabled } : c,
-                      ),
+                      connections.some((c) => c.preset === 'obsidian')
+                        ? connections
+                        : [
+                            ...connections,
+                            { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
+                          ],
                     )
                   }}
                 />
-                <ObsidianButton text="Edit" onClick={() => edit(connection)} />
-                <ObsidianButton
-                  text="Test"
-                  onClick={() => {
-                    void test(connection)
-                  }}
-                />
-                <ObsidianButton
-                  text="Remove"
-                  onClick={() => {
-                    void saveConnections((connections) =>
-                      connections.filter((c) => c.id !== connection.id),
-                    )
-                  }}
-                />
-              </ObsidianSetting>
-              <p role="status">{status[connection.id] ?? 'Not tested'}</p>
+              )}
+              <ObsidianButton text="Add CLI" onClick={() => edit()} />
             </div>
-          ))}
+          </div>
+
+          <div className="smtcmp-mcp-servers-container">
+            <div className="smtcmp-mcp-servers-header">
+              <div>CLI</div>
+              <div>Status</div>
+              <div>Enabled</div>
+              <div>Actions</div>
+            </div>
+            {settings.cli.connections.map((connection) => {
+              const result = status[connection.id]
+              return (
+                <div key={connection.id} className="smtcmp-mcp-server">
+                  <div className="smtcmp-mcp-server-row">
+                    <div className="smtcmp-mcp-server-name">
+                      {connection.name}
+                    </div>
+                    <div className="smtcmp-mcp-server-status">
+                      <CliTestStatusBadge result={result} />
+                    </div>
+                    <div className="smtcmp-mcp-server-toggle">
+                      <ObsidianToggle
+                        value={connection.enabled}
+                        onChange={(enabled) => {
+                          void saveConnections((connections) =>
+                            connections.map((c) =>
+                              c.id === connection.id ? { ...c, enabled } : c,
+                            ),
+                          )
+                        }}
+                      />
+                    </div>
+                    <div className="smtcmp-mcp-server-actions">
+                      <button
+                        onClick={() => {
+                          void test(connection)
+                        }}
+                        className="clickable-icon"
+                        aria-label="Test"
+                      >
+                        <Play size={16} />
+                      </button>
+                      <button
+                        onClick={() => edit(connection)}
+                        className="clickable-icon"
+                        aria-label="Edit"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          void saveConnections((connections) =>
+                            connections.filter((c) => c.id !== connection.id),
+                          )
+                        }}
+                        className="clickable-icon"
+                        aria-label="Delete"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  {result?.state === 'error' && (
+                    <div className="smtcmp-server-expanded-info">
+                      <div className="smtcmp-server-expanded-info-header">
+                        Error
+                      </div>
+                      <div className="smtcmp-server-error-message">
+                        {result.message}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </>
       )}
+    </div>
+  )
+}
+
+function CliTestStatusBadge({ result }: { result?: CliTestResult }) {
+  const { icon, label, statusClass } =
+    result?.state === 'testing'
+      ? {
+          icon: <Loader2 size={16} className="spinner" />,
+          label: 'Testing…',
+          statusClass: 'smtcmp-mcp-server-status-badge--connecting',
+        }
+      : result?.state === 'passed'
+        ? {
+            icon: <Check size={16} />,
+            label: 'Test passed',
+            statusClass: 'smtcmp-mcp-server-status-badge--connected',
+          }
+        : result?.state === 'error'
+          ? {
+              icon: <X size={16} />,
+              label: 'Error',
+              statusClass: 'smtcmp-mcp-server-status-badge--error',
+            }
+          : {
+              icon: <CircleMinus size={14} />,
+              label: 'Not tested',
+              statusClass: 'smtcmp-mcp-server-status-badge--disconnected',
+            }
+
+  return (
+    <div className={`smtcmp-mcp-server-status-badge ${statusClass}`}>
+      {icon}
+      <div className="smtcmp-mcp-server-status-badge-label">{label}</div>
     </div>
   )
 }
@@ -232,11 +306,7 @@ function CliForm({
           onChange={(name) => setDraft({ ...draft, name })}
         />
       </ObsidianSetting>
-      <ObsidianSetting
-        name="Executable"
-        desc="Executable path or installed command name. Windows .exe, .com, .cmd and .bat are supported."
-        required
-      >
+      <ObsidianSetting name="Executable" required>
         <ObsidianTextInput
           value={draft.command}
           onChange={(command) => setDraft({ ...draft, command })}
@@ -244,21 +314,15 @@ function CliForm({
       </ObsidianSetting>
       {draft.preset !== 'obsidian' && (
         <>
-          <ObsidianSetting
-            name="Fixed arguments"
-            desc={'JSON array, for example ["--no-color"].'}
-          >
+          <ObsidianSetting name="Fixed arguments">
             <ObsidianTextInput value={args} onChange={setArgs} />
           </ObsidianSetting>
-          <ObsidianSetting
-            name="Batch file arguments"
-            desc="For .cmd/.bat only: choose Forwarded for npm commands or wrappers that pass %* to another program."
-          >
+          <ObsidianSetting name="Batch file arguments">
             <ObsidianDropdown
               value={draft.batchArgumentMode}
               options={{
-                direct: 'Direct (ordinary script)',
-                forwarded: 'Forwarded (npm / wrapper)',
+                direct: 'Direct',
+                forwarded: 'Forwarded',
               }}
               onChange={(value) => {
                 if (value === 'direct' || value === 'forwarded')
@@ -266,10 +330,7 @@ function CliForm({
               }}
             />
           </ObsidianSetting>
-          <ObsidianSetting
-            name="Working folder"
-            desc="Leave empty to use the current vault."
-          >
+          <ObsidianSetting name="Working folder">
             <ObsidianTextInput
               value={draft.cwd}
               onChange={(cwd) => setDraft({ ...draft, cwd })}
@@ -277,10 +338,7 @@ function CliForm({
           </ObsidianSetting>
         </>
       )}
-      <ObsidianSetting
-        name="Timeout (seconds)"
-        desc="1–300 seconds. Stopping the CLI does not undo changes."
-      >
+      <ObsidianSetting name="Timeout (seconds)">
         <ObsidianTextInput
           type="number"
           value={String(draft.timeoutSeconds)}
@@ -289,15 +347,16 @@ function CliForm({
           }
         />
       </ObsidianSetting>
-      <label>
-        Instructions for the assistant
-        <textarea
-          className="smtcmp-mcp-server-modal-textarea"
+      <ObsidianSetting
+        name="Instructions for the assistant"
+        className="smtcmp-settings-textarea-header"
+      />
+      <ObsidianSetting className="smtcmp-settings-textarea">
+        <ObsidianTextArea
           value={draft.instructions}
-          rows={5}
-          onChange={(e) => setDraft({ ...draft, instructions: e.target.value })}
+          onChange={(instructions) => setDraft({ ...draft, instructions })}
         />
-      </label>
+      </ObsidianSetting>
       <ObsidianSetting>
         <ObsidianButton
           text="Save"
