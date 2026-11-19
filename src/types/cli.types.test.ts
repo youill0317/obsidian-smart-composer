@@ -1,7 +1,11 @@
 import { SETTINGS_SCHEMA_VERSION } from '../settings/schema/migrations'
 import { parseSmartComposerSettings } from '../settings/schema/settings'
 
-import { DEFAULT_OBSIDIAN_CLI, cliSettingsSchema } from './cli.types'
+import {
+  DEFAULT_OBSIDIAN_CLI,
+  cliRequestSchema,
+  cliSettingsSchema,
+} from './cli.types'
 
 const conn = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
@@ -96,5 +100,18 @@ describe('cliSettingsSchema', () => {
       conn('a'),
       conn('b', { timeoutSeconds: 60, enabled: false }),
     ])
+  })
+})
+
+describe('cliRequestSchema', () => {
+  it('accepts a description and still rejects unknown fields', () => {
+    const request = { cliId: 'obsidian', args: ['help'] }
+    expect(
+      cliRequestSchema.parse({ ...request, description: 'Shows the help.' }),
+    ).toEqual({ ...request, description: 'Shows the help.' })
+    expect(cliRequestSchema.parse(request)).toEqual(request)
+    expect(
+      cliRequestSchema.safeParse({ ...request, shell: true }).success,
+    ).toBe(false)
   })
 })

@@ -75,6 +75,8 @@ export const cliRequestSchema = z
     cliId: z.string(),
     args: z.array(text),
     stdin: text.optional(),
+    // Shown to the user in place of the tool name
+    description: z.string().optional(),
   })
   .strict()
 
