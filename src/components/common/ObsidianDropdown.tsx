@@ -1,4 +1,4 @@
-import { DropdownComponent, setTooltip } from 'obsidian'
+import { DropdownComponent } from 'obsidian'
 import { useEffect, useRef, useState } from 'react'
 
 import { useObsidianSetting } from './ObsidianSetting'
@@ -7,14 +7,12 @@ type ObsidianDropdownProps = {
   value: string
   options: Record<string, string>
   onChange: (value: string) => void
-  tooltip?: string
 }
 
 export function ObsidianDropdown({
   value,
   options,
   onChange,
-  tooltip,
 }: ObsidianDropdownProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { setting } = useObsidianSetting()
@@ -59,11 +57,6 @@ export function ObsidianDropdown({
     dropdownComponent.addOptions(options)
     dropdownComponent.setValue(value)
   }, [dropdownComponent, options, value])
-
-  useEffect(() => {
-    if (!dropdownComponent || !tooltip) return
-    setTooltip(dropdownComponent.selectEl, tooltip)
-  }, [dropdownComponent, tooltip])
 
   return <div ref={containerRef} />
 }

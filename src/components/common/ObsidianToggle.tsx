@@ -7,16 +7,9 @@ type ObsidianToggleProps = {
   value: boolean
   // Return false to refuse the change; the toggle then shows the old value.
   onChange: (value: boolean) => unknown
-  disabled?: boolean
-  tooltip?: string
 }
 
-export function ObsidianToggle({
-  value,
-  onChange,
-  disabled,
-  tooltip,
-}: ObsidianToggleProps) {
+export function ObsidianToggle({ value, onChange }: ObsidianToggleProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { setting } = useObsidianSetting()
   const [toggleComponent, setToggleComponent] =
@@ -61,12 +54,6 @@ export function ObsidianToggle({
     if (!toggleComponent) return
     toggleComponent.setValue(value)
   }, [toggleComponent, value])
-
-  useEffect(() => {
-    if (!toggleComponent) return
-    if (disabled !== undefined) toggleComponent.setDisabled(disabled)
-    if (tooltip) toggleComponent.setTooltip(tooltip)
-  }, [toggleComponent, disabled, tooltip])
 
   return <div ref={containerRef} style={{ display: 'contents' }} />
 }

@@ -237,7 +237,7 @@ export class CliManager {
         }
       }
     }
-    // ponytail: one queue for all CLIs; per-connection queues if measured latency warrants it.
+    // One queue for all CLIs; per-connection queues if measured latency warrants it.
     const promise = this.queue.then(work, work).finally(() => {
       signal?.removeEventListener('abort', abort)
       this.active.delete(id)
