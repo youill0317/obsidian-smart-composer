@@ -80,49 +80,6 @@ export async function postJson<T>(
   return JSON.parse(responseBody) as T
 }
 
-export async function postFormUrlEncoded<T>(
-  endpoint: string,
-  body: Record<string, string>,
-  options: PostOptions = {},
-): Promise<T> {
-  const { headers, signal, fetchFn } = options
-  const payload = new URLSearchParams(body).toString()
-  const formHeaders = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    ...(headers ?? {}),
-  }
-
-  if (fetchFn) {
-    const response = await fetchFn(endpoint, {
-      method: 'POST',
-      headers: formHeaders,
-      body: payload,
-      signal,
-    })
-
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`)
-    }
-
-    return (await response.json()) as T
-  }
-
-  const response = await nodePost(
-    endpoint,
-    payload,
-    formHeaders,
-    signal,
-    'application/x-www-form-urlencoded',
-  )
-  const status = response.statusCode ?? 0
-  const responseBody = await readStreamToString(response)
-  if (status < 200 || status >= 300) {
-    throw new Error(`Request failed: ${status} ${responseBody}`)
-  }
-
-  return JSON.parse(responseBody) as T
-}
-
 export async function postStream(
   endpoint: string,
   body: unknown,
@@ -173,7 +130,6 @@ async function nodePost(
   body: string,
   headers?: Record<string, string>,
   signal?: AbortSignal,
-  contentType = 'application/json',
 ): Promise<IncomingMessage> {
   if (!Platform.isDesktop) {
     throw new Error('HTTP transport is not available on mobile')
@@ -187,7 +143,7 @@ async function nodePost(
   const client = url.protocol === 'https:' ? https : http
   const payloadLength = Buffer.byteLength(body)
   const requestHeaders: Record<string, string> = {
-    'Content-Type': contentType,
+    'Content-Type': 'application/json',
     'Content-Length': payloadLength.toString(),
     ...(headers ?? {}),
   }

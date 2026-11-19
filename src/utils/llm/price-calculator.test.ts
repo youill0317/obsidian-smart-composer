@@ -14,7 +14,6 @@ describe('calculateLLMCost', () => {
     ['deepseek', 'deepseek-chat', null],
     ['deepseek', 'deepseek-reasoner', null],
     ['gemini', 'gemini-4-carbon', 2.4],
-    ['gemini', 'gemini-3.8-flash', 0.45],
     ['anthropic', 'claude-opus-5-5', 2.4],
     ['xai', 'grok-4.7', 0.8],
     ['deepseek', 'deepseek-v4-pro', 0.528],
@@ -33,7 +32,6 @@ describe('calculateLLMCost', () => {
   })
 
   it.each([
-    ['gemini', 'gemini-3.8-flash', 200_001, 0.52500075],
     ['openai', 'gpt-6.2-sol', 271_999, 1.543998],
     ['openai', 'gpt-6.2-sol', 272_000, 1.544],
     ['openai', 'gpt-6.2-sol', 272_001, 2.588004],

@@ -405,8 +405,6 @@ export const ANTHROPIC_PRICES: Record<string, ModelPricing> = {
 
 export const GEMINI_PRICES: Record<string, ModelPricing> = {
   'gemini-4-carbon': { input: 4, output: 20, cachedInput: 0.2 },
-  // Introductory rates through 2026-12-31; standard rates become $1.50/$7.50.
-  'gemini-3.8-flash': { input: 0.75, output: 3.75 },
 }
 
 export const XAI_PRICES: Record<string, ModelPricing> = {

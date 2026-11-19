@@ -15,20 +15,6 @@ import { LLMProvider } from '../../types/provider.types'
 
 const MAX_CHAT_HISTORY_MESSAGES = 10
 
-const PREDICTED_OUTPUTS_SUPPORTED_MODELS = [
-  'gpt-4o',
-  'gpt-4o-mini',
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-]
-
-const supportsPredictedOutputs = (modelId: string): boolean => {
-  return PREDICTED_OUTPUTS_SUPPORTED_MODELS.some((supportedModel) =>
-    modelId.startsWith(supportedModel),
-  )
-}
-
 const systemPrompt = `You are an intelligent assistant helping a user apply changes to a markdown file.
 
 You will receive:
@@ -156,23 +142,6 @@ export const applyChangesToFile = async ({
     model: model.model,
     messages: requestMessages,
     stream: false,
-    // Other OpenAI-compatible endpoints may reject the unknown field.
-    ...(model.providerType === 'openai' &&
-      supportsPredictedOutputs(model.model) && {
-        prediction: {
-          type: 'content',
-          content: [
-            {
-              type: 'text',
-              text: currentFileContent,
-            },
-            {
-              type: 'text',
-              text: blockToApply,
-            },
-          ],
-        },
-      }),
   })
 
   const responseContent = response.choices[0].message.content
