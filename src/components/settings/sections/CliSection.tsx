@@ -8,7 +8,7 @@ import {
   X,
 } from 'lucide-react'
 import { App, Notice } from 'obsidian'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
 import { useSettings } from '../../../contexts/settings-context'
@@ -32,6 +32,12 @@ type CliTestResult =
   | { state: 'passed' }
   | { state: 'error'; message: string }
 
+const testSignature = ({
+  enabled: _enabled,
+  name: _name,
+  ...connection
+}: CliConnection) => JSON.stringify(connection)
+
 export function CliSection({
   app,
   plugin,
@@ -40,8 +46,9 @@ export function CliSection({
   plugin: SmartComposerPlugin
 }) {
   const { settings, setSettings } = useSettings()
-  const [status, setStatus] = useState<Record<string, CliTestResult>>({})
-  useEffect(() => setStatus({}), [settings.cli.connections])
+  const [status, setStatus] = useState<
+    Record<string, CliTestResult & { signature: string }>
+  >({})
   const disabled = plugin.toolManager.cli.disabled
   const saveConnections = (
     update: (connections: CliConnection[]) => CliConnection[],
@@ -58,7 +65,17 @@ export function CliSection({
       options: { title: connection ? 'Edit CLI' : 'Add CLI' },
     }).open()
   const test = async (connection: CliConnection) => {
-    setStatus((s) => ({ ...s, [connection.id]: { state: 'testing' } }))
+    const signature = testSignature(connection)
+    const finish = (result: CliTestResult) =>
+      setStatus((s) =>
+        s[connection.id]?.signature === signature
+          ? { ...s, [connection.id]: { ...result, signature } }
+          : s,
+      )
+    setStatus((s) => ({
+      ...s,
+      [connection.id]: { state: 'testing', signature },
+    }))
     try {
       const requests =
         connection.preset === 'obsidian'
@@ -93,128 +110,122 @@ export function CliSection({
             throw new Error('CLI selected a different vault.')
         }
       }
-      setStatus((s) => ({ ...s, [connection.id]: { state: 'passed' } }))
+      finish({ state: 'passed' })
     } catch (error) {
-      setStatus((s) => ({
-        ...s,
-        [connection.id]: {
-          state: 'error',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      }))
+      finish({
+        state: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
     }
   }
+  if (disabled) return null
   return (
     <div className="smtcmp-settings-section">
       <div className="smtcmp-settings-header">CLI</div>
-      {disabled ? (
-        <div className="smtcmp-settings-sub-header-container">
-          <div className="smtcmp-settings-sub-header">
-            CLI is supported on Windows desktop only
-          </div>
+      <div className="smtcmp-settings-sub-header-container">
+        <div className="smtcmp-settings-sub-header">CLI Connections</div>
+        <div className="smtcmp-settings-actions">
+          {!settings.cli.connections.some((c) => c.preset === 'obsidian') && (
+            <ObsidianButton
+              text="Add Obsidian Preset"
+              onClick={() => {
+                void saveConnections((connections) =>
+                  connections.some((c) => c.preset === 'obsidian')
+                    ? connections
+                    : [
+                        ...connections,
+                        { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
+                      ],
+                )
+              }}
+            />
+          )}
+          <ObsidianButton text="Add CLI" onClick={() => edit()} />
         </div>
-      ) : (
-        <>
-          <div className="smtcmp-settings-sub-header-container">
-            <div className="smtcmp-settings-sub-header">CLI connections</div>
-            <div className="smtcmp-settings-actions">
-              {!settings.cli.connections.some(
-                (c) => c.preset === 'obsidian',
-              ) && (
-                <ObsidianButton
-                  text="Add Obsidian preset"
-                  onClick={() => {
-                    void saveConnections((connections) =>
-                      connections.some((c) => c.preset === 'obsidian')
-                        ? connections
-                        : [
-                            ...connections,
-                            { ...DEFAULT_OBSIDIAN_CLI, id: uuidv4() },
-                          ],
-                    )
-                  }}
-                />
-              )}
-              <ObsidianButton text="Add CLI" onClick={() => edit()} />
-            </div>
-          </div>
+      </div>
 
-          <div className="smtcmp-mcp-servers-container">
-            <div className="smtcmp-mcp-servers-header">
-              <div>CLI</div>
-              <div>Status</div>
-              <div>Enabled</div>
-              <div>Actions</div>
-            </div>
-            {settings.cli.connections.map((connection) => {
-              const result = status[connection.id]
-              return (
-                <div key={connection.id} className="smtcmp-mcp-server">
-                  <div className="smtcmp-mcp-server-row">
-                    <div className="smtcmp-mcp-server-name">
-                      {connection.name}
+      <div className="smtcmp-mcp-servers-container">
+        <div className="smtcmp-mcp-servers-header">
+          <div>CLI</div>
+          <div>Status</div>
+          <div>Enabled</div>
+          <div>Actions</div>
+        </div>
+        {settings.cli.connections.length > 0 ? (
+          settings.cli.connections.map((connection) => {
+            const entry = status[connection.id]
+            const result =
+              entry?.signature === testSignature(connection) ? entry : undefined
+            return (
+              <div key={connection.id} className="smtcmp-mcp-server">
+                <div className="smtcmp-mcp-server-row">
+                  <div className="smtcmp-mcp-server-name">
+                    {connection.name}
+                  </div>
+                  <div className="smtcmp-mcp-server-status">
+                    <CliTestStatusBadge result={result} />
+                  </div>
+                  <div className="smtcmp-mcp-server-toggle">
+                    <ObsidianToggle
+                      value={connection.enabled}
+                      onChange={(enabled) => {
+                        void saveConnections((connections) =>
+                          connections.map((c) =>
+                            c.id === connection.id ? { ...c, enabled } : c,
+                          ),
+                        )
+                      }}
+                    />
+                  </div>
+                  <div className="smtcmp-mcp-server-actions">
+                    <button
+                      onClick={() => {
+                        if (result?.state !== 'testing') void test(connection)
+                      }}
+                      className="clickable-icon"
+                      aria-label="Test"
+                    >
+                      <Play size={16} />
+                    </button>
+                    <button
+                      onClick={() => edit(connection)}
+                      className="clickable-icon"
+                      aria-label="Edit"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        void saveConnections((connections) =>
+                          connections.filter((c) => c.id !== connection.id),
+                        )
+                      }}
+                      className="clickable-icon"
+                      aria-label="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                {result?.state === 'error' && (
+                  <div className="smtcmp-server-expanded-info">
+                    <div className="smtcmp-server-expanded-info-header">
+                      Error
                     </div>
-                    <div className="smtcmp-mcp-server-status">
-                      <CliTestStatusBadge result={result} />
-                    </div>
-                    <div className="smtcmp-mcp-server-toggle">
-                      <ObsidianToggle
-                        value={connection.enabled}
-                        onChange={(enabled) => {
-                          void saveConnections((connections) =>
-                            connections.map((c) =>
-                              c.id === connection.id ? { ...c, enabled } : c,
-                            ),
-                          )
-                        }}
-                      />
-                    </div>
-                    <div className="smtcmp-mcp-server-actions">
-                      <button
-                        onClick={() => {
-                          void test(connection)
-                        }}
-                        className="clickable-icon"
-                        aria-label="Test"
-                      >
-                        <Play size={16} />
-                      </button>
-                      <button
-                        onClick={() => edit(connection)}
-                        className="clickable-icon"
-                        aria-label="Edit"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          void saveConnections((connections) =>
-                            connections.filter((c) => c.id !== connection.id),
-                          )
-                        }}
-                        className="clickable-icon"
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    <div className="smtcmp-server-error-message">
+                      {result.message}
                     </div>
                   </div>
-                  {result?.state === 'error' && (
-                    <div className="smtcmp-server-expanded-info">
-                      <div className="smtcmp-server-expanded-info-header">
-                        Error
-                      </div>
-                      <div className="smtcmp-server-error-message">
-                        {result.message}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                )}
+              </div>
+            )
+          })
+        ) : (
+          <div className="smtcmp-mcp-servers-empty">
+            No CLI connections found
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -224,7 +235,7 @@ function CliTestStatusBadge({ result }: { result?: CliTestResult }) {
     result?.state === 'testing'
       ? {
           icon: <Loader2 size={16} className="spinner" />,
-          label: 'Testing…',
+          label: 'Testing...',
           statusClass: 'smtcmp-mcp-server-status-badge--connecting',
         }
       : result?.state === 'passed'
@@ -275,11 +286,25 @@ function CliForm({
   )
   const [args, setArgs] = useState(JSON.stringify(draft.args))
   const save = async () => {
+    let parsedArgs: unknown = []
+    if (args.trim()) {
+      try {
+        parsedArgs = JSON.parse(args)
+      } catch {
+        new Notice('Fixed arguments must be a JSON array.')
+        return
+      }
+    }
+    const validationResult = cliConnectionSchema.safeParse({
+      ...draft,
+      args: parsedArgs,
+    })
+    if (!validationResult.success) {
+      new Notice(validationResult.error.issues.map((v) => v.message).join('\n'))
+      return
+    }
+    const parsed = validationResult.data
     try {
-      const parsed = cliConnectionSchema.parse({
-        ...draft,
-        args: JSON.parse(args),
-      })
       if (parsed.preset === 'obsidian' && parsed.args.length)
         throw new Error('Obsidian uses no fixed arguments.')
       await plugin.setSettings((current) => ({

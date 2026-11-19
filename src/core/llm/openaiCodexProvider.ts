@@ -135,7 +135,7 @@ export class OpenAICodexProvider extends BaseLLMProvider<
     }
     if (!hasCodexPlanUsageScope(oauth.scopes)) {
       throw new LLMAPIKeyInvalidException(
-        'ChatGPT plan usage is not allowed for Smart Composer. Allow it in Settings > Connect your subscription.',
+        'ChatGPT plan usage is not allowed for Smart Composer.',
       )
     }
 

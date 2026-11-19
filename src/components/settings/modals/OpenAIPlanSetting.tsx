@@ -31,6 +31,8 @@ export function OpenAIPlanSetting({ plugin }: { plugin: SmartComposerPlugin }) {
   const provider = findPlanProvider(settings.providers)
   const isConnected = !!provider?.oauth?.accessToken
   const isPlanUsageAllowed = hasCodexPlanUsageScope(provider?.oauth?.scopes)
+  const canDisconnect =
+    isConnected || !!provider?.credentialsSecretId || !!provider?.registration
 
   // Ends the ChatGPT session remotely. Local tokens are cleared regardless.
   const revokeSession = async () => {
@@ -75,7 +77,8 @@ export function OpenAIPlanSetting({ plugin }: { plugin: SmartComposerPlugin }) {
 
   return (
     <ObsidianSetting
-      name="ChatGPT plan"
+      key={[isConnected, isPlanUsageAllowed, canDisconnect].join()}
+      name="ChatGPT Plan"
       desc={isConnected ? 'Connected' : 'Disconnected'}
     >
       {!isConnected && (
@@ -100,9 +103,7 @@ export function OpenAIPlanSetting({ plugin }: { plugin: SmartComposerPlugin }) {
           onClick={() => window.open(CODEX_USAGE_URL)}
         />
       )}
-      {(isConnected ||
-        provider?.credentialsSecretId ||
-        provider?.registration) && (
+      {canDisconnect && (
         <ObsidianButton text="Disconnect" onClick={disconnect} />
       )}
     </ObsidianSetting>
