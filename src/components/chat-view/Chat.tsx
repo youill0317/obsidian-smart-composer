@@ -232,7 +232,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       }
 
       const compiledMessages = await Promise.all(
-        inputChatMessages.map(async (message) => {
+        inputChatMessages.map(async (message, index) => {
           if (message.role === 'user' && message.id === lastMessage.id) {
             const { promptContent, similaritySearchResults } =
               await promptGenerator.compileUserMessagePrompt({
@@ -240,10 +240,15 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                 useVaultSearch,
                 onQueryProgressChange: setQueryProgress,
               })
+            const currentFile = await promptGenerator.captureCurrentFile({
+              message,
+              previousMessages: inputChatMessages.slice(0, index),
+            })
             return {
               ...message,
               promptContent,
               similaritySearchResults,
+              currentFile,
             }
           } else if (message.role === 'user' && !message.promptContent) {
             // Ensure all user messages have prompt content
@@ -262,9 +267,22 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         }),
       )
 
-      setChatMessages(compiledMessages)
+      // A new capture replaces older ones so only one copy is stored
+      const newestMessage = compiledMessages.at(-1)
+      const submittedMessages =
+        newestMessage?.role === 'user' && newestMessage.currentFile
+          ? compiledMessages.map((message, index) =>
+              message.role === 'user' &&
+              message.currentFile &&
+              index < compiledMessages.length - 1
+                ? { ...message, currentFile: undefined }
+                : message,
+            )
+          : compiledMessages
+
+      setChatMessages(submittedMessages)
       submitChatMutation.mutate({
-        chatMessages: compiledMessages,
+        chatMessages: submittedMessages,
         conversationId: currentConversationId,
       })
     },
@@ -380,7 +398,6 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         submitChatMutation.mutate({
           chatMessages: updatedMessages,
           conversationId: currentConversationId,
-          resume: true,
         })
         requestAnimationFrame(() => {
           forceScrollToBottom()

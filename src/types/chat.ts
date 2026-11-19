@@ -8,6 +8,12 @@ import { Annotation, ResponseUsage } from './llm/response'
 import { Mentionable, SerializedMentionable } from './mentionable'
 import { ToolCallRequest, ToolCallResponse } from './tool-call.types'
 
+// Content of the open note captured when the user message was submitted
+export type CurrentFileCapture = {
+  path: string
+  content: string
+}
+
 export type ChatUserMessage = {
   role: 'user'
   content: SerializedEditorState | null
@@ -17,6 +23,7 @@ export type ChatUserMessage = {
   similaritySearchResults?: (Omit<SelectEmbedding, 'embedding'> & {
     similarity: number
   })[]
+  currentFile?: CurrentFileCapture
 }
 export type ChatAssistantMessage = {
   role: 'assistant'
@@ -30,6 +37,9 @@ export type ChatAssistantMessage = {
     model?: ChatModel // TODO: migrate legacy data to new model type
   }
   providerMetadata?: RequestProviderMetadata
+  // First message of the history sent with the request that produced this
+  // message, when older messages were left out to fit the context window
+  requestStartId?: string
 }
 export type ChatToolMessage = {
   role: 'tool'
@@ -59,6 +69,7 @@ export type SerializedChatUserMessage = {
   similaritySearchResults?: (Omit<SelectEmbedding, 'embedding'> & {
     similarity: number
   })[]
+  currentFile?: CurrentFileCapture
 }
 export type SerializedChatAssistantMessage = {
   role: 'assistant'
@@ -72,6 +83,9 @@ export type SerializedChatAssistantMessage = {
     model?: ChatModel // TODO: migrate legacy data to new model type
   }
   providerMetadata?: RequestProviderMetadata
+  // First message of the history sent with the request that produced this
+  // message, when older messages were left out to fit the context window
+  requestStartId?: string
 }
 export type SerializedChatToolMessage = {
   role: 'tool'

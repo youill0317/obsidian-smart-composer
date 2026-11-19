@@ -164,6 +164,7 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
         id: message.id,
         mentionables: message.mentionables.map(serializeMentionable),
         similaritySearchResults: message.similaritySearchResults,
+        currentFile: message.currentFile,
       }
     case 'assistant':
       return {
@@ -175,6 +176,7 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
         id: message.id,
         metadata: message.metadata,
         providerMetadata: message.providerMetadata,
+        requestStartId: message.requestStartId,
       }
     case 'tool':
       return {
@@ -200,6 +202,7 @@ const deserializeChatMessage = (
           .map((m) => deserializeMentionable(m, app))
           .filter((m): m is Mentionable => m !== null),
         similaritySearchResults: message.similaritySearchResults,
+        currentFile: message.currentFile,
       }
     }
     case 'assistant':
@@ -212,6 +215,7 @@ const deserializeChatMessage = (
         id: message.id,
         metadata: message.metadata,
         providerMetadata: message.providerMetadata,
+        requestStartId: message.requestStartId,
       }
     case 'tool':
       return {
