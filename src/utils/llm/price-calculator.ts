@@ -85,17 +85,16 @@ export const calculateLLMCost = ({
 export const calculateMessageGroupCost = (
   messages: ChatAssistantMessage[],
 ): number | null => {
-  const pricedMessages = messages.filter(
-    (message) => message.metadata?.model && message.metadata.usage,
+  const pricedMessages = messages.flatMap(({ metadata }) =>
+    metadata?.model && metadata.usage
+      ? [{ model: metadata.model, usage: metadata.usage }]
+      : [],
   )
   if (pricedMessages.length === 0) return null
 
   let total = 0
-  for (const message of pricedMessages) {
-    const cost = calculateLLMCost({
-      model: message.metadata?.model as ChatModel,
-      usage: message.metadata?.usage as ResponseUsage,
-    })
+  for (const { model, usage } of pricedMessages) {
+    const cost = calculateLLMCost({ model, usage })
     if (cost === null) return null
     total += cost
   }
