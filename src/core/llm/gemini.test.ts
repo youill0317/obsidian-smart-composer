@@ -42,14 +42,16 @@ describe('GeminiProvider thinking config', () => {
     })
 
   it('sends the saved thinking level and thoughts', () => {
-    expect(config({ thinking_level: 'high', include_thoughts: true })).toEqual({
+    expect(config({ thinking_level: 'high' })).toEqual({
       thinkingLevel: 'HIGH',
       includeThoughts: true,
     })
   })
 
   it('omits a thinking level outside the list', () => {
-    expect(config({ thinking_level: 'xhigh' })).toBeUndefined()
-    expect(config()).toBeUndefined()
+    expect(config({ thinking_level: 'xhigh' })).toEqual({
+      includeThoughts: true,
+    })
+    expect(config()).toEqual({ includeThoughts: true })
   })
 })

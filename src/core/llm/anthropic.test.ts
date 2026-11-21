@@ -162,7 +162,7 @@ describe('AnthropicProvider thinking', () => {
         providerId: 'anthropic',
         id: 'claude-opus-5-5',
         model: 'claude-opus-5-5',
-        adaptive_thinking: { effort: 'xhigh', show_summaries: true },
+        adaptive_thinking: { effort: 'xhigh' },
       },
       request,
     )
@@ -178,7 +178,7 @@ describe('AnthropicProvider thinking', () => {
     expect(result.usage?.completion_tokens).toBe(3)
   })
 
-  it('omits thinking fields for Opus 5.5 when unset', async () => {
+  it('sends only summarized thinking for Opus 5.5 when effort is unset', async () => {
     const { provider, create } = createProvider()
     await provider.generateResponse(
       {
@@ -190,15 +190,14 @@ describe('AnthropicProvider thinking', () => {
       request,
     )
     const body = create.mock.calls[0][0]
-    expect(body).not.toHaveProperty('thinking')
+    expect(body).toMatchObject({
+      thinking: { type: 'adaptive', display: 'summarized' },
+    })
     expect(body).not.toHaveProperty('output_config')
     expect(body.max_tokens).toBe(128_000)
   })
 
-  const thinkingParams = (adaptive_thinking?: {
-    effort?: string
-    show_summaries?: boolean
-  }) =>
+  const thinkingParams = (adaptive_thinking?: { effort?: string }) =>
     AnthropicProvider.buildThinkingParams({
       providerType: 'anthropic',
       providerId: 'anthropic',
@@ -208,11 +207,16 @@ describe('AnthropicProvider thinking', () => {
     })
 
   it.each([
-    [{ effort: 'max' }, { output_config: { effort: 'max' } }],
-    // Effort outside the list is not sent
-    [{ effort: 'none' }, {}],
     [
-      { show_summaries: true },
+      { effort: 'max' },
+      {
+        thinking: { type: 'adaptive', display: 'summarized' },
+        output_config: { effort: 'max' },
+      },
+    ],
+    // Effort outside the list is not sent
+    [
+      { effort: 'none' },
       { thinking: { type: 'adaptive', display: 'summarized' } },
     ],
   ])('builds thinking params for %j', (adaptive, expected) => {

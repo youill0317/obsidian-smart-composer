@@ -1,4 +1,4 @@
-import { Reasoning, ReasoningEffort } from 'openai/resources/shared'
+import { ReasoningEffort } from 'openai/resources/shared'
 
 import { CODEX_USAGE_URL } from '../../constants'
 import { ChatModel } from '../../types/chat-model.types'
@@ -219,7 +219,6 @@ export class OpenAICodexProvider extends BaseLLMProvider<
     T extends LLMRequestNonStreaming | LLMRequestStreaming,
   >(model: Extract<ChatModel, { providerType: 'openai-plan' }>, request: T): T {
     const reasoningEffort = model.reasoning?.reasoning_effort
-    const reasoningSummary = model.reasoning?.reasoning_summary
     return {
       ...request,
       reasoning_effort:
@@ -227,9 +226,7 @@ export class OpenAICodexProvider extends BaseLLMProvider<
         (REASONING_EFFORTS as readonly string[]).includes(reasoningEffort)
           ? (reasoningEffort as ReasoningEffort)
           : undefined,
-      reasoning_summary: reasoningSummary
-        ? (reasoningSummary as Reasoning['summary'])
-        : undefined,
+      reasoning_summary: 'auto',
     }
   }
 }

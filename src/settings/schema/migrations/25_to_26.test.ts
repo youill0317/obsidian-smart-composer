@@ -389,7 +389,7 @@ describe('migrateFrom25To26', () => {
     expect(settings.chatModels[7]).toEqual(claude)
     expect(settings.chatModels[8]).toEqual({
       ...flash,
-      thinking: { thinking_level: 'low', include_thoughts: true },
+      thinking: { thinking_level: 'low' },
     })
   })
 

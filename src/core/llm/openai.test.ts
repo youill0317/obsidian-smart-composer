@@ -244,8 +244,8 @@ describe('OpenAI Sol Responses transport', () => {
   })
 
   it.each([
-    ['max', { effort: 'max' }],
-    ['none', undefined],
+    ['max', { effort: 'max', summary: 'auto' }],
+    ['none', { summary: 'auto' }],
   ])('sends Astra 6.2 effort %s as %p', async (effort, expected) => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
