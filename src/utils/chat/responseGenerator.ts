@@ -75,7 +75,8 @@ export class ResponseGenerator {
       const lastAssistant = [...this.responseMessages]
         .reverse()
         .find((message) => message.role === 'assistant')
-      if (lastAssistant) {
+      // An aborted run's chat may already have moved on
+      if (lastAssistant && !this.abortSignal?.aborted) {
         const durationMs = Date.now() - startedAt
         this.updateResponseMessages((messages) =>
           messages.map((message) =>

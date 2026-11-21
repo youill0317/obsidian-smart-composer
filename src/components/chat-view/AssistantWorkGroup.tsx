@@ -68,13 +68,13 @@ export default function AssistantWorkGroup({
   const label =
     status === ToolCallResponseStatus.PendingApproval
       ? 'Waiting for approval'
-      : stats && isActive
-        ? runningCall
-          ? `Running ${getToolDisplayName(runningCall.request.name)}`
-          : 'Reasoning…'
-        : durationMs
-          ? `Worked for ${formatDuration(Math.round(durationMs / 1000))} · ${toolCallCount}`
-          : toolCallCount
+      : runningCall
+        ? `Running ${getToolDisplayName(runningCall.request.name)}`
+        : stats && isActive
+          ? 'Reasoning…'
+          : durationMs
+            ? `Worked for ${formatDuration(Math.round(durationMs / 1000))} · ${toolCallCount}`
+            : toolCallCount
 
   // While collapsed, tool calls waiting for approval are still shown and
   // fold back once the user approves or rejects them. Hidden entries stay

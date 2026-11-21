@@ -9,5 +9,6 @@ let encoder: Tiktoken | null = null
 // Frequent use, especially on large files, may significantly impact performance.
 export async function tokenCount(text: string): Promise<number> {
   encoder ??= getEncoding('cl100k_base')
-  return encoder.encode(text).length
+  // Special tokens in the text are counted as plain text
+  return encoder.encode(text, [], []).length
 }

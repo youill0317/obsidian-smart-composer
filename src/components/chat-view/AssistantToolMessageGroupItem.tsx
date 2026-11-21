@@ -87,7 +87,10 @@ export default function AssistantToolMessageGroupItem({
         if (item.type === 'text') {
           const { message } = item
           return (
-            <div key={message.id} className="smtcmp-chat-messages-assistant">
+            <div
+              key={`text-${message.id}`}
+              className="smtcmp-chat-messages-assistant"
+            >
               {message.annotations && (
                 <AssistantMessageAnnotations
                   annotations={message.annotations}
@@ -104,7 +107,7 @@ export default function AssistantToolMessageGroupItem({
         }
 
         const { entries } = item
-        const key = entries[0].message.id
+        const key = `work-${entries[0].message.id}`
         const isLastWork = index === lastWorkIndex
         const toolCallCount = entries.reduce(
           (count, entry) =>
