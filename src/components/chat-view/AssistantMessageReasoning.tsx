@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { memo, useEffect, useRef, useState } from 'react'
+import { ReactNode, memo, useEffect, useRef, useState } from 'react'
 
 import DotLoader from '../common/DotLoader'
 
@@ -7,13 +7,15 @@ import { ObsidianMarkdown } from './ObsidianMarkdown'
 
 const AssistantMessageReasoning = memo(function AssistantMessageReasoning({
   reasoning,
+  stats,
 }: {
   reasoning: string
+  // Shown next to the label while the response is generated
+  stats?: ReactNode
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [showLoader, setShowLoader] = useState(false)
   const previousReasoning = useRef(reasoning)
-  const hasUserInteracted = useRef(false)
 
   useEffect(() => {
     if (
@@ -21,9 +23,6 @@ const AssistantMessageReasoning = memo(function AssistantMessageReasoning({
       previousReasoning.current !== ''
     ) {
       setShowLoader(true)
-      if (!hasUserInteracted.current) {
-        setIsExpanded(true)
-      }
       const timer = setTimeout(() => {
         setShowLoader(false)
       }, 1000)
@@ -32,18 +31,16 @@ const AssistantMessageReasoning = memo(function AssistantMessageReasoning({
     previousReasoning.current = reasoning
   }, [reasoning])
 
-  const handleToggle = () => {
-    hasUserInteracted.current = true
-    setIsExpanded(!isExpanded)
-  }
-
   return (
     <div className="smtcmp-assistant-message-metadata">
       <div
         className="smtcmp-assistant-message-metadata-toggle"
-        onClick={handleToggle}
+        onClick={() => setIsExpanded(!isExpanded)}
       >
-        <span>Reasoning {showLoader && <DotLoader />}</span>
+        <span>
+          Reasoning {showLoader && <DotLoader />}
+          {stats}
+        </span>
         {isExpanded ? (
           <ChevronUp className="smtcmp-assistant-message-metadata-toggle-icon" />
         ) : (
