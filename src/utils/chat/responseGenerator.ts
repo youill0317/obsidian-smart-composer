@@ -68,6 +68,27 @@ export class ResponseGenerator {
   }
 
   public async run() {
+    const startedAt = Date.now()
+    try {
+      await this.runIterations()
+    } finally {
+      const lastAssistant = [...this.responseMessages]
+        .reverse()
+        .find((message) => message.role === 'assistant')
+      if (lastAssistant) {
+        const durationMs = Date.now() - startedAt
+        this.updateResponseMessages((messages) =>
+          messages.map((message) =>
+            message.id === lastAssistant.id && message.role === 'assistant'
+              ? { ...message, metadata: { ...message.metadata, durationMs } }
+              : message,
+          ),
+        )
+      }
+    }
+  }
+
+  private async runIterations() {
     for (let i = 0; i < this.maxAutoIterations; i++) {
       if (this.abortSignal?.aborted) return
       const { toolCallRequests, availableToolNames } =
