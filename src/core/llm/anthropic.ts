@@ -315,15 +315,13 @@ https://github.com/glowingjade/obsidian-smart-composer/issues/286`,
   }
 
   // Thinking is adaptive and always on. It takes `output_config.effort` and
-  // an optional summary display.
+  // always returns summaries.
   static buildThinkingParams(
     model: ChatModel & { providerType: 'anthropic' },
   ): Record<string, unknown> {
-    const { effort, show_summaries } = model.adaptive_thinking ?? {}
+    const { effort } = model.adaptive_thinking ?? {}
     return {
-      ...(show_summaries && {
-        thinking: { type: 'adaptive', display: 'summarized' },
-      }),
+      thinking: { type: 'adaptive', display: 'summarized' },
       ...(effort &&
         (REASONING_EFFORTS as readonly string[]).includes(effort) && {
           output_config: { effort },

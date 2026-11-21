@@ -11,7 +11,6 @@ import { ChatModel, chatModelSchema } from '../../../../types/chat-model.types'
 import { ObsidianButton } from '../../../common/ObsidianButton'
 import { ObsidianDropdown } from '../../../common/ObsidianDropdown'
 import { ObsidianSetting } from '../../../common/ObsidianSetting'
-import { ObsidianToggle } from '../../../common/ObsidianToggle'
 import { ReactModal } from '../../../common/ReactModal'
 
 import {
@@ -135,22 +134,13 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           ? (typedModel.reasoning?.reasoning_effort ?? '')
           : '',
       )
-      const [reasoningSummary, setReasoningSummary] = useState<string>(
-        typedModel.reasoning?.reasoning_summary ?? '',
-      )
 
       const handleSubmit = async () => {
-        const updatedReasoning = {
-          reasoning_effort: reasoningEffort || undefined,
-          reasoning_summary: reasoningSummary || undefined,
-        }
         const updatedModel = {
           ...typedModel,
-          reasoning:
-            updatedReasoning.reasoning_effort ||
-            updatedReasoning.reasoning_summary
-              ? updatedReasoning
-              : undefined,
+          reasoning: reasoningEffort
+            ? { reasoning_effort: reasoningEffort }
+            : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -187,21 +177,6 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               onChange={(value: string) => setReasoningEffort(value)}
             />
           </ObsidianSetting>
-          <ObsidianSetting
-            name="Reasoning Summary"
-            desc="Optional summary of reasoning."
-          >
-            <ObsidianDropdown
-              value={reasoningSummary}
-              options={{
-                '': 'Not set (OpenAI default)',
-                auto: 'auto',
-                concise: 'concise',
-                detailed: 'detailed',
-              }}
-              onChange={(value: string) => setReasoningSummary(value)}
-            />
-          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />
@@ -230,20 +205,11 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           ? (typedModel.adaptive_thinking?.effort ?? '')
           : '',
       )
-      const [showSummaries, setShowSummaries] = useState<boolean>(
-        typedModel.adaptive_thinking?.show_summaries ?? false,
-      )
 
       const handleSubmit = async () => {
         const updatedModel = {
           ...typedModel,
-          adaptive_thinking:
-            effort || showSummaries
-              ? {
-                  effort: effort || undefined,
-                  show_summaries: showSummaries || undefined,
-                }
-              : undefined,
+          adaptive_thinking: effort ? { effort } : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -277,12 +243,6 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
               onChange={(value: string) => setEffort(value)}
             />
           </ObsidianSetting>
-          <ObsidianSetting name="Include Thought Summaries">
-            <ObsidianToggle
-              value={showSummaries}
-              onChange={(value: boolean) => setShowSummaries(value)}
-            />
-          </ObsidianSetting>
 
           <ObsidianSetting>
             <ObsidianButton text="Save" onClick={handleSubmit} cta />
@@ -311,20 +271,13 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
           ? (typedModel.thinking?.thinking_level ?? '')
           : '',
       )
-      const [includeThoughts, setIncludeThoughts] = useState<boolean>(
-        Boolean(typedModel.thinking?.include_thoughts ?? false),
-      )
 
       const handleSubmit = async () => {
         const updatedModel = {
           ...typedModel,
-          thinking:
-            thinkingLevel || includeThoughts
-              ? {
-                  thinking_level: thinkingLevel || undefined,
-                  include_thoughts: includeThoughts || undefined,
-                }
-              : undefined,
+          thinking: thinkingLevel
+            ? { thinking_level: thinkingLevel }
+            : undefined,
         }
 
         const validationResult = chatModelSchema.safeParse(updatedModel)
@@ -356,15 +309,6 @@ const MODEL_SETTINGS_REGISTRY: ModelSettingsRegistry[] = [
                 ),
               }}
               onChange={(value: string) => setThinkingLevel(value)}
-            />
-          </ObsidianSetting>
-          <ObsidianSetting
-            name="Include Thought Summaries"
-            desc="Shows a summary of the model's reasoning process. Enabling this can increase token usage."
-          >
-            <ObsidianToggle
-              value={includeThoughts}
-              onChange={(value: boolean) => setIncludeThoughts(value)}
             />
           </ObsidianSetting>
 

@@ -176,3 +176,37 @@ it('trims with the context window entered for the model', async () => {
   }).run()
   expect(generateRequestMessages.mock.calls[0][0].contextWindow).toBe(32_768)
 })
+
+it('records the duration on the last response unless the run was aborted', async () => {
+  const { params, streamResponse } = setup()
+  streamResponse.mockImplementation(async function* () {
+    yield { choices: [{ delta: { content: 'done' } }] }
+  })
+  const generator = new ResponseGenerator(params)
+  let notified: ChatMessage[] = []
+  generator.subscribe((messages) => (notified = messages))
+  await generator.run()
+  const [message] = notified
+  expect(message.role === 'assistant' && message.metadata?.durationMs).toEqual(
+    expect.any(Number),
+  )
+
+  const controller = new AbortController()
+  streamResponse.mockImplementation(async function* () {
+    yield { choices: [{ delta: { content: 'partial' } }] }
+    controller.abort()
+    throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+  })
+  const aborted = new ResponseGenerator({
+    ...params,
+    abortSignal: controller.signal,
+  })
+  const updates: ChatMessage[][] = []
+  aborted.subscribe((messages) => updates.push(messages))
+  await expect(aborted.run()).rejects.toThrow('aborted')
+  const last = updates.at(-1)?.[0]
+  expect(last?.role === 'assistant' && last.content).toBe('partial')
+  expect(last?.role === 'assistant' && last.metadata?.durationMs).toBe(
+    undefined,
+  )
+})

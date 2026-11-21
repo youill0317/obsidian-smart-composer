@@ -682,6 +682,12 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
               isApplying={applyMutation.isPending}
               onApply={handleApply}
               onToolMessageUpdate={handleToolMessageUpdate}
+              streamStartedAt={
+                submitChatMutation.isPending &&
+                index === groupedChatMessages.length - 1
+                  ? submitChatMutation.submittedAt
+                  : undefined
+              }
             />
           ),
         )}

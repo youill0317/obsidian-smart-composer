@@ -35,7 +35,6 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     reasoning: z
       .object({
         reasoning_effort: z.string().optional(),
-        reasoning_summary: z.string().optional(),
       })
       .optional(),
   }),
@@ -45,7 +44,6 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     adaptive_thinking: z
       .object({
         effort: z.string().optional(),
-        show_summaries: z.boolean().optional(),
       })
       .optional(),
   }),
@@ -64,8 +62,6 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     thinking: z
       .object({
         thinking_level: z.string().optional(),
-        // Return thought summaries in response
-        include_thoughts: z.boolean().optional(),
       })
       .optional(),
   }),

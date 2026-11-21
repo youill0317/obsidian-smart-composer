@@ -520,9 +520,9 @@ export class GeminiProvider extends BaseLLMProvider<
    */
   static buildThinkingConfig(
     model: ChatModel & { providerType: 'gemini' },
-  ): ThinkingConfig | undefined {
-    const { thinking_level, include_thoughts } = model.thinking ?? {}
-    const config: ThinkingConfig = {}
+  ): ThinkingConfig {
+    const { thinking_level } = model.thinking ?? {}
+    const config: ThinkingConfig = { includeThoughts: true }
 
     if (
       thinking_level &&
@@ -531,11 +531,7 @@ export class GeminiProvider extends BaseLLMProvider<
       config.thinkingLevel = this.THINKING_LEVEL_MAP[thinking_level]
     }
 
-    if (include_thoughts) {
-      config.includeThoughts = true
-    }
-
-    return Object.keys(config).length > 0 ? config : undefined
+    return config
   }
 
   override getContextWindow(model: string): Promise<number | undefined> {

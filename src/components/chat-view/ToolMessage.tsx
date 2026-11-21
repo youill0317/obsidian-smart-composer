@@ -382,7 +382,7 @@ function useToolCall(
   }
 }
 
-function StatusIcon({ status }: { status: ToolCallResponseStatus }) {
+export function StatusIcon({ status }: { status: ToolCallResponseStatus }) {
   switch (status) {
     case ToolCallResponseStatus.PendingApproval:
       return null

@@ -8,6 +8,7 @@ import { CHAT_MODELS_ADDED_IN_V18 } from './17_to_18'
 import { migrateFrom21To22 } from './21_to_22'
 import { migrateFrom24To25 } from './24_to_25'
 import { migrateFrom25To26 } from './25_to_26'
+import { migrateFrom26To27 } from './26_to_27'
 
 import { SETTINGS_SCHEMA_VERSION } from '.'
 
@@ -61,7 +62,9 @@ it.each([
   expect(JSON.stringify(initial)).toBe(before)
   expect(parseSmartComposerSettings(settings)).toEqual(settings)
   expect(
-    migrateFrom25To26(migrateFrom24To25(migrateFrom21To22(settings))),
+    migrateFrom26To27(
+      migrateFrom25To26(migrateFrom24To25(migrateFrom21To22(settings))),
+    ),
   ).toEqual(settings)
 })
 

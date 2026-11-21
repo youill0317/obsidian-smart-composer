@@ -35,6 +35,8 @@ export type ChatAssistantMessage = {
   metadata?: {
     usage?: ResponseUsage
     model?: ChatModel // TODO: migrate legacy data to new model type
+    // Time spent on the response, set on its last assistant message
+    durationMs?: number
   }
   providerMetadata?: RequestProviderMetadata
   // First message of the history sent with the request that produced this
@@ -83,6 +85,8 @@ export type SerializedChatAssistantMessage = {
   metadata?: {
     usage?: ResponseUsage
     model?: ChatModel // TODO: migrate legacy data to new model type
+    // Time spent on the response, set on its last assistant message
+    durationMs?: number
   }
   providerMetadata?: RequestProviderMetadata
   // First message of the history sent with the request that produced this

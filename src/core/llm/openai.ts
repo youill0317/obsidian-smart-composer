@@ -74,6 +74,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
         {
           ...request,
           reasoning_effort: getReasoningEffort(model),
+          reasoning_summary: 'auto',
         },
         options,
         { Authorization: `Bearer ${this.client.apiKey}` },
@@ -109,6 +110,7 @@ export class OpenAIAuthenticatedProvider extends BaseLLMProvider<
         {
           ...request,
           reasoning_effort: getReasoningEffort(model),
+          reasoning_summary: 'auto',
         },
         options,
         { Authorization: `Bearer ${this.client.apiKey}` },
